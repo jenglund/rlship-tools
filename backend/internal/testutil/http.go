@@ -82,9 +82,10 @@ func CheckResponse(t *testing.T, w *httptest.ResponseRecorder, expected TestResp
 }
 
 // MockAuthMiddleware creates a mock authentication middleware for testing
-func MockAuthMiddleware(userID string) gin.HandlerFunc {
+func MockAuthMiddleware(userID string, firebaseUID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Set("user_id", userID)
+		c.Set("firebase_uid", firebaseUID)
 		c.Next()
 	}
 }

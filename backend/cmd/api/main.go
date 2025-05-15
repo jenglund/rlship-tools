@@ -1,45 +1,70 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
+	"github.com/jenglund/rlship-tools/internal/api/handlers"
+	"github.com/jenglund/rlship-tools/internal/config"
+	"github.com/jenglund/rlship-tools/internal/middleware"
+	"github.com/jenglund/rlship-tools/internal/repository/postgres"
 )
 
-func init() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Println("No config file found, using defaults and environment variables")
-		} else {
-			log.Fatalf("Error reading config file: %s", err)
-		}
-	}
-}
-
 func main() {
-	r := gin.Default()
-
-	// Health check endpoint
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "healthy",
-		})
-	})
-
-	// Start the server
-	port := viper.GetString("PORT")
-	if port == "" {
-		port = "8080"
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
 	}
 
-	log.Printf("Starting server on port %s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Error starting server: %s", err)
+	// Initialize database connection
+	db, err := postgres.NewDB(
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Name,
+		cfg.Database.SSLMode,
+	)
+	if err != nil {
+		log.Fatalf("Error connecting to database: %v", err)
+	}
+	defer db.Close()
+
+	// Initialize repositories
+	repos := postgres.NewRepositories(db)
+
+	// Initialize Firebase Auth
+	firebaseAuth, err := middleware.NewFirebaseAuth(cfg.Firebase.CredentialsFile)
+	if err != nil {
+		log.Fatalf("Error initializing Firebase Auth: %v", err)
+	}
+
+	// Initialize Gin router
+	router := gin.Default()
+
+	// Add CORS middleware
+	router.Use(middleware.CORS())
+
+	// API routes
+	api := router.Group("/api")
+	{
+		// Add Firebase Auth middleware to all API routes
+		api.Use(firebaseAuth.AuthMiddleware())
+
+		// Initialize and register handlers
+		userHandler := handlers.NewUserHandler(repos)
+		userHandler.RegisterRoutes(api)
+
+		tribeHandler := handlers.NewTribeHandler(repos)
+		tribeHandler.RegisterRoutes(api)
+	}
+
+	// Start server
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	log.Printf("Server starting on %s", addr)
+	if err := router.Run(addr); err != nil {
+		log.Fatalf("Error starting server: %v", err)
 	}
 }

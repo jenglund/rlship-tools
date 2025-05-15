@@ -1,6 +1,6 @@
 # RLShip Tools
 
-A comprehensive relationship management application that helps couples and polyamorous relationships connect, plan activities, and share experiences together. The app supports multiple platforms including mobile web, desktop web, Android, and iOS.
+A comprehensive relationship management application that helps tribes (couples and polyamorous relationships) connect, plan activities, and share experiences together. The app supports multiple platforms including mobile web, desktop web, Android, and iOS.
 
 ## Features
 
@@ -10,17 +10,21 @@ A comprehensive relationship management application that helps couples and polya
   - Android App
   - iOS App
 
-- **Relationship Management**
+- **Tribe Management**
   - Support for couples and polyamorous relationships
-  - Relationship timeline and history
+  - Flexible membership types (full members and guests)
+  - Time-limited guest access
+  - Tribe timeline and history
   - Photo sharing and memories
 
 - **Activity Management**
-  - Multiple customizable activity lists (restaurants, hikes, entertainment, etc.)
-  - Public and private notes for each activity
-  - Ratings and reviews
+  - Multiple activity types (locations, interests, lists, general activities)
+  - Public and private visibility settings
+  - Activity sharing between tribes
+  - Customizable metadata for each activity type
   - Visit history tracking
   - Photo attachments
+  - Multiple ownership (users and tribes can own activities)
 
 - **Interest Button System**
   - Create custom interest buttons for any activity
@@ -68,6 +72,10 @@ rlship-tools/
 ├── backend/                 # Go API server
 │   ├── cmd/                 # Entry points
 │   ├── internal/           # Internal packages
+│   │   ├── api/            # API handlers and middleware
+│   │   ├── models/         # Domain models
+│   │   ├── repository/     # Data access layer
+│   │   └── testutil/       # Testing utilities
 │   ├── pkg/                # Public packages
 │   └── api/                # API definitions
 ├── infrastructure/         # Infrastructure as Code (Terraform)
@@ -82,8 +90,8 @@ rlship-tools/
 
 - Node.js (v18+)
 - Go 1.21+
-- Expo CLI
-- Docker
+- Expo CLI (`npm install -g expo-cli`)
+- Docker Desktop
 - Google Cloud SDK
 - PostgreSQL 17
   - On macOS with Homebrew: `brew install postgresql@17`
@@ -94,93 +102,155 @@ rlship-tools/
     
     # Start PostgreSQL service
     brew services start postgresql@17
+    
+    # Verify PostgreSQL is running
+    brew services list | grep postgresql
     ```
 - Redis
-
-### Frontend Setup
-
-1. Install dependencies:
-```bash
-# Install root dependencies
-npm install
-
-# Install mobile app dependencies
-cd apps/mobile
-npm install
-```
-
-2. Start the development server:
-```bash
-# For mobile development
-npm start
-
-# For web development
-npm run web
-
-# For iOS simulator
-npm run ios
-
-# For Android emulator
-npm run android
-```
-
-The web version will be available at http://localhost:19006
+  - On macOS with Homebrew: `brew install redis`
+  - After installation:
+    ```bash
+    # Start Redis service
+    brew services start redis
+    
+    # Verify Redis is running
+    brew services list | grep redis
+    ```
 
 ### Backend Setup
 
-1. Install Go dependencies:
+1. Clone the repository and navigate to the backend directory:
 ```bash
-cd backend
-go mod download
+git clone https://github.com/yourusername/rlship-tools.git
+cd rlship-tools/backend
 ```
 
-2. Set up the database:
+2. Install Go dependencies:
 ```bash
-# Ensure PostgreSQL service is running
-brew services list | grep postgresql
+go mod download
+go mod verify
+```
 
-# Create a PostgreSQL database (if PATH is set correctly)
+3. Set up environment variables:
+```bash
+# Create .env file in backend directory
+cp .env.example .env
+
+# Edit the .env file with your configuration
+# Required variables:
+# - PORT=8080
+# - DB_HOST=localhost
+# - DB_PORT=5432
+# - DB_NAME=rlship
+# - DB_USER=postgres
+# - DB_PASSWORD=postgres
+# - REDIS_URL=localhost:6379
+# - GCP_PROJECT_ID=your_project_id
+```
+
+4. Set up the database:
+```bash
+# Create a PostgreSQL database
 createdb rlship
-
-# Alternative command if createdb is not in PATH
-/usr/local/opt/postgresql@17/bin/createdb rlship
 
 # Run migrations
 go run cmd/migrate/main.go up
+
+# Verify migrations
+go run cmd/migrate/main.go version
 ```
 
-3. Start the server:
+5. Start the server:
 ```bash
 go run cmd/api/main.go
 ```
 
-### Environment Variables
+The API server will be available at http://localhost:8080
 
-Create a `.env` file in both the frontend and backend directories. Example variables needed:
+### Frontend Setup
 
-```env
-# Frontend (.env in apps/mobile)
-API_URL=http://localhost:8080
-FIREBASE_API_KEY=your_api_key
-FIREBASE_PROJECT_ID=your_project_id
-
-# Backend (.env in backend)
-PORT=8080
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=rlship
-DB_USER=postgres
-DB_PASSWORD=postgres
-REDIS_URL=localhost:6379
-GCP_PROJECT_ID=your_project_id
+1. Navigate to the mobile app directory:
+```bash
+cd apps/mobile
 ```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Set up environment variables:
+```bash
+# Create .env file
+cp .env.example .env
+
+# Edit the .env file with your configuration
+# Required variables:
+# - API_URL=http://localhost:8080
+# - FIREBASE_API_KEY=your_api_key
+# - FIREBASE_PROJECT_ID=your_project_id
+```
+
+4. Start the development server:
+```bash
+# For web development
+npm run web
+
+# For iOS simulator (requires Xcode)
+npm run ios
+
+# For Android emulator (requires Android Studio)
+npm run android
+
+# For Expo development client
+npm start
+```
+
+The web version will be available at http://localhost:19006
 
 ## Testing
 
-### Frontend
+### Backend Tests
+
+The backend includes comprehensive test coverage with the following features:
+- Automated test database management
+- HTTP endpoint testing
+- Mock authentication
+- Test fixtures and data generation
+
+Run the tests:
 ```bash
+cd backend
+
 # Run all tests
+go test ./...
+
+# Run tests with coverage and generate HTML report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
+
+# Run specific test package
+go test ./internal/api/handlers/...
+
+# Run tests with verbose output
+go test -v ./...
+
+# Run tests with race condition detection
+go test -race ./...
+```
+
+View test coverage in terminal:
+```bash
+go test -cover ./...
+```
+
+### Frontend Tests
+
+Run the frontend tests:
+```bash
 cd apps/mobile
+
+# Run all tests
 npm test
 
 # Run tests in watch mode
@@ -189,103 +259,54 @@ npm test -- --watch
 # Run tests with coverage
 npm test -- --coverage
 
-# Run web-specific tests
-npm test -- --testMatch="**/*.web.test.{js,jsx,ts,tsx}"
+# Run specific tests
+npm test -- -t "test name"
+
+# Update snapshots
+npm test -- -u
 ```
 
-### Backend
+## Local Development Stack
+
+To run the complete stack locally:
+
+1. Start the database and cache:
+```bash
+# Start PostgreSQL
+brew services start postgresql@17
+
+# Start Redis
+brew services start redis
+```
+
+2. Start the backend server:
 ```bash
 cd backend
-go test ./...
+go run cmd/api/main.go
 ```
 
-The backend includes a comprehensive testing infrastructure:
-
-- **Database Testing**: Automatically creates and manages test databases
-  - Each test gets a fresh database with the latest schema
-  - Test databases are automatically cleaned up
-  - Includes helper functions for creating test data
-
-- **HTTP Testing**: Helpers for testing HTTP endpoints
-  - Easy request execution and response validation
-  - Mock authentication middleware
-  - JSON request/response handling
-
-- **Test Fixtures**: Helpers for generating test data
-  - User creation
-  - Relationship management
-  - Activity list generation
-
-Example test:
-```go
-func TestExample(t *testing.T) {
-    // Set up test database
-    db := testutil.SetupTestDB(t)
-    defer testutil.TeardownTestDB(t, db)
-
-    // Create test data
-    user := testutil.CreateTestUser(t, db)
-    relationship := testutil.CreateTestRelationship(t, db, []testutil.TestUser{user})
-    
-    // Test HTTP endpoints
-    router := gin.New()
-    req := testutil.TestRequest{
-        Method: "GET",
-        Path:   "/api/relationships",
-        Header: map[string]string{
-            "Authorization": "Bearer test-token",
-        },
-    }
-    resp := testutil.ExecuteRequest(t, router, req)
-    
-    // Validate response
-    expected := testutil.TestResponse{
-        Code: http.StatusOK,
-        Body: gin.H{"relationships": []string{relationship.ID.String()}},
-    }
-    testutil.CheckResponse(t, resp, expected)
-}
-```
-
-## Building for Production
-
-### Web Build
+3. Start the frontend development server:
 ```bash
-# Build the web version
-npm run build:web
-
-# The build output will be in apps/mobile/web-build/
+cd apps/mobile
+npm run web  # For web development
+# OR
+npm start    # For mobile development
 ```
 
-### Mobile Build
-Follow the Expo build instructions for iOS and Android:
-```bash
-# Build for iOS
-eas build --platform ios
-
-# Build for Android
-eas build --platform android
-```
-
-## Deployment
-
-The application is designed to be deployed on Google Cloud Platform:
-
-1. Frontend is deployed as a static website on Cloud Storage
-2. Backend API runs on Cloud Run or GKE
-3. Database runs on Cloud SQL
-4. Redis runs on Memorystore
-5. Media files are stored in Cloud Storage
-
-Detailed deployment instructions can be found in the [deployment guide](docs/deployment.md).
+4. Access the applications:
+- Web: http://localhost:19006
+- API: http://localhost:8080
+- Mobile: Use Expo Go app or simulators
 
 ## Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Write tests for your changes
+4. Ensure all tests pass and coverage is maintained
+5. Commit your changes (`git commit -m 'Add some amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ## License
 

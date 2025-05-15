@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Things to remember about the app we're developing, "Tribe".
+
+Fundamental design: "Tribes" are groups of people that are sharing things they want to do together. Fundamentally, the app is focused towards the needs of romantic couples (so planning things like date night by picking randomly from a list of options that they haven't been to in the last 3 months), but the app is intended to be equally functional for polyamorous relationships, friend groups, roommates, families, etc. The functionality shouldn't be exclusive to romantic couples, it's just designed largely to meet their needs first. But relationships come in all forms, and tribes are just bundles of relationships, so tribes will come in all forms too and we should try our best to support them, ESPECIALLY when it's a light lift to support them (like turning a string with a "partner" into a list of strings of partners).
+
+Tribes should be able to share lists of things they want to do, places they want to go (which should also be able to sync to what's in a list on Google Maps, so people can just add places to that list on Google Maps and Tribe will know about them and add them to the list as appropriate.), and an indicator to schedule when they will be/are free/interested for something (which could be via a calendar entry like in Google Calendar, or a button that can be pushed to indicate immediate/current interest, and/or interest for some particular amount of time.)

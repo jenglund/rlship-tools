@@ -1,13 +1,16 @@
 # Server Configuration
-port: 8080
+server:
+  port: 8080
+  host: "0.0.0.0"
 
 # Database Configuration
 database:
-  host: localhost
+  host: "localhost"
   port: 5432
-  name: rlship
-  user: postgres
-  password: postgres
+  user: "postgres"
+  password: "postgres"
+  name: "rlship"
+  sslmode: "disable"
 
 # Redis Configuration
 redis:
@@ -17,8 +20,8 @@ redis:
 
 # Firebase Configuration
 firebase:
-  project_id: your-project-id
-  storage_bucket: your-project-id.appspot.com
+  project_id: ""  # Set via FIREBASE_PROJECT_ID environment variable
+  credentials_file: ""  # Set via FIREBASE_CREDENTIALS_FILE environment variable
 
 # JWT Configuration
 jwt:

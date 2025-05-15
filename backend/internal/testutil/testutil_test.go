@@ -19,11 +19,11 @@ func TestTestingInfrastructure(t *testing.T) {
 		user1 := CreateTestUser(t, db)
 		user2 := CreateTestUser(t, db)
 
-		// Create test relationship
-		relationship := CreateTestRelationship(t, db, []TestUser{user1, user2})
+		// Create test tribe
+		tribe := CreateTestTribe(t, db, []TestUser{user1, user2})
 
 		// Create test activity list
-		_ = CreateTestActivityList(t, db, relationship.ID)
+		_ = CreateTestActivityList(t, db, tribe.ID)
 
 		// Verify data was created
 		var count int
@@ -31,11 +31,11 @@ func TestTestingInfrastructure(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 2, count)
 
-		err = db.QueryRow("SELECT COUNT(*) FROM relationships").Scan(&count)
+		err = db.QueryRow("SELECT COUNT(*) FROM tribes").Scan(&count)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 
-		err = db.QueryRow("SELECT COUNT(*) FROM activity_lists").Scan(&count)
+		err = db.QueryRow("SELECT COUNT(*) FROM activities").Scan(&count)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 
@@ -55,11 +55,15 @@ func TestTestingInfrastructure(t *testing.T) {
 
 		// Add a test endpoint with mock auth
 		router.GET("/test",
-			MockAuthMiddleware("test-user-id"),
+			MockAuthMiddleware("test-user-id", "test-firebase-uid"),
 			func(c *gin.Context) {
 				userID, exists := c.Get("user_id")
 				assert.True(t, exists)
 				assert.Equal(t, "test-user-id", userID)
+
+				firebaseUID, exists := c.Get("firebase_uid")
+				assert.True(t, exists)
+				assert.Equal(t, "test-firebase-uid", firebaseUID)
 
 				c.JSON(http.StatusOK, gin.H{
 					"message": "success",
