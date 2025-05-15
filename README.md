@@ -81,7 +81,16 @@ rlship-tools/
 - Expo CLI
 - Docker
 - Google Cloud SDK
-- PostgreSQL
+- PostgreSQL 17
+  - On macOS with Homebrew: `brew install postgresql@17`
+  - After installation:
+    ```bash
+    # Add PostgreSQL binaries to your PATH (add to ~/.zshrc or ~/.bashrc for permanence)
+    export PATH="/usr/local/opt/postgresql@17/bin:$PATH"
+    
+    # Start PostgreSQL service
+    brew services start postgresql@17
+    ```
 - Redis
 
 ### Frontend Setup
@@ -107,8 +116,14 @@ go mod download
 
 2. Set up the database:
 ```bash
-# Create a PostgreSQL database
+# Ensure PostgreSQL service is running
+brew services list | grep postgresql
+
+# Create a PostgreSQL database (if PATH is set correctly)
 createdb rlship
+
+# Alternative command if createdb is not in PATH
+/usr/local/opt/postgresql@17/bin/createdb rlship
 
 # Run migrations
 go run cmd/migrate/main.go up
