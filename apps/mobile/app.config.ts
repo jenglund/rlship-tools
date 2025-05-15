@@ -28,7 +28,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     package: 'com.yourdomain.rlshiptools'
   },
   web: {
-    favicon: './assets/favicon.png'
+    favicon: './assets/favicon.png',
+    name: 'RLShip Tools',
+    shortName: 'RLShip',
+    lang: 'en',
+    themeColor: '#ffffff',
+    backgroundColor: '#ffffff',
+    description: 'Relationship management tools for couples and polyamorous relationships',
+    orientation: 'any',
+    scope: '/',
+    startUrl: '/',
+    display: 'standalone',
+    crossorigin: 'use-credentials'
   },
   extra: {
     apiUrl: process.env.API_URL || 'http://localhost:8080',

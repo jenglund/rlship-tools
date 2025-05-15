@@ -1,0 +1,24 @@
+{
+  "name": "rlship-tools",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "start": "cd apps/mobile && expo start",
+    "android": "cd apps/mobile && expo start --android",
+    "ios": "cd apps/mobile && expo start --ios",
+    "web": "cd apps/mobile && expo start --web",
+    "test": "cd apps/mobile && npm test",
+    "build:web": "cd apps/mobile && expo build:web",
+    "eject": "cd apps/mobile && expo eject"
+  },
+  "dependencies": {
+    "@expo/webpack-config": "^19.0.1",
+    "@react-native-community/cli": "^18.0.0",
+    "@react-native-community/cli-server-api": "^18.0.0",
+    "react-dom": "^19.1.0",
+    "react-native-web": "^0.20.0"
+  }
+}

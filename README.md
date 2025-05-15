@@ -44,6 +44,8 @@ A comprehensive relationship management application that helps couples and polya
 - React Native Paper
 - Expo Push Notifications
 - Firebase Authentication
+- React Native Web (for web platform)
+- Webpack (for web bundling)
 
 ### Backend
 - Go
@@ -59,8 +61,10 @@ A comprehensive relationship management application that helps couples and polya
 ```
 rlship-tools/
 ├── apps/
-│   ├── mobile/              # Expo/React Native application
-│   └── web/                 # Web-specific optimizations
+│   └── mobile/              # Universal app (mobile + web)
+│       ├── src/            # Application source code
+│       ├── web/            # Web-specific assets
+│       └── webpack.config.js # Web bundling configuration
 ├── backend/                 # Go API server
 │   ├── cmd/                 # Entry points
 │   ├── internal/           # Internal packages
@@ -97,14 +101,30 @@ rlship-tools/
 
 1. Install dependencies:
 ```bash
+# Install root dependencies
+npm install
+
+# Install mobile app dependencies
 cd apps/mobile
 npm install
 ```
 
 2. Start the development server:
 ```bash
+# For mobile development
 npm start
+
+# For web development
+npm run web
+
+# For iOS simulator
+npm run ios
+
+# For Android emulator
+npm run android
 ```
+
+The web version will be available at http://localhost:19006
 
 ### Backend Setup
 
@@ -159,14 +179,92 @@ GCP_PROJECT_ID=your_project_id
 
 ### Frontend
 ```bash
+# Run all tests
 cd apps/mobile
 npm test
+
+# Run tests in watch mode
+npm test -- --watch
+
+# Run tests with coverage
+npm test -- --coverage
+
+# Run web-specific tests
+npm test -- --testMatch="**/*.web.test.{js,jsx,ts,tsx}"
 ```
 
 ### Backend
 ```bash
 cd backend
 go test ./...
+```
+
+The backend includes a comprehensive testing infrastructure:
+
+- **Database Testing**: Automatically creates and manages test databases
+  - Each test gets a fresh database with the latest schema
+  - Test databases are automatically cleaned up
+  - Includes helper functions for creating test data
+
+- **HTTP Testing**: Helpers for testing HTTP endpoints
+  - Easy request execution and response validation
+  - Mock authentication middleware
+  - JSON request/response handling
+
+- **Test Fixtures**: Helpers for generating test data
+  - User creation
+  - Relationship management
+  - Activity list generation
+
+Example test:
+```go
+func TestExample(t *testing.T) {
+    // Set up test database
+    db := testutil.SetupTestDB(t)
+    defer testutil.TeardownTestDB(t, db)
+
+    // Create test data
+    user := testutil.CreateTestUser(t, db)
+    relationship := testutil.CreateTestRelationship(t, db, []testutil.TestUser{user})
+    
+    // Test HTTP endpoints
+    router := gin.New()
+    req := testutil.TestRequest{
+        Method: "GET",
+        Path:   "/api/relationships",
+        Header: map[string]string{
+            "Authorization": "Bearer test-token",
+        },
+    }
+    resp := testutil.ExecuteRequest(t, router, req)
+    
+    // Validate response
+    expected := testutil.TestResponse{
+        Code: http.StatusOK,
+        Body: gin.H{"relationships": []string{relationship.ID.String()}},
+    }
+    testutil.CheckResponse(t, resp, expected)
+}
+```
+
+## Building for Production
+
+### Web Build
+```bash
+# Build the web version
+npm run build:web
+
+# The build output will be in apps/mobile/web-build/
+```
+
+### Mobile Build
+Follow the Expo build instructions for iOS and Android:
+```bash
+# Build for iOS
+eas build --platform ios
+
+# Build for Android
+eas build --platform android
 ```
 
 ## Deployment
