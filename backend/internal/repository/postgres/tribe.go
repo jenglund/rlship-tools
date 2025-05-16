@@ -22,8 +22,10 @@ func NewTribeRepository(db *sql.DB) *TribeRepository {
 // Create inserts a new tribe into the database
 func (r *TribeRepository) Create(tribe *models.Tribe) error {
 	query := `
-		INSERT INTO tribes (id, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO tribes (
+			id, name, type, description, visibility,
+			metadata, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id`
 
 	if tribe.ID == uuid.Nil {
@@ -37,6 +39,10 @@ func (r *TribeRepository) Create(tribe *models.Tribe) error {
 		query,
 		tribe.ID,
 		tribe.Name,
+		tribe.Type,
+		tribe.Description,
+		tribe.Visibility,
+		tribe.Metadata,
 		tribe.CreatedAt,
 		tribe.UpdatedAt,
 	).Scan(&tribe.ID)
@@ -51,7 +57,9 @@ func (r *TribeRepository) Create(tribe *models.Tribe) error {
 // GetByID retrieves a tribe by its ID
 func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 	query := `
-		SELECT id, name, created_at, updated_at, deleted_at
+		SELECT 
+			id, name, type, description, visibility,
+			metadata, created_at, updated_at, deleted_at
 		FROM tribes
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -59,6 +67,10 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 	err := r.db.QueryRow(query, id).Scan(
 		&tribe.ID,
 		&tribe.Name,
+		&tribe.Type,
+		&tribe.Description,
+		&tribe.Visibility,
+		&tribe.Metadata,
 		&tribe.CreatedAt,
 		&tribe.UpdatedAt,
 		&tribe.DeletedAt,
@@ -86,8 +98,12 @@ func (r *TribeRepository) Update(tribe *models.Tribe) error {
 	query := `
 		UPDATE tribes
 		SET name = $1,
-			updated_at = $2
-		WHERE id = $3 AND deleted_at IS NULL
+			type = $2,
+			description = $3,
+			visibility = $4,
+			metadata = $5,
+			updated_at = $6
+		WHERE id = $7 AND deleted_at IS NULL
 		RETURNING id`
 
 	tribe.UpdatedAt = time.Now()
@@ -95,6 +111,10 @@ func (r *TribeRepository) Update(tribe *models.Tribe) error {
 	err := r.db.QueryRow(
 		query,
 		tribe.Name,
+		tribe.Type,
+		tribe.Description,
+		tribe.Visibility,
+		tribe.Metadata,
 		tribe.UpdatedAt,
 		tribe.ID,
 	).Scan(&tribe.ID)
@@ -182,10 +202,33 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 // AddMember adds a user to a tribe
 func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models.MembershipType, expiresAt *time.Time, invitedBy *uuid.UUID) error {
 	query := `
-		INSERT INTO tribe_members (tribe_id, user_id, type, joined_at, expires_at, invited_by)
-		VALUES ($1, $2, $3, $4, $5, $6)`
+		INSERT INTO tribe_members (
+			id, tribe_id, user_id, membership_type, display_name,
+			expires_at, metadata, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
-	_, err := r.db.Exec(query, tribeID, userID, memberType, time.Now(), expiresAt, invitedBy)
+	// Get user's name for display_name
+	var displayName string
+	err := r.db.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
+	if err != nil {
+		return fmt.Errorf("error getting user name: %w", err)
+	}
+
+	now := time.Now()
+	id := uuid.New()
+
+	_, err = r.db.Exec(
+		query,
+		id,
+		tribeID,
+		userID,
+		memberType,
+		displayName,
+		expiresAt,
+		models.JSONMap{},
+		now,
+		now,
+	)
 	if err != nil {
 		return fmt.Errorf("error adding tribe member: %w", err)
 	}
@@ -197,11 +240,12 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 func (r *TribeRepository) UpdateMember(tribeID, userID uuid.UUID, memberType models.MembershipType, expiresAt *time.Time) error {
 	query := `
 		UPDATE tribe_members
-		SET type = $1,
-			expires_at = $2
-		WHERE tribe_id = $3 AND user_id = $4`
+		SET membership_type = $1,
+			expires_at = $2,
+			updated_at = $3
+		WHERE tribe_id = $4 AND user_id = $5 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, memberType, expiresAt, tribeID, userID)
+	result, err := r.db.Exec(query, memberType, expiresAt, time.Now(), tribeID, userID)
 	if err != nil {
 		return fmt.Errorf("error updating tribe member: %w", err)
 	}
@@ -220,9 +264,12 @@ func (r *TribeRepository) UpdateMember(tribeID, userID uuid.UUID, memberType mod
 
 // RemoveMember removes a user from a tribe
 func (r *TribeRepository) RemoveMember(tribeID, userID uuid.UUID) error {
-	query := `DELETE FROM tribe_members WHERE tribe_id = $1 AND user_id = $2`
+	query := `
+		UPDATE tribe_members
+		SET deleted_at = $1
+		WHERE tribe_id = $2 AND user_id = $3 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, tribeID, userID)
+	result, err := r.db.Exec(query, time.Now(), tribeID, userID)
 	if err != nil {
 		return fmt.Errorf("error removing tribe member: %w", err)
 	}
@@ -252,12 +299,14 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 	}
 
 	query := `
-		SELECT tm.tribe_id, tm.user_id, tm.type, tm.joined_at, tm.expires_at, tm.invited_by,
-			   u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
+		SELECT 
+			tm.id, tm.tribe_id, tm.user_id, tm.membership_type, tm.display_name, 
+			tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
+			u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
 		FROM tribe_members tm
 		JOIN users u ON u.id = tm.user_id
-		WHERE tm.tribe_id = $1
-		ORDER BY tm.joined_at ASC`
+		WHERE tm.tribe_id = $1 AND tm.deleted_at IS NULL
+		ORDER BY tm.created_at ASC`
 
 	rows, err := r.db.Query(query, tribeID)
 	if err != nil {
@@ -271,12 +320,16 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 			User: &models.User{},
 		}
 		err := rows.Scan(
+			&member.ID,
 			&member.TribeID,
 			&member.UserID,
-			&member.Type,
-			&member.JoinedAt,
+			&member.MembershipType,
+			&member.DisplayName,
 			&member.ExpiresAt,
-			&member.InvitedBy,
+			&member.Metadata,
+			&member.CreatedAt,
+			&member.UpdatedAt,
+			&member.DeletedAt,
 			&member.User.FirebaseUID,
 			&member.User.Provider,
 			&member.User.Email,
@@ -300,14 +353,62 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 	return members, nil
 }
 
-// GetUserTribes retrieves all tribes that a user is a member of
+// GetExpiredGuestMemberships retrieves all expired guest memberships
+func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, error) {
+	query := `
+		SELECT 
+			id, tribe_id, user_id, membership_type,
+			display_name, expires_at, metadata,
+			created_at, updated_at, deleted_at
+		FROM tribe_members
+		WHERE membership_type = 'guest'
+		AND expires_at < NOW()
+		AND deleted_at IS NULL`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("error getting expired guest memberships: %w", err)
+	}
+	defer rows.Close()
+
+	var members []*models.TribeMember
+	for rows.Next() {
+		member := &models.TribeMember{}
+		err := rows.Scan(
+			&member.ID,
+			&member.TribeID,
+			&member.UserID,
+			&member.MembershipType,
+			&member.DisplayName,
+			&member.ExpiresAt,
+			&member.Metadata,
+			&member.CreatedAt,
+			&member.UpdatedAt,
+			&member.DeletedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning expired guest membership: %w", err)
+		}
+		members = append(members, member)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating expired guest memberships: %w", err)
+	}
+
+	return members, nil
+}
+
+// GetUserTribes retrieves all tribes a user is a member of
 func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, error) {
 	query := `
-		SELECT t.id, t.name, t.created_at, t.updated_at, t.deleted_at
+		SELECT DISTINCT t.id, t.name, t.type, t.description, t.visibility,
+			t.metadata, t.created_at, t.updated_at, t.deleted_at
 		FROM tribes t
-		JOIN tribe_members tm ON tm.tribe_id = t.id
-		WHERE tm.user_id = $1 AND t.deleted_at IS NULL
-		ORDER BY t.created_at DESC`
+		INNER JOIN tribe_members tm ON t.id = tm.tribe_id
+		WHERE tm.user_id = $1
+		AND t.deleted_at IS NULL
+		AND tm.deleted_at IS NULL`
 
 	rows, err := r.db.Query(query, userID)
 	if err != nil {
@@ -321,70 +422,136 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		err := rows.Scan(
 			&tribe.ID,
 			&tribe.Name,
+			&tribe.Type,
+			&tribe.Description,
+			&tribe.Visibility,
+			&tribe.Metadata,
 			&tribe.CreatedAt,
 			&tribe.UpdatedAt,
 			&tribe.DeletedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning user tribe row: %w", err)
+			return nil, fmt.Errorf("error scanning user tribe: %w", err)
 		}
+
+		// Get tribe members
+		members, err := r.GetMembers(tribe.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error getting tribe members: %w", err)
+		}
+		tribe.Members = members
 
 		tribes = append(tribes, tribe)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating user tribe rows: %w", err)
+		return nil, fmt.Errorf("error iterating user tribes: %w", err)
 	}
 
 	return tribes, nil
 }
 
-// GetExpiredGuestMemberships retrieves all expired guest memberships
-func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, error) {
+// GetByType retrieves tribes by type
+func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit int) ([]*models.Tribe, error) {
 	query := `
-		SELECT tm.tribe_id, tm.user_id, tm.type, tm.joined_at, tm.expires_at, tm.invited_by,
-			   u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
-		FROM tribe_members tm
-		JOIN users u ON u.id = tm.user_id
-		WHERE tm.type = $1 AND tm.expires_at < NOW()`
+		SELECT id, name, type, description, visibility,
+			metadata, created_at, updated_at, deleted_at
+		FROM tribes
+		WHERE type = $1
+		AND deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(query, models.MembershipGuest)
+	rows, err := r.db.Query(query, tribeType, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("error getting expired guest memberships: %w", err)
+		return nil, fmt.Errorf("error getting tribes by type: %w", err)
 	}
 	defer rows.Close()
 
-	var members []*models.TribeMember
+	var tribes []*models.Tribe
 	for rows.Next() {
-		member := &models.TribeMember{
-			User: &models.User{},
-		}
+		tribe := &models.Tribe{}
 		err := rows.Scan(
-			&member.TribeID,
-			&member.UserID,
-			&member.Type,
-			&member.JoinedAt,
-			&member.ExpiresAt,
-			&member.InvitedBy,
-			&member.User.FirebaseUID,
-			&member.User.Provider,
-			&member.User.Email,
-			&member.User.Name,
-			&member.User.AvatarURL,
-			&member.User.LastLogin,
-			&member.User.CreatedAt,
-			&member.User.UpdatedAt,
+			&tribe.ID,
+			&tribe.Name,
+			&tribe.Type,
+			&tribe.Description,
+			&tribe.Visibility,
+			&tribe.Metadata,
+			&tribe.CreatedAt,
+			&tribe.UpdatedAt,
+			&tribe.DeletedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning expired guest membership row: %w", err)
+			return nil, fmt.Errorf("error scanning tribe by type: %w", err)
 		}
-		member.User.ID = member.UserID
-		members = append(members, member)
+
+		// Get tribe members
+		members, err := r.GetMembers(tribe.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error getting tribe members: %w", err)
+		}
+		tribe.Members = members
+
+		tribes = append(tribes, tribe)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating expired guest membership rows: %w", err)
+		return nil, fmt.Errorf("error iterating tribes by type: %w", err)
 	}
 
-	return members, nil
+	return tribes, nil
+}
+
+// Search searches for tribes by name or description
+func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tribe, error) {
+	sqlQuery := `
+		SELECT id, name, type, description, visibility,
+			metadata, created_at, updated_at, deleted_at
+		FROM tribes
+		WHERE (name ILIKE $1 OR description ILIKE $1)
+		AND deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+
+	searchPattern := "%" + query + "%"
+	rows, err := r.db.Query(sqlQuery, searchPattern, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("error searching tribes: %w", err)
+	}
+	defer rows.Close()
+
+	var tribes []*models.Tribe
+	for rows.Next() {
+		tribe := &models.Tribe{}
+		err := rows.Scan(
+			&tribe.ID,
+			&tribe.Name,
+			&tribe.Type,
+			&tribe.Description,
+			&tribe.Visibility,
+			&tribe.Metadata,
+			&tribe.CreatedAt,
+			&tribe.UpdatedAt,
+			&tribe.DeletedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning searched tribe: %w", err)
+		}
+
+		// Get tribe members
+		members, err := r.GetMembers(tribe.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error getting tribe members: %w", err)
+		}
+		tribe.Members = members
+
+		tribes = append(tribes, tribe)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating searched tribes: %w", err)
+	}
+
+	return tribes, nil
 }

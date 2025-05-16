@@ -19,11 +19,11 @@ func setupTest() (*gin.Context, *httptest.ResponseRecorder) {
 	return c, w
 }
 
-func TestSuccess(t *testing.T) {
+func TestGinSuccess(t *testing.T) {
 	c, w := setupTest()
 
 	testData := map[string]string{"key": "value"}
-	Success(c, testData)
+	GinSuccess(c, testData)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
@@ -45,11 +45,11 @@ func TestSuccess(t *testing.T) {
 	assert.Equal(t, testData, returnedData)
 }
 
-func TestCreated(t *testing.T) {
+func TestGinCreated(t *testing.T) {
 	c, w := setupTest()
 
 	testData := map[string]string{"key": "value"}
-	Created(c, testData)
+	GinCreated(c, testData)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -62,16 +62,16 @@ func TestCreated(t *testing.T) {
 	assert.Nil(t, response.Error)
 }
 
-func TestNoContent(t *testing.T) {
+func TestGinNoContent(t *testing.T) {
 	c, w := setupTest()
 
-	NoContent(c)
+	GinNoContent(c)
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	assert.Empty(t, w.Body.String())
 }
 
-func TestSendError(t *testing.T) {
+func TestGinError(t *testing.T) {
 	tests := []struct {
 		name       string
 		status     int
@@ -99,7 +99,7 @@ func TestSendError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupTest()
 
-			SendError(c, tt.status, tt.code, tt.message)
+			GinError(c, tt.status, tt.code, tt.message)
 
 			assert.Equal(t, tt.wantStatus, w.Code)
 
@@ -116,11 +116,11 @@ func TestSendError(t *testing.T) {
 	}
 }
 
-func TestBadRequest(t *testing.T) {
+func TestGinBadRequest(t *testing.T) {
 	c, w := setupTest()
 
 	message := "Invalid input"
-	BadRequest(c, message)
+	GinBadRequest(c, message)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -135,11 +135,11 @@ func TestBadRequest(t *testing.T) {
 	assert.Equal(t, message, response.Error.Message)
 }
 
-func TestUnauthorized(t *testing.T) {
+func TestGinUnauthorized(t *testing.T) {
 	c, w := setupTest()
 
 	message := "Not authenticated"
-	Unauthorized(c, message)
+	GinUnauthorized(c, message)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
@@ -154,11 +154,11 @@ func TestUnauthorized(t *testing.T) {
 	assert.Equal(t, message, response.Error.Message)
 }
 
-func TestForbidden(t *testing.T) {
+func TestGinForbidden(t *testing.T) {
 	c, w := setupTest()
 
 	message := "Access denied"
-	Forbidden(c, message)
+	GinForbidden(c, message)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
@@ -173,11 +173,11 @@ func TestForbidden(t *testing.T) {
 	assert.Equal(t, message, response.Error.Message)
 }
 
-func TestNotFound(t *testing.T) {
+func TestGinNotFound(t *testing.T) {
 	c, w := setupTest()
 
 	message := "Resource not found"
-	NotFound(c, message)
+	GinNotFound(c, message)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
@@ -192,21 +192,48 @@ func TestNotFound(t *testing.T) {
 	assert.Equal(t, message, response.Error.Message)
 }
 
-func TestInternalError(t *testing.T) {
+func TestGinInternalError(t *testing.T) {
 	c, w := setupTest()
 
 	err := errors.New("something went wrong")
-	InternalError(c, err)
+	GinInternalError(c, err)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response Response
-	jsonErr := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, jsonErr)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
 
 	assert.False(t, response.Success)
 	assert.Nil(t, response.Data)
 	assert.NotNil(t, response.Error)
 	assert.Equal(t, "INTERNAL_ERROR", response.Error.Code)
 	assert.Equal(t, "An internal error occurred", response.Error.Message)
+}
+
+// Test standard http.ResponseWriter functions
+func TestStandardHTTPFunctions(t *testing.T) {
+	w := httptest.NewRecorder()
+	data := map[string]string{"key": "value"}
+
+	// Test JSON function
+	JSON(w, http.StatusOK, data)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+
+	// Reset recorder
+	w = httptest.NewRecorder()
+
+	// Test Error function
+	Error(w, http.StatusBadRequest, "test error")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+
+	// Reset recorder
+	w = httptest.NewRecorder()
+
+	// Test NoContent function
+	NoContent(w)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Empty(t, w.Body.String())
 }

@@ -16,14 +16,6 @@ const (
 	ActivityTypeActivity ActivityType = "activity"
 )
 
-// VisibilityType represents the visibility level of an activity
-type VisibilityType string
-
-const (
-	VisibilityPrivate VisibilityType = "private"
-	VisibilityPublic  VisibilityType = "public"
-)
-
 // Activity represents any type of activity, interest, location, or list
 type Activity struct {
 	ID          uuid.UUID      `json:"id" db:"id"`
@@ -41,7 +33,7 @@ type Activity struct {
 type ActivityOwner struct {
 	ActivityID uuid.UUID  `json:"activity_id" db:"activity_id"`
 	OwnerID    uuid.UUID  `json:"owner_id" db:"owner_id"`
-	OwnerType  string     `json:"owner_type" db:"owner_type"` // "user" or "tribe"
+	OwnerType  OwnerType  `json:"owner_type" db:"owner_type"`
 	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
 	DeletedAt  *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 }
@@ -65,7 +57,7 @@ type ActivityRepository interface {
 	List(offset, limit int) ([]*Activity, error)
 
 	// Owner management
-	AddOwner(activityID, ownerID uuid.UUID, ownerType string) error
+	AddOwner(activityID, ownerID uuid.UUID, ownerType OwnerType) error
 	RemoveOwner(activityID, ownerID uuid.UUID) error
 	GetOwners(activityID uuid.UUID) ([]*ActivityOwner, error)
 	GetUserActivities(userID uuid.UUID) ([]*Activity, error)

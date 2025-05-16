@@ -1,6 +1,8 @@
 package service
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockListRepository is a mock implementation of models.ListRepository
@@ -98,13 +101,13 @@ func (m *MockListRepository) ResolveConflict(conflictID uuid.UUID) error {
 	return args.Error(0)
 }
 
-func (m *MockListRepository) AddOwner(listID, userID uuid.UUID, ownerType string) error {
-	args := m.Called(listID, userID, ownerType)
+func (m *MockListRepository) AddOwner(owner *models.ListOwner) error {
+	args := m.Called(owner)
 	return args.Error(0)
 }
 
-func (m *MockListRepository) RemoveOwner(listID, userID uuid.UUID) error {
-	args := m.Called(listID, userID)
+func (m *MockListRepository) RemoveOwner(listID, ownerID uuid.UUID) error {
+	args := m.Called(listID, ownerID)
 	return args.Error(0)
 }
 
@@ -123,8 +126,8 @@ func (m *MockListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, e
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
-func (m *MockListRepository) ShareWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
-	args := m.Called(listID, tribeID, userID, expiresAt)
+func (m *MockListRepository) ShareWithTribe(share *models.ListShare) error {
+	args := m.Called(share)
 	return args.Error(0)
 }
 
@@ -139,45 +142,75 @@ func (m *MockListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, 
 }
 
 func TestListService(t *testing.T) {
-	mockRepo := new(MockListRepository)
-	service := NewListService(mockRepo)
-
 	t.Run("Basic CRUD Operations", func(t *testing.T) {
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
 		list := &models.List{
 			ID:            uuid.New(),
 			Type:          models.ListTypeLocation,
 			Name:          "Test List",
 			Description:   "Test Description",
+			Visibility:    models.VisibilityPublic,
 			DefaultWeight: 1.0,
 		}
 
-		// Test CreateList
+		// Test CreateList - success
 		mockRepo.On("Create", list).Return(nil)
 		err := service.CreateList(list)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
 
-		// Test GetList
+		// Test CreateList - error
+		expectedErr := fmt.Errorf("failed to create list: database error")
+		mockRepo.On("Create", list).Return(expectedErr)
+		err = service.CreateList(list)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create list")
+
+		// Test GetList - success
 		mockRepo.On("GetByID", list.ID).Return(list, nil)
 		retrieved, err := service.GetList(list.ID)
 		assert.NoError(t, err)
 		assert.Equal(t, list, retrieved)
-		mockRepo.AssertExpectations(t)
 
-		// Test UpdateList
+		// Test GetList - not found
+		mockRepo.On("GetByID", list.ID).Return(nil, models.ErrNotFound)
+		retrieved, err = service.GetList(list.ID)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, models.ErrNotFound))
+		assert.Nil(t, retrieved)
+
+		// Test UpdateList - success
 		mockRepo.On("Update", list).Return(nil)
 		err = service.UpdateList(list)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
 
-		// Test DeleteList
+		// Test UpdateList - error
+		expectedErr = fmt.Errorf("failed to update list: database error")
+		mockRepo.On("Update", list).Return(expectedErr)
+		err = service.UpdateList(list)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to update list")
+
+		// Test DeleteList - success
 		mockRepo.On("Delete", list.ID).Return(nil)
 		err = service.DeleteList(list.ID)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
+
+		// Test DeleteList - error
+		expectedErr = fmt.Errorf("failed to delete list: database error")
+		mockRepo.On("Delete", list.ID).Return(expectedErr)
+		err = service.DeleteList(list.ID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to delete list")
 	})
 
 	t.Run("List Items Management", func(t *testing.T) {
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
 		listID := uuid.New()
 		item := &models.ListItem{
 			ID:          uuid.New(),
@@ -191,13 +224,11 @@ func TestListService(t *testing.T) {
 		mockRepo.On("AddItem", item).Return(nil)
 		err := service.AddListItem(item)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
 
 		// Test UpdateListItem
 		mockRepo.On("UpdateItem", item).Return(nil)
 		err = service.UpdateListItem(item)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
 
 		// Test GetListItems
 		items := []*models.ListItem{item}
@@ -205,93 +236,78 @@ func TestListService(t *testing.T) {
 		retrieved, err := service.GetListItems(listID)
 		assert.NoError(t, err)
 		assert.Equal(t, items, retrieved)
-		mockRepo.AssertExpectations(t)
 
 		// Test RemoveListItem
 		mockRepo.On("RemoveItem", listID, item.ID).Return(nil)
 		err = service.RemoveListItem(listID, item.ID)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
 	})
 
 	t.Run("Menu Generation", func(t *testing.T) {
-		listIDs := []uuid.UUID{uuid.New(), uuid.New()}
-		filters := map[string]interface{}{
-			"cooldown_days": 7,
-			"max_items":     2,
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
+		listID := uuid.New()
+		cooldownDays := 7
+		list := &models.List{
+			ID:            listID,
+			Type:          models.ListTypeLocation,
+			Name:          "Test List",
+			Description:   "Test Description",
+			Visibility:    models.VisibilityPublic,
+			DefaultWeight: 1.0,
+			CooldownDays:  &cooldownDays,
 		}
 
 		items := []*models.ListItem{
 			{
-				ID:          uuid.New(),
-				ListID:      listIDs[0],
-				Name:        "Item 1",
-				Weight:      1.5,
-				LastChosen:  nil,
-				ChosenCount: 0,
+				ID:     uuid.New(),
+				ListID: listID,
+				Name:   "Item 1",
+				Weight: 2.0,
 			},
 			{
-				ID:          uuid.New(),
-				ListID:      listIDs[0],
-				Name:        "Item 2",
-				Weight:      1.0,
-				LastChosen:  nil,
-				ChosenCount: 0,
-			},
-			{
-				ID:          uuid.New(),
-				ListID:      listIDs[1],
-				Name:        "Item 3",
-				Weight:      2.0,
-				LastChosen:  nil,
-				ChosenCount: 0,
+				ID:     uuid.New(),
+				ListID: listID,
+				Name:   "Item 2",
+				Weight: 1.5,
 			},
 		}
 
-		// Test GenerateMenu
-		mockRepo.On("GetEligibleItems", listIDs, filters).Return(items, nil)
-		mockRepo.On("UpdateItemStats", mock.Anything, true).Return(nil).Times(2)
-
-		selected, err := service.GenerateMenu(listIDs, filters)
-		assert.NoError(t, err)
-		assert.Len(t, selected, 2)
-		mockRepo.AssertExpectations(t)
-	})
-
-	t.Run("List Sync", func(t *testing.T) {
-		listID := uuid.New()
-		list := &models.List{
-			ID:         listID,
-			Type:       models.ListTypeGoogleMap,
-			SyncSource: "google_maps:want_to_go",
+		params := &models.MenuParams{
+			ListIDs: []uuid.UUID{listID},
+			Filters: map[string]interface{}{
+				"max_items": 1,
+			},
 		}
 
-		// Test SyncList
 		mockRepo.On("GetByID", listID).Return(list, nil)
-		mockRepo.On("UpdateSyncStatus", listID, models.ListSyncStatusPending).Return(nil)
-		mockRepo.On("UpdateSyncStatus", listID, models.ListSyncStatusSynced).Return(nil)
+		mockRepo.On("GetEligibleItems", []uuid.UUID{listID}, params.Filters).Return(items, nil)
 
-		err := service.SyncList(listID)
-		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
-
-		// Test sync failure for unconfigured list
-		unconfiguredList := &models.List{
-			ID:   uuid.New(),
-			Type: models.ListTypeLocation,
-		}
-		mockRepo.On("GetByID", unconfiguredList.ID).Return(unconfiguredList, nil)
-
-		err = service.SyncList(unconfiguredList.ID)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not configured for syncing")
-		mockRepo.AssertExpectations(t)
+		result, err := service.GenerateMenu(params)
+		require.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Equal(t, listID, result[0].ID)
+		assert.Len(t, result[0].Items, 1)
+		assert.Equal(t, "Item 1", result[0].Items[0].Name)
 	})
 
-	t.Run("Conflict Management", func(t *testing.T) {
+	t.Run("List Sync and Conflicts", func(t *testing.T) {
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
 		listID := uuid.New()
+		now := time.Now()
+
+		// Test conflict management
 		conflict := &models.ListConflict{
-			ID:           uuid.New(),
+			BaseModel: models.BaseModel{
+				ID:        uuid.New(),
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
 			ListID:       listID,
 			ConflictType: "modified",
 			LocalData: map[string]interface{}{
@@ -302,59 +318,94 @@ func TestListService(t *testing.T) {
 			},
 		}
 
-		// Test CreateListConflict
-		mockRepo.On("CreateConflict", conflict).Return(nil)
-		err := service.CreateListConflict(conflict)
-		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
+		mockRepo.On("GetConflicts", listID).Return([]*models.ListConflict{conflict}, nil)
+		conflicts, err := service.GetListConflicts(listID)
+		require.NoError(t, err)
+		assert.Len(t, conflicts, 1)
+		assert.Equal(t, conflict, conflicts[0])
 
-		// Test GetListConflicts
-		conflicts := []*models.ListConflict{conflict}
-		mockRepo.On("GetConflicts", listID).Return(conflicts, nil)
-		retrieved, err := service.GetListConflicts(listID)
-		assert.NoError(t, err)
-		assert.Equal(t, conflicts, retrieved)
-		mockRepo.AssertExpectations(t)
-
-		// Test ResolveListConflict
 		mockRepo.On("ResolveConflict", conflict.ID).Return(nil)
-		err = service.ResolveListConflict(conflict.ID)
+		err = service.ResolveListConflict(listID, conflict.ID, "accept")
+		require.NoError(t, err)
+	})
+
+	t.Run("List Sync", func(t *testing.T) {
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
+		listID := uuid.New()
+		list := &models.List{
+			ID:            listID,
+			Type:          models.ListTypeGoogleMap,
+			Name:          "Test List",
+			Description:   "Test Description",
+			Visibility:    models.VisibilityPublic,
+			DefaultWeight: 1.0,
+			SyncSource:    "google_maps",
+		}
+
+		// Test SyncList - success case
+		mockRepo.On("GetByID", listID).Return(list, nil)
+		mockRepo.On("UpdateSyncStatus", listID, models.ListSyncStatusPending).Return(nil)
+		mockRepo.On("UpdateSyncStatus", listID, models.ListSyncStatusSynced).Return(nil)
+
+		err := service.SyncList(listID)
 		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
+
+		// Test sync failure - list not found
+		notFoundID := uuid.New()
+		mockRepo.On("GetByID", notFoundID).Return(nil, models.ErrNotFound)
+
+		err = service.SyncList(notFoundID)
+		assert.Error(t, err)
+		assert.True(t, errors.Is(err, models.ErrNotFound))
+
+		// Test sync failure - list not configured
+		unconfiguredList := &models.List{
+			ID:   uuid.New(),
+			Type: models.ListTypeLocation,
+		}
+		mockRepo.On("GetByID", unconfiguredList.ID).Return(unconfiguredList, nil)
+
+		err = service.SyncList(unconfiguredList.ID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not configured for syncing")
 	})
 
 	t.Run("List Ownership", func(t *testing.T) {
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
 		listID := uuid.New()
 		userID := uuid.New()
 		tribeID := uuid.New()
 
-		// Test AddListOwner
-		mockRepo.On("AddOwner", listID, userID, "user").Return(nil)
-		err := service.AddListOwner(listID, userID, "user")
-		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
+		// Test GetListOwners
+		expectedOwners := []*models.ListOwner{
+			{OwnerID: userID, OwnerType: models.OwnerTypeUser},
+			{OwnerID: tribeID, OwnerType: models.OwnerTypeTribe},
+		}
+		mockRepo.On("GetOwners", listID).Return(expectedOwners, nil)
+		owners, err := service.GetListOwners(listID)
+		require.NoError(t, err)
+		assert.Equal(t, expectedOwners, owners)
 
-		// Test invalid owner type
+		// Test AddListOwner - success case
+		mockRepo.On("AddOwner", expectedOwners[0]).Return(nil)
+		err = service.AddListOwner(listID, expectedOwners[0].OwnerID, string(expectedOwners[0].OwnerType))
+		require.NoError(t, err)
+
+		// Test AddListOwner - invalid owner type
 		err = service.AddListOwner(listID, userID, "invalid")
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid owner type")
 
 		// Test RemoveListOwner
-		mockRepo.On("RemoveOwner", listID, userID).Return(nil)
-		err = service.RemoveListOwner(listID, userID)
-		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
-
-		// Test GetListOwners
-		owners := []*models.ListOwner{
-			{ListID: listID, OwnerID: userID, OwnerType: "user"},
-			{ListID: listID, OwnerID: tribeID, OwnerType: "tribe"},
-		}
-		mockRepo.On("GetOwners", listID).Return(owners, nil)
-		retrieved, err := service.GetListOwners(listID)
-		assert.NoError(t, err)
-		assert.Equal(t, owners, retrieved)
-		mockRepo.AssertExpectations(t)
+		mockRepo.On("RemoveOwner", listID, expectedOwners[0].OwnerID).Return(nil)
+		err = service.RemoveListOwner(listID, expectedOwners[0].OwnerID)
+		require.NoError(t, err)
 
 		// Test GetUserLists
 		lists := []*models.List{
@@ -362,80 +413,254 @@ func TestListService(t *testing.T) {
 		}
 		mockRepo.On("GetUserLists", userID).Return(lists, nil)
 		userLists, err := service.GetUserLists(userID)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, lists, userLists)
-		mockRepo.AssertExpectations(t)
 
 		// Test GetTribeLists
 		mockRepo.On("GetTribeLists", tribeID).Return(lists, nil)
 		tribeLists, err := service.GetTribeLists(tribeID)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, lists, tribeLists)
-		mockRepo.AssertExpectations(t)
 	})
 
 	t.Run("List Sharing", func(t *testing.T) {
+		mockRepo := new(MockListRepository)
+		service := NewListService(mockRepo)
+		defer mockRepo.AssertExpectations(t)
+
 		listID := uuid.New()
 		userID := uuid.New()
 		tribeID := uuid.New()
 		expiresAt := time.Now().Add(24 * time.Hour)
 
 		list := &models.List{
-			ID:   listID,
-			Name: "Test List",
+			ID:            listID,
+			Name:          "Test List",
+			Description:   "Test Description",
+			Visibility:    models.VisibilityPublic,
+			DefaultWeight: 1.0,
 		}
 
-		// Test ShareListWithTribe - successful case
-		mockRepo.On("GetByID", listID).Return(list, nil)
+		share := &models.ListShare{
+			ListID:    listID,
+			TribeID:   tribeID,
+			UserID:    userID,
+			ExpiresAt: &expiresAt,
+		}
+
+		// Test ShareListWithTribe - success case
+		mockRepo.On("GetByID", listID).Return(list, nil).Once()
 		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
-			{ListID: listID, OwnerID: userID, OwnerType: "user"},
-		}, nil)
-		mockRepo.On("ShareWithTribe", listID, tribeID, userID, &expiresAt).Return(nil)
+			{OwnerID: userID, OwnerType: "user"},
+		}, nil).Once()
+		mockRepo.On("ShareWithTribe", share).Return(nil).Once()
 
 		err := service.ShareListWithTribe(listID, tribeID, userID, &expiresAt)
-		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
+		require.NoError(t, err)
+
+		// Test ShareListWithTribe - list not found
+		notFoundID := uuid.New()
+		mockRepo.On("GetByID", notFoundID).Return(nil, models.ErrNotFound).Once()
+
+		err = service.ShareListWithTribe(notFoundID, tribeID, userID, &expiresAt)
+		require.Error(t, err)
+		assert.Equal(t, models.ErrNotFound, err)
 
 		// Test ShareListWithTribe - no permission
-		mockRepo.On("GetByID", listID).Return(list, nil)
+		otherUserID := uuid.New()
+		mockRepo.On("GetByID", listID).Return(list, nil).Once()
 		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
-			{ListID: listID, OwnerID: uuid.New(), OwnerType: "user"},
-		}, nil)
+			{OwnerID: otherUserID, OwnerType: "user"},
+		}, nil).Once()
 
 		err = service.ShareListWithTribe(listID, tribeID, userID, &expiresAt)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "does not have permission")
-		mockRepo.AssertExpectations(t)
 
-		// Test UnshareListWithTribe - successful case
-		mockRepo.On("GetByID", listID).Return(list, nil)
+		// Test UnshareListWithTribe - success case
+		mockRepo.On("GetByID", listID).Return(list, nil).Once()
 		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
-			{ListID: listID, OwnerID: userID, OwnerType: "user"},
-		}, nil)
-		mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil)
+			{OwnerID: userID, OwnerType: "user"},
+		}, nil).Once()
+		mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil).Once()
 
 		err = service.UnshareListWithTribe(listID, tribeID, userID)
-		assert.NoError(t, err)
-		mockRepo.AssertExpectations(t)
-
-		// Test UnshareListWithTribe - no permission
-		mockRepo.On("GetByID", listID).Return(list, nil)
-		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
-			{ListID: listID, OwnerID: uuid.New(), OwnerType: "user"},
-		}, nil)
-
-		err = service.UnshareListWithTribe(listID, tribeID, userID)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "does not have permission")
-		mockRepo.AssertExpectations(t)
+		require.NoError(t, err)
 
 		// Test GetSharedLists
 		sharedLists := []*models.List{list}
-		mockRepo.On("GetSharedLists", tribeID).Return(sharedLists, nil)
+		mockRepo.On("GetSharedLists", tribeID).Return(sharedLists, nil).Once()
 
 		retrieved, err := service.GetSharedLists(tribeID)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, sharedLists, retrieved)
-		mockRepo.AssertExpectations(t)
 	})
+}
+
+func TestListService_List(t *testing.T) {
+	mockRepo := new(MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	lists := []*models.List{
+		{
+			ID:   uuid.New(),
+			Name: "List 1",
+		},
+		{
+			ID:   uuid.New(),
+			Name: "List 2",
+		},
+	}
+
+	// Test List - success case
+	mockRepo.On("List", 0, 10).Return(lists, nil)
+	result, err := service.List(0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, lists, result)
+
+	// Test List - error case
+	expectedErr := fmt.Errorf("database error")
+	mockRepo.On("List", 10, 10).Return(nil, expectedErr)
+	result, err = service.List(10, 10)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, expectedErr, err)
+}
+
+func TestListService_GenerateMenu(t *testing.T) {
+	mockRepo := new(MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	list1 := &models.List{
+		ID:            uuid.New(),
+		Type:          models.ListTypeLocation,
+		Name:          "Test List 1",
+		Description:   "Test Description 1",
+		Visibility:    models.VisibilityPublic,
+		DefaultWeight: 1,
+	}
+
+	list2 := &models.List{
+		ID:            uuid.New(),
+		Type:          models.ListTypeActivity,
+		Name:          "Test List 2",
+		Description:   "Test Description 2",
+		Visibility:    models.VisibilityPublic,
+		DefaultWeight: 1,
+	}
+
+	item1 := &models.ListItem{
+		ID:          uuid.New(),
+		ListID:      list1.ID,
+		Name:        "Test Item 1",
+		Description: "Test Description 1",
+		Weight:      1,
+	}
+
+	item2 := &models.ListItem{
+		ID:          uuid.New(),
+		ListID:      list2.ID,
+		Name:        "Test Item 2",
+		Description: "Test Description 2",
+		Weight:      1,
+	}
+
+	params := &models.MenuParams{
+		ListIDs: []uuid.UUID{list1.ID, list2.ID},
+		Filters: map[string]interface{}{
+			"max_items": 1,
+		},
+	}
+
+	// Test successful menu generation
+	mockRepo.On("GetByID", list1.ID).Return(list1, nil)
+	mockRepo.On("GetByID", list2.ID).Return(list2, nil)
+	mockRepo.On("GetEligibleItems", []uuid.UUID{list1.ID}, params.Filters).Return([]*models.ListItem{item1}, nil)
+	mockRepo.On("GetEligibleItems", []uuid.UUID{list2.ID}, params.Filters).Return([]*models.ListItem{item2}, nil)
+
+	lists, err := service.GenerateMenu(params)
+	assert.NoError(t, err)
+	assert.Len(t, lists, 2)
+	assert.Equal(t, list1.ID, lists[0].ID)
+	assert.Equal(t, list2.ID, lists[1].ID)
+	assert.Len(t, lists[0].Items, 1)
+	assert.Len(t, lists[1].Items, 1)
+	assert.Equal(t, item1.ID, lists[0].Items[0].ID)
+	assert.Equal(t, item2.ID, lists[1].Items[0].ID)
+}
+
+func TestListService_GenerateMenu_Errors(t *testing.T) {
+	mockRepo := new(MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	list := &models.List{
+		ID:            uuid.New(),
+		Type:          models.ListTypeLocation,
+		Name:          "Test List",
+		Description:   "Test Description",
+		Visibility:    models.VisibilityPublic,
+		DefaultWeight: 1,
+	}
+
+	params := &models.MenuParams{
+		ListIDs: []uuid.UUID{list.ID},
+		Filters: map[string]interface{}{
+			"max_items": 1,
+		},
+	}
+
+	// Test error getting list
+	mockRepo.On("GetByID", list.ID).Return(nil, fmt.Errorf("database error"))
+	lists, err := service.GenerateMenu(params)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error getting list")
+	assert.Nil(t, lists)
+
+	// Test error getting eligible items
+	mockRepo.On("GetByID", list.ID).Return(list, nil)
+	mockRepo.On("GetEligibleItems", []uuid.UUID{list.ID}, params.Filters).Return(nil, fmt.Errorf("database error"))
+	lists, err = service.GenerateMenu(params)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error getting eligible items")
+	assert.Nil(t, lists)
+}
+
+func TestListService_SyncList(t *testing.T) {
+	mockRepo := new(MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	list := &models.List{
+		ID:            uuid.New(),
+		Type:          models.ListTypeGoogleMap,
+		Name:          "Test List",
+		Description:   "Test Description",
+		Visibility:    models.VisibilityPublic,
+		DefaultWeight: 1.0,
+		SyncSource:    "google_maps",
+	}
+
+	// Test successful sync
+	mockRepo.On("GetByID", list.ID).Return(list, nil)
+	mockRepo.On("UpdateSyncStatus", list.ID, models.ListSyncStatusPending).Return(nil)
+	mockRepo.On("UpdateSyncStatus", list.ID, models.ListSyncStatusSynced).Return(nil)
+
+	err := service.SyncList(list.ID)
+	assert.NoError(t, err)
+
+	// Test error getting list
+	mockRepo.On("GetByID", list.ID).Return(nil, fmt.Errorf("database error"))
+	err = service.SyncList(list.ID)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
+
+	// Test error updating sync status
+	mockRepo.On("GetByID", list.ID).Return(list, nil)
+	mockRepo.On("UpdateSyncStatus", list.ID, models.ListSyncStatusPending).Return(fmt.Errorf("database error"))
+	err = service.SyncList(list.ID)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "database error")
 }

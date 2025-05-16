@@ -16,6 +16,7 @@ type ListService interface {
 	GetList(id uuid.UUID) (*models.List, error)
 	UpdateList(list *models.List) error
 	DeleteList(id uuid.UUID) error
+	List(offset, limit int) ([]*models.List, error)
 
 	// List items
 	AddListItem(item *models.ListItem) error
@@ -74,8 +75,8 @@ func (s *listService) DeleteList(id uuid.UUID) error {
 	return s.repo.Delete(id)
 }
 
-// ListLists retrieves a paginated list of lists
-func (s *listService) ListLists(offset, limit int) ([]*models.List, error) {
+// List retrieves a paginated list of lists
+func (s *listService) List(offset, limit int) ([]*models.List, error) {
 	return s.repo.List(offset, limit)
 }
 
@@ -166,7 +167,7 @@ func (s *listService) SyncList(listID uuid.UUID) error {
 
 	// Check if list is configured for syncing
 	if list.SyncSource == "" {
-		return fmt.Errorf("list %v is not configured for syncing", listID)
+		return models.ErrInvalidInput
 	}
 
 	// Update sync status to pending
@@ -198,12 +199,19 @@ func (s *listService) CreateListConflict(conflict *models.ListConflict) error {
 
 // AddListOwner adds an owner to a list
 func (s *listService) AddListOwner(listID, ownerID uuid.UUID, ownerType string) error {
-	// Validate owner type
-	if ownerType != "user" && ownerType != "tribe" {
-		return fmt.Errorf("invalid owner type: %s", ownerType)
+	owner := &models.ListOwner{
+		ListID:    listID,
+		OwnerID:   ownerID,
+		OwnerType: models.OwnerType(ownerType),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
-	return s.repo.AddOwner(listID, ownerID, ownerType)
+	if err := owner.Validate(); err != nil {
+		return fmt.Errorf("invalid owner: %w", err)
+	}
+
+	return s.repo.AddOwner(owner)
 }
 
 // RemoveListOwner removes an owner from a list
@@ -228,36 +236,15 @@ func (s *listService) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
 
 // ShareListWithTribe shares a list with a tribe
 func (s *listService) ShareListWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
-	// Verify list exists and is accessible to the user
-	_, err := s.repo.GetByID(listID)
-	if err != nil {
-		return fmt.Errorf("error getting list: %w", err)
+	share := &models.ListShare{
+		ListID:    listID,
+		TribeID:   tribeID,
+		UserID:    userID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		ExpiresAt: expiresAt,
 	}
-
-	// Check if user has permission to share the list
-	owners, err := s.repo.GetOwners(listID)
-	if err != nil {
-		return fmt.Errorf("error getting list owners: %w", err)
-	}
-
-	hasPermission := false
-	for _, owner := range owners {
-		if owner.OwnerType == "user" && owner.OwnerID == userID {
-			hasPermission = true
-			break
-		}
-		if owner.OwnerType == "tribe" && owner.OwnerID == tribeID {
-			hasPermission = true
-			break
-		}
-	}
-
-	if !hasPermission {
-		return fmt.Errorf("user does not have permission to share this list")
-	}
-
-	// Share the list
-	return s.repo.ShareWithTribe(listID, tribeID, userID, expiresAt)
+	return s.repo.ShareWithTribe(share)
 }
 
 // UnshareListWithTribe removes a list share from a tribe
@@ -265,7 +252,7 @@ func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) er
 	// Verify list exists and is accessible to the user
 	_, err := s.repo.GetByID(listID)
 	if err != nil {
-		return fmt.Errorf("error getting list: %w", err)
+		return err
 	}
 
 	// Check if user has permission to unshare the list
@@ -280,14 +267,10 @@ func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) er
 			hasPermission = true
 			break
 		}
-		if owner.OwnerType == "tribe" && owner.OwnerID == tribeID {
-			hasPermission = true
-			break
-		}
 	}
 
 	if !hasPermission {
-		return fmt.Errorf("user does not have permission to unshare this list")
+		return models.ErrForbidden
 	}
 
 	// Unshare the list

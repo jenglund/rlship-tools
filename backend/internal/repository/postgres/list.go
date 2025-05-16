@@ -66,10 +66,10 @@ func (r *listRepository) GetByID(id uuid.UUID) (*models.List, error) {
 		&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
 	)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("list not found: %v", id)
+		return nil, models.ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting list: %w", err)
 	}
 
 	// Load items
@@ -453,21 +453,18 @@ func (r *listRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSy
 	return nil
 }
 
-// GetListsBySource retrieves lists by their sync source
+// GetListsBySource retrieves all lists from a specific sync source
 func (r *listRepository) GetListsBySource(source string) ([]*models.List, error) {
 	query := `
-		SELECT 
-			id, type, name, description, visibility,
-			sync_status, sync_source, sync_id, last_sync_at,
-			default_weight, max_items, cooldown_days,
-			created_at, updated_at, deleted_at
-		FROM lists
-		WHERE sync_source = $1 AND deleted_at IS NULL
-		ORDER BY created_at DESC`
+		SELECT DISTINCT l.*
+		FROM lists l
+		WHERE l.sync_source = $1
+		AND l.deleted_at IS NULL
+		ORDER BY l.created_at DESC`
 
 	rows, err := r.db.Query(query, source)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting lists by source: %w", err)
 	}
 	defer rows.Close()
 
@@ -481,9 +478,27 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 			&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
 		)
 		if err != nil {
+			return nil, fmt.Errorf("error scanning list row: %w", err)
+		}
+
+		// Load owners and shares
+		owners, err := r.GetOwners(list.ID)
+		if err != nil {
 			return nil, err
 		}
+		list.Owners = owners
+
+		shares, err := r.getListShares(list.ID)
+		if err != nil {
+			return nil, err
+		}
+		list.Shares = shares
+
 		lists = append(lists, list)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating list rows: %w", err)
 	}
 
 	return lists, nil
@@ -594,12 +609,21 @@ func (r *listRepository) ResolveConflict(conflictID uuid.UUID) error {
 }
 
 // AddOwner adds an owner to a list
-func (r *listRepository) AddOwner(listID, ownerID uuid.UUID, ownerType string) error {
+func (r *listRepository) AddOwner(owner *models.ListOwner) error {
 	query := `
-		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at)
-		VALUES ($1, $2, $3, NOW())`
+		INSERT INTO list_owners (
+			list_id, owner_id, owner_type,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5)`
 
-	_, err := r.db.Exec(query, listID, ownerID, ownerType)
+	now := time.Now()
+	_, err := r.db.Exec(query,
+		owner.ListID,
+		owner.OwnerID,
+		owner.OwnerType,
+		now,
+		now,
+	)
 	if err != nil {
 		return fmt.Errorf("error adding list owner: %w", err)
 	}
@@ -625,7 +649,7 @@ func (r *listRepository) RemoveOwner(listID, ownerID uuid.UUID) error {
 	}
 
 	if rows == 0 {
-		return fmt.Errorf("list owner not found")
+		return models.ErrNotFound
 	}
 
 	return nil
@@ -776,41 +800,47 @@ func (r *listRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error
 }
 
 // ShareWithTribe shares a list with a tribe
-func (r *listRepository) ShareWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
+func (r *listRepository) ShareWithTribe(share *models.ListShare) error {
 	query := `
-		INSERT INTO list_shares (list_id, tribe_id, user_id, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, NOW())`
+		INSERT INTO list_sharing (
+			list_id, shared_with_id, shared_with_type,
+			sharing_type, created_at, updated_at, expires_at
+		) VALUES ($1, $2, 'tribe', 'view', NOW(), NOW(), $3)`
 
-	_, err := r.db.Exec(query, listID, tribeID, userID, expiresAt)
-	if err != nil {
-		return fmt.Errorf("error sharing list: %w", err)
-	}
-
-	return nil
+	_, err := r.db.Exec(query,
+		share.ListID, share.TribeID, share.ExpiresAt)
+	return err
 }
 
-// UnshareWithTribe removes a list share from a tribe
+// UnshareWithTribe removes a tribe's access to a list
 func (r *listRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Remove tribe from owners
 	query := `
-		UPDATE list_shares
-		SET deleted_at = NOW()
-		WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL`
+		DELETE FROM list_owners
+		WHERE list_id = $1 AND owner_id = $2 AND owner_type = 'tribe'`
 
-	result, err := r.db.Exec(query, listID, tribeID)
+	_, err = tx.Exec(query, listID, tribeID)
 	if err != nil {
-		return fmt.Errorf("error unsharing list: %w", err)
+		return fmt.Errorf("error removing tribe from list owners: %w", err)
 	}
 
-	rows, err := result.RowsAffected()
+	// Remove share record
+	query = `
+		DELETE FROM list_shares
+		WHERE list_id = $1 AND tribe_id = $2`
+
+	_, err = tx.Exec(query, listID, tribeID)
 	if err != nil {
-		return fmt.Errorf("error checking rows affected: %w", err)
+		return fmt.Errorf("error removing list share: %w", err)
 	}
 
-	if rows == 0 {
-		return fmt.Errorf("list share not found")
-	}
-
-	return nil
+	return tx.Commit()
 }
 
 // getListShares retrieves all shares for a list (internal helper)

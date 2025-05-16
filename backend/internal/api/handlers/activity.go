@@ -57,7 +57,7 @@ type CreateActivityRequest struct {
 func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 	var req CreateActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 
 	if err := h.repos.Activities.Create(activity); err != nil {
 		fmt.Printf("Error creating activity: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
@@ -82,24 +82,24 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 	firebaseUID := middleware.GetFirebaseUID(c)
 	if firebaseUID == "" {
 		fmt.Printf("Firebase UID not found in context\n")
-		response.InternalError(c, fmt.Errorf("firebase UID not found in context"))
+		response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
 		return
 	}
 
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
 		fmt.Printf("Error getting user by Firebase UID: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
 	if err := h.repos.Activities.AddOwner(activity.ID, user.ID, "user"); err != nil {
 		fmt.Printf("Error adding owner: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Created(c, activity)
+	response.GinCreated(c, activity)
 }
 
 // ListActivities returns a paginated list of activities
@@ -109,28 +109,28 @@ func (h *ActivityHandler) ListActivities(c *gin.Context) {
 
 	activities, err := h.repos.Activities.List(offset, limit)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, activities)
+	response.GinSuccess(c, activities)
 }
 
 // GetActivity returns a single activity by ID
 func (h *ActivityHandler) GetActivity(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	activity, err := h.repos.Activities.GetByID(id)
 	if err != nil {
-		response.NotFound(c, "Activity not found")
+		response.GinNotFound(c, "Activity not found")
 		return
 	}
 
-	response.Success(c, activity)
+	response.GinSuccess(c, activity)
 }
 
 // UpdateActivityRequest represents the update activity request body
@@ -145,19 +145,19 @@ type UpdateActivityRequest struct {
 func (h *ActivityHandler) UpdateActivity(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	var req UpdateActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
 	activity, err := h.repos.Activities.GetByID(id)
 	if err != nil {
-		response.NotFound(c, "Activity not found")
+		response.GinNotFound(c, "Activity not found")
 		return
 	}
 
@@ -175,27 +175,27 @@ func (h *ActivityHandler) UpdateActivity(c *gin.Context) {
 	}
 
 	if err := h.repos.Activities.Update(activity); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, activity)
+	response.GinSuccess(c, activity)
 }
 
 // DeleteActivity removes an activity
 func (h *ActivityHandler) DeleteActivity(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	if err := h.repos.Activities.Delete(id); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // AddOwnerRequest represents the add owner request body
@@ -208,61 +208,61 @@ type AddOwnerRequest struct {
 func (h *ActivityHandler) AddOwner(c *gin.Context) {
 	activityID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	var req AddOwnerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
 	if err := h.repos.Activities.AddOwner(activityID, req.OwnerID, req.OwnerType); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // RemoveOwner removes an owner from an activity
 func (h *ActivityHandler) RemoveOwner(c *gin.Context) {
 	activityID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	ownerID, err := uuid.Parse(c.Param("ownerId"))
 	if err != nil {
-		response.BadRequest(c, "Invalid owner ID")
+		response.GinBadRequest(c, "Invalid owner ID")
 		return
 	}
 
 	if err := h.repos.Activities.RemoveOwner(activityID, ownerID); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // ListOwners returns all owners of an activity
 func (h *ActivityHandler) ListOwners(c *gin.Context) {
 	activityID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	owners, err := h.repos.Activities.GetOwners(activityID)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, owners)
+	response.GinSuccess(c, owners)
 }
 
 // ShareActivityRequest represents the share activity request body
@@ -275,77 +275,77 @@ type ShareActivityRequest struct {
 func (h *ActivityHandler) ShareActivity(c *gin.Context) {
 	activityID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	var req ShareActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
 	// Get the current user's ID from Firebase UID
 	firebaseUID := middleware.GetFirebaseUID(c)
 	if firebaseUID == "" {
-		response.InternalError(c, fmt.Errorf("firebase UID not found in context"))
+		response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
 		return
 	}
 
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
 	if err := h.repos.Activities.ShareWithTribe(activityID, req.TribeID, user.ID, req.ExpiresAt); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // UnshareActivity removes an activity share from a tribe
 func (h *ActivityHandler) UnshareActivity(c *gin.Context) {
 	activityID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid activity ID")
+		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
 	tribeID, err := uuid.Parse(c.Param("tribeId"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	if err := h.repos.Activities.UnshareWithTribe(activityID, tribeID); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // ListSharedActivities returns all activities shared with the user's tribes
 func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 	userID := c.GetString("user_id")
 	if userID == "" {
-		response.InternalError(c, fmt.Errorf("user ID not found in context"))
+		response.GinInternalError(c, fmt.Errorf("user ID not found in context"))
 		return
 	}
 
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
 	// Get user's tribes
 	tribes, err := h.repos.Tribes.GetUserTribes(uid)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
@@ -354,11 +354,11 @@ func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 	for _, tribe := range tribes {
 		activities, err := h.repos.Activities.GetSharedActivities(tribe.ID)
 		if err != nil {
-			response.InternalError(c, err)
+			response.GinInternalError(c, err)
 			return
 		}
 		allSharedActivities = append(allSharedActivities, activities...)
 	}
 
-	response.Success(c, allSharedActivities)
+	response.GinSuccess(c, allSharedActivities)
 }

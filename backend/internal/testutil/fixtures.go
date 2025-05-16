@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jenglund/rlship-tools/internal/models"
 )
 
 // TestUser represents a test user
@@ -25,12 +26,12 @@ type TestTribe struct {
 	Members []TestUser
 }
 
-// TestActivityList represents a test activity list
-type TestActivityList struct {
+// TestList represents a test list
+type TestList struct {
 	ID      uuid.UUID
 	TribeID uuid.UUID
 	Name    string
-	Type    string
+	Type    models.ListType
 }
 
 // CreateTestUser creates a test user in the database
@@ -111,9 +112,9 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO tribes (id, name)
-		VALUES ($1, $2)
-	`, tribe.ID, tribe.Name)
+		INSERT INTO tribes (id, name, type, visibility)
+		VALUES ($1, $2, $3, $4)
+	`, tribe.ID, tribe.Name, models.TribeTypeCouple, models.VisibilityPrivate)
 
 	if err != nil {
 		fmt.Printf("DEBUG: Error creating test tribe: %v\n", err)
@@ -123,9 +124,9 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 	for _, member := range members {
 		fmt.Printf("DEBUG: Adding member to tribe: %+v\n", member)
 		_, err := db.Exec(`
-			INSERT INTO tribe_members (tribe_id, user_id, type)
-			VALUES ($1, $2, 'full')
-		`, tribe.ID, member.ID)
+			INSERT INTO tribe_members (id, tribe_id, user_id, membership_type, display_name)
+			VALUES ($1, $2, $3, $4, $5)
+		`, uuid.New(), tribe.ID, member.ID, models.MembershipFull, member.Name)
 
 		if err != nil {
 			fmt.Printf("DEBUG: Error adding member to tribe: %v\n", err)
@@ -136,33 +137,24 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 	return tribe
 }
 
-// CreateTestActivityList creates a test activity list in the database
-func CreateTestActivityList(t *testing.T, db *sql.DB, tribeID uuid.UUID) TestActivityList {
+// CreateTestList creates a test list in the database
+func CreateTestList(t *testing.T, db *sql.DB, tribeID uuid.UUID) TestList {
 	t.Helper()
 
-	list := TestActivityList{
+	list := TestList{
 		ID:      uuid.New(),
 		TribeID: tribeID,
 		Name:    fmt.Sprintf("Test List %s", uuid.New().String()[:8]),
-		Type:    "list",
+		Type:    models.ListTypeGeneral,
 	}
 
 	_, err := db.Exec(`
-		INSERT INTO activities (id, type, name, description, visibility, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, 'private', NOW(), NOW())
-	`, list.ID, list.Type, list.Name, "Test activity list")
+		INSERT INTO lists (id, type, name, description, visibility, owner_id, owner_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, list.ID, list.Type, list.Name, "Test list", models.VisibilityPrivate, list.TribeID, models.OwnerTypeTribe)
 
 	if err != nil {
-		t.Fatalf("Error creating test activity list: %v", err)
-	}
-
-	_, err = db.Exec(`
-		INSERT INTO activity_owners (activity_id, owner_id, owner_type, created_at)
-		VALUES ($1, $2, 'tribe', NOW())
-	`, list.ID, list.TribeID)
-
-	if err != nil {
-		t.Fatalf("Error adding owner to test activity list: %v", err)
+		t.Fatalf("Error creating test list: %v", err)
 	}
 
 	return list
@@ -173,9 +165,10 @@ func CleanupTestData(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	tables := []string{
-		"activity_shares",
-		"activity_owners",
-		"activities",
+		"list_sharing",
+		"list_conflicts",
+		"list_items",
+		"lists",
 		"tribe_members",
 		"tribes",
 		"users",

@@ -55,7 +55,7 @@ type AuthRequest struct {
 func (h *UserHandler) AuthenticateUser(c *gin.Context) {
 	var req AuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
@@ -73,10 +73,10 @@ func (h *UserHandler) AuthenticateUser(c *gin.Context) {
 		}
 
 		if err := h.repos.GetUserRepository().Create(user); err != nil {
-			response.InternalError(c, err)
+			response.GinInternalError(c, err)
 			return
 		}
-		response.Created(c, user)
+		response.GinCreated(c, user)
 		return
 	}
 
@@ -87,28 +87,28 @@ func (h *UserHandler) AuthenticateUser(c *gin.Context) {
 	user.Provider = models.AuthProvider(req.Provider)
 
 	if err := h.repos.GetUserRepository().Update(user); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, user)
+	response.GinSuccess(c, user)
 }
 
 // GetCurrentUser returns the current authenticated user
 func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		response.Unauthorized(c, "User not authenticated")
+		response.GinUnauthorized(c, "User not authenticated")
 		return
 	}
 
 	user, err := h.repos.GetUserRepository().GetByID(userID.(uuid.UUID))
 	if err != nil {
-		response.NotFound(c, "User not found")
+		response.GinNotFound(c, "User not found")
 		return
 	}
 
-	response.Success(c, user)
+	response.GinSuccess(c, user)
 }
 
 // UpdateUserRequest represents the update user request body
@@ -121,19 +121,19 @@ type UpdateUserRequest struct {
 func (h *UserHandler) UpdateCurrentUser(c *gin.Context) {
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
 	userID, exists := c.Get("user_id")
 	if !exists {
-		response.Unauthorized(c, "User not authenticated")
+		response.GinUnauthorized(c, "User not authenticated")
 		return
 	}
 
 	user, err := h.repos.GetUserRepository().GetByID(userID.(uuid.UUID))
 	if err != nil {
-		response.NotFound(c, "User not found")
+		response.GinNotFound(c, "User not found")
 		return
 	}
 
@@ -146,26 +146,26 @@ func (h *UserHandler) UpdateCurrentUser(c *gin.Context) {
 	}
 
 	if err := h.repos.GetUserRepository().Update(user); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, user)
+	response.GinSuccess(c, user)
 }
 
 // GetUser returns a specific user by ID
 func (h *UserHandler) GetUser(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid user ID")
+		response.GinBadRequest(c, "Invalid user ID")
 		return
 	}
 
 	user, err := h.repos.GetUserRepository().GetByID(id)
 	if err != nil {
-		response.NotFound(c, "User not found")
+		response.GinNotFound(c, "User not found")
 		return
 	}
 
-	response.Success(c, user)
+	response.GinSuccess(c, user)
 }

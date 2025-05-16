@@ -22,8 +22,8 @@ func TestTestingInfrastructure(t *testing.T) {
 		// Create test tribe
 		tribe := CreateTestTribe(t, db, []TestUser{user1, user2})
 
-		// Create test activity list
-		_ = CreateTestActivityList(t, db, tribe.ID)
+		// Create test list
+		_ = CreateTestList(t, db, tribe.ID)
 
 		// Verify data was created
 		var count int
@@ -35,7 +35,7 @@ func TestTestingInfrastructure(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 
-		err = db.QueryRow("SELECT COUNT(*) FROM activities").Scan(&count)
+		err = db.QueryRow("SELECT COUNT(*) FROM lists").Scan(&count)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, count)
 

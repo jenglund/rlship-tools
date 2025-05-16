@@ -49,7 +49,7 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	var req CreateTribeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fmt.Printf("DEBUG: Failed to bind JSON: %v\n", err)
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 
 	if err := h.repos.Tribes.Create(tribe); err != nil {
 		fmt.Printf("DEBUG: Failed to create tribe: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
@@ -70,14 +70,14 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	user, err := h.repos.Users.GetByFirebaseUID(creatorID)
 	if err != nil {
 		fmt.Printf("DEBUG: Failed to get user by Firebase UID: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 	fmt.Printf("DEBUG: Found user: %+v\n", user)
 
 	if err := h.repos.Tribes.AddMember(tribe.ID, user.ID, models.MembershipFull, nil, nil); err != nil {
 		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
@@ -85,11 +85,11 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	tribe, err = h.repos.Tribes.GetByID(tribe.ID)
 	if err != nil {
 		fmt.Printf("DEBUG: Failed to get updated tribe: %v\n", err)
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Created(c, tribe)
+	response.GinCreated(c, tribe)
 }
 
 // ListTribes returns a paginated list of all tribes
@@ -99,11 +99,11 @@ func (h *TribeHandler) ListTribes(c *gin.Context) {
 
 	tribes, err := h.repos.Tribes.List(offset, limit)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, tribes)
+	response.GinSuccess(c, tribes)
 }
 
 // ListMyTribes returns all tribes that the current user is a member of
@@ -111,34 +111,34 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 	firebaseUID := middleware.GetFirebaseUID(c)
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
-		response.NotFound(c, "User not found")
+		response.GinNotFound(c, "User not found")
 		return
 	}
 
 	tribes, err := h.repos.Tribes.GetUserTribes(user.ID)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, tribes)
+	response.GinSuccess(c, tribes)
 }
 
 // GetTribe returns a specific tribe by ID
 func (h *TribeHandler) GetTribe(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	tribe, err := h.repos.Tribes.GetByID(id)
 	if err != nil {
-		response.NotFound(c, "Tribe not found")
+		response.GinNotFound(c, "Tribe not found")
 		return
 	}
 
-	response.Success(c, tribe)
+	response.GinSuccess(c, tribe)
 }
 
 // UpdateTribeRequest represents the update tribe request body
@@ -150,45 +150,45 @@ type UpdateTribeRequest struct {
 func (h *TribeHandler) UpdateTribe(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	var req UpdateTribeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
 	tribe, err := h.repos.Tribes.GetByID(id)
 	if err != nil {
-		response.NotFound(c, "Tribe not found")
+		response.GinNotFound(c, "Tribe not found")
 		return
 	}
 
 	tribe.Name = req.Name
 	if err := h.repos.Tribes.Update(tribe); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, tribe)
+	response.GinSuccess(c, tribe)
 }
 
 // DeleteTribe removes a tribe and all its associations
 func (h *TribeHandler) DeleteTribe(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	if err := h.repos.Tribes.Delete(id); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // AddMemberRequest represents the add member request body
@@ -200,13 +200,13 @@ type AddMemberRequest struct {
 func (h *TribeHandler) AddMember(c *gin.Context) {
 	tribeID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	var req AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
 
@@ -221,48 +221,48 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 	}
 
 	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipFull, nil, inviter); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // RemoveMember removes a user from a tribe
 func (h *TribeHandler) RemoveMember(c *gin.Context) {
 	tribeID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	userID, err := uuid.Parse(c.Param("userId"))
 	if err != nil {
-		response.BadRequest(c, "Invalid user ID")
+		response.GinBadRequest(c, "Invalid user ID")
 		return
 	}
 
 	if err := h.repos.Tribes.RemoveMember(tribeID, userID); err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.NoContent(c)
+	response.GinNoContent(c)
 }
 
 // ListMembers returns all members of a tribe
 func (h *TribeHandler) ListMembers(c *gin.Context) {
 	tribeID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		response.BadRequest(c, "Invalid tribe ID")
+		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	members, err := h.repos.Tribes.GetMembers(tribeID)
 	if err != nil {
-		response.InternalError(c, err)
+		response.GinInternalError(c, err)
 		return
 	}
 
-	response.Success(c, members)
+	response.GinSuccess(c, members)
 }

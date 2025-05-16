@@ -113,6 +113,8 @@ type MockTribeRepository struct {
 	GetMembersFunc                 func(tribeID uuid.UUID) ([]*models.TribeMember, error)
 	GetUserTribesFunc              func(userID uuid.UUID) ([]*models.Tribe, error)
 	GetExpiredGuestMembershipsFunc func() ([]*models.TribeMember, error)
+	GetByTypeFunc                  func(tribeType models.TribeType, offset, limit int) ([]*models.Tribe, error)
+	SearchFunc                     func(query string, offset, limit int) ([]*models.Tribe, error)
 }
 
 // NewMockTribeRepository creates a new mock tribe repository
@@ -193,6 +195,20 @@ func (m *MockTribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, 
 func (m *MockTribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, error) {
 	if m.GetExpiredGuestMembershipsFunc != nil {
 		return m.GetExpiredGuestMembershipsFunc()
+	}
+	return nil, nil
+}
+
+func (m *MockTribeRepository) GetByType(tribeType models.TribeType, offset, limit int) ([]*models.Tribe, error) {
+	if m.GetByTypeFunc != nil {
+		return m.GetByTypeFunc(tribeType, offset, limit)
+	}
+	return nil, nil
+}
+
+func (m *MockTribeRepository) Search(query string, offset, limit int) ([]*models.Tribe, error) {
+	if m.SearchFunc != nil {
+		return m.SearchFunc(query, offset, limit)
 	}
 	return nil, nil
 }

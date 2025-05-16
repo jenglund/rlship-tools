@@ -1,1 +1,0 @@
--- Nothing to do in down migration since we only added missing columns conditionally 

@@ -1,42 +1,122 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// MembershipType represents the type of tribe membership
+// TribeType represents the type of tribe
+type TribeType string
+
+const (
+	TribeTypeCouple    TribeType = "couple"    // Two-person romantic relationship
+	TribeTypePolyCule  TribeType = "polycule"  // Polyamorous relationship group
+	TribeTypeFriends   TribeType = "friends"   // Friend group
+	TribeTypeFamily    TribeType = "family"    // Family group
+	TribeTypeRoommates TribeType = "roommates" // Roommate group
+	TribeTypeCoworkers TribeType = "coworkers" // Work team or group
+	TribeTypeCustom    TribeType = "custom"    // Custom group type
+)
+
+func (t TribeType) Validate() error {
+	switch t {
+	case TribeTypeCouple, TribeTypePolyCule, TribeTypeFriends, TribeTypeFamily,
+		TribeTypeRoommates, TribeTypeCoworkers, TribeTypeCustom:
+		return nil
+	default:
+		return fmt.Errorf("invalid tribe type: %s", t)
+	}
+}
+
+// MembershipType represents the type of membership in a tribe
 type MembershipType string
 
 const (
-	MembershipFull  MembershipType = "full"
-	MembershipGuest MembershipType = "guest"
+	MembershipFull    MembershipType = "full"    // Full member with all privileges
+	MembershipLimited MembershipType = "limited" // Limited access member
+	MembershipGuest   MembershipType = "guest"   // Temporary guest access
 )
 
-// Tribe represents a group of users who share activities and interests
+func (m MembershipType) Validate() error {
+	switch m {
+	case MembershipFull, MembershipLimited, MembershipGuest:
+		return nil
+	default:
+		return fmt.Errorf("invalid membership type: %s", m)
+	}
+}
+
+// Tribe represents a group of users who share activities and plans
 type Tribe struct {
-	ID        uuid.UUID      `json:"id" db:"id"`
-	Name      string         `json:"name" db:"name"`
-	CreatedAt time.Time      `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at" db:"updated_at"`
-	DeletedAt *time.Time     `json:"deleted_at,omitempty" db:"deleted_at"`
-	Members   []*TribeMember `json:"members,omitempty" db:"-"`
+	BaseModel
+	Name        string         `json:"name" db:"name"`
+	Type        TribeType      `json:"type" db:"type"`
+	Description string         `json:"description" db:"description"`
+	Visibility  VisibilityType `json:"visibility" db:"visibility"`
+	Metadata    JSONMap        `json:"metadata,omitempty" db:"metadata"`
+	Members     []*TribeMember `json:"members,omitempty" db:"-"`
+}
+
+// Validate performs validation on the tribe
+func (t *Tribe) Validate() error {
+	if err := t.BaseModel.Validate(); err != nil {
+		return err
+	}
+	if t.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if err := t.Type.Validate(); err != nil {
+		return err
+	}
+	if err := t.Visibility.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // TribeMember represents a user's membership in a tribe
 type TribeMember struct {
-	TribeID   uuid.UUID      `json:"tribe_id" db:"tribe_id"`
-	UserID    uuid.UUID      `json:"user_id" db:"user_id"`
-	Type      MembershipType `json:"type" db:"type"`
-	JoinedAt  time.Time      `json:"joined_at" db:"joined_at"`
-	ExpiresAt *time.Time     `json:"expires_at,omitempty" db:"expires_at"`
-	InvitedBy *uuid.UUID     `json:"invited_by,omitempty" db:"invited_by"`
-	User      *User          `json:"user,omitempty" db:"-"`
+	BaseModel
+	TribeID        uuid.UUID      `json:"tribe_id" db:"tribe_id"`
+	UserID         uuid.UUID      `json:"user_id" db:"user_id"`
+	MembershipType MembershipType `json:"membership_type" db:"membership_type"`
+	DisplayName    string         `json:"display_name" db:"display_name"`
+	ExpiresAt      *time.Time     `json:"expires_at,omitempty" db:"expires_at"`
+	Metadata       JSONMap        `json:"metadata,omitempty" db:"metadata"`
+	User           *User          `json:"user,omitempty" db:"-"`
+}
+
+// Validate performs validation on the tribe member
+func (tm *TribeMember) Validate() error {
+	if err := tm.BaseModel.Validate(); err != nil {
+		return err
+	}
+	if tm.TribeID == uuid.Nil {
+		return fmt.Errorf("tribe_id is required")
+	}
+	if tm.UserID == uuid.Nil {
+		return fmt.Errorf("user_id is required")
+	}
+	if err := tm.MembershipType.Validate(); err != nil {
+		return err
+	}
+	if tm.DisplayName == "" {
+		return fmt.Errorf("display_name is required")
+	}
+	if tm.MembershipType == MembershipGuest && tm.ExpiresAt == nil {
+		return fmt.Errorf("guest membership requires expiration date")
+	}
+	if tm.ExpiresAt != nil && tm.ExpiresAt.Before(time.Now()) {
+		return fmt.Errorf("expiration date cannot be in the past")
+	}
+	return nil
 }
 
 // TribeRepository defines the interface for tribe data operations
 type TribeRepository interface {
+	// Basic CRUD operations
 	Create(tribe *Tribe) error
 	GetByID(id uuid.UUID) (*Tribe, error)
 	Update(tribe *Tribe) error
@@ -49,5 +129,9 @@ type TribeRepository interface {
 	RemoveMember(tribeID, userID uuid.UUID) error
 	GetMembers(tribeID uuid.UUID) ([]*TribeMember, error)
 	GetUserTribes(userID uuid.UUID) ([]*Tribe, error)
+
+	// Queries
+	GetByType(tribeType TribeType, offset, limit int) ([]*Tribe, error)
+	Search(query string, offset, limit int) ([]*Tribe, error)
 	GetExpiredGuestMemberships() ([]*TribeMember, error)
 }

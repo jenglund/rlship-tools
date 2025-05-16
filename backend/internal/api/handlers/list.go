@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,10 +16,10 @@ import (
 )
 
 type ListHandler struct {
-	service *service.ListService
+	service service.ListService
 }
 
-func NewListHandler(service *service.ListService) *ListHandler {
+func NewListHandler(service service.ListService) *ListHandler {
 	return &ListHandler{service: service}
 }
 
@@ -82,7 +84,7 @@ func (h *ListHandler) ListLists(w http.ResponseWriter, r *http.Request) {
 		limit = 20
 	}
 
-	lists, err := h.service.ListLists(offset, limit)
+	lists, err := h.service.List(offset, limit)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -241,28 +243,19 @@ func (h *ListHandler) RemoveListItem(w http.ResponseWriter, r *http.Request) {
 
 // GenerateMenu handles generating a menu from multiple lists
 func (h *ListHandler) GenerateMenu(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ListIDs []uuid.UUID            `json:"list_ids"`
-		Filters map[string]interface{} `json:"filters"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var params models.MenuParams
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	if len(req.ListIDs) == 0 {
-		response.Error(w, http.StatusBadRequest, "At least one list ID is required")
-		return
-	}
-
-	items, err := h.service.GenerateMenu(req.ListIDs, req.Filters)
+	lists, err := h.service.GenerateMenu(&params)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	response.JSON(w, http.StatusOK, items)
+	response.JSON(w, http.StatusOK, lists)
 }
 
 // SyncList handles synchronizing a list with its external source
@@ -298,15 +291,29 @@ func (h *ListHandler) GetListConflicts(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, conflicts)
 }
 
-// ResolveListConflict handles resolving a sync conflict
+// ResolveListConflict handles resolving a list sync conflict
 func (h *ListHandler) ResolveListConflict(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
 	conflictID, err := uuid.Parse(chi.URLParam(r, "conflictID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid conflict ID")
 		return
 	}
 
-	if err := h.service.ResolveListConflict(conflictID); err != nil {
+	var resolution struct {
+		Resolution string `json:"resolution"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&resolution); err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.service.ResolveListConflict(listID, conflictID, resolution.Resolution); err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -423,7 +430,6 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		TribeID   uuid.UUID  `json:"tribe_id"`
-		UserID    uuid.UUID  `json:"user_id"`
 		ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	}
 
@@ -432,7 +438,30 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ShareListWithTribe(listID, req.TribeID, req.UserID, req.ExpiresAt); err != nil {
+	// Get the user ID from the authenticated context
+	userID := r.Context().Value("user_id").(uuid.UUID)
+
+	// Check if the user has permission to share the list
+	owners, err := h.service.GetListOwners(listID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	hasPermission := false
+	for _, owner := range owners {
+		if owner.OwnerID == userID && owner.OwnerType == "user" {
+			hasPermission = true
+			break
+		}
+	}
+
+	if !hasPermission {
+		response.Error(w, http.StatusForbidden, "You do not have permission to share this list")
+		return
+	}
+
+	if err := h.service.ShareListWithTribe(listID, req.TribeID, userID, req.ExpiresAt); err != nil {
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -480,4 +509,86 @@ func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, lists)
+}
+
+// handleError converts service errors to appropriate HTTP responses
+func (h *ListHandler) handleError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, models.ErrNotFound):
+		response.Error(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, models.ErrInvalidInput):
+		response.Error(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, models.ErrUnauthorized):
+		response.Error(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, models.ErrForbidden):
+		response.Error(w, http.StatusForbidden, err.Error())
+	default:
+		response.Error(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// ShareListWithTribe handles the request to share a list with a tribe
+func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid list ID")
+		return
+	}
+
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
+		return
+	}
+
+	userID, ok := r.Context().Value("user_id").(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	var req struct {
+		ExpiresAt *time.Time `json:"expires_at"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	err = h.service.ShareListWithTribe(listID, tribeID, userID, req.ExpiresAt)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UnshareListWithTribe handles the request to unshare a list from a tribe
+func (h *ListHandler) UnshareListWithTribe(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid list ID")
+		return
+	}
+
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeId"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
+		return
+	}
+
+	userID, ok := r.Context().Value("user_id").(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	err = h.service.UnshareListWithTribe(listID, tribeID, userID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
