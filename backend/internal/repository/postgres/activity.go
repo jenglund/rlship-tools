@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -13,280 +14,263 @@ import (
 // ActivityRepository implements models.ActivityRepository using PostgreSQL
 type ActivityRepository struct {
 	db *sql.DB
+	tm *TransactionManager
 }
 
 // NewActivityRepository creates a new PostgreSQL activity repository
 func NewActivityRepository(db *sql.DB) *ActivityRepository {
-	return &ActivityRepository{db: db}
+	return &ActivityRepository{
+		db: db,
+		tm: NewTransactionManager(db),
+	}
 }
 
 // Create inserts a new activity into the database
 func (r *ActivityRepository) Create(activity *models.Activity) error {
-	query := `
-		INSERT INTO activities (id, type, name, description, visibility, metadata, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	if activity.ID == uuid.Nil {
-		activity.ID = uuid.New()
-	}
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			INSERT INTO activities (id, type, name, description, visibility, metadata, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id`
 
-	// Convert metadata to JSON
-	var metadataJSON interface{} = nil
-	if activity.Metadata != nil {
-		var err error
-		jsonBytes, err := json.Marshal(activity.Metadata)
-		if err != nil {
-			return fmt.Errorf("error encoding metadata: %w", err)
+		if activity.ID == uuid.Nil {
+			activity.ID = uuid.New()
 		}
-		metadataJSON = jsonBytes
-	}
 
-	err := r.db.QueryRow(
-		query,
-		activity.ID,
-		activity.Type,
-		activity.Name,
-		activity.Description,
-		activity.Visibility,
-		metadataJSON,
-		activity.CreatedAt,
-		activity.UpdatedAt,
-	).Scan(&activity.ID)
+		// Convert metadata to JSON
+		var metadataJSON interface{} = nil
+		if activity.Metadata != nil {
+			var err error
+			jsonBytes, err := json.Marshal(activity.Metadata)
+			if err != nil {
+				return fmt.Errorf("error encoding metadata: %w", err)
+			}
+			metadataJSON = jsonBytes
+		}
 
-	if err != nil {
-		return fmt.Errorf("error creating activity: %w", err)
-	}
+		err := tx.QueryRow(
+			query,
+			activity.ID,
+			activity.Type,
+			activity.Name,
+			activity.Description,
+			activity.Visibility,
+			metadataJSON,
+			activity.CreatedAt,
+			activity.UpdatedAt,
+		).Scan(&activity.ID)
 
-	return nil
+		if err != nil {
+			return fmt.Errorf("error creating activity: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // convertMetadata is a helper function to convert JSON metadata and handle array type conversions
-func convertMetadata(metadataBytes []byte) (map[string]interface{}, error) {
-	if metadataBytes == nil {
+func convertMetadata(metadata []byte) (map[string]interface{}, error) {
+	if len(metadata) == 0 {
 		return nil, nil
 	}
 
-	metadata := make(map[string]interface{})
-	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
-		return nil, fmt.Errorf("error decoding metadata: %w", err)
+	var result map[string]interface{}
+	if err := json.Unmarshal(metadata, &result); err != nil {
+		return nil, err
 	}
-
-	// Convert array types to []string where needed, but preserve maps and nested arrays
-	for key, value := range metadata {
-		switch v := value.(type) {
-		case []interface{}:
-			// Special handling for photos array
-			if key == "photos" {
-				photos := make([]map[string]interface{}, len(v))
-				for i, photo := range v {
-					if photoMap, ok := photo.(map[string]interface{}); ok {
-						// Convert tags array to []string if it exists
-						if tags, ok := photoMap["tags"].([]interface{}); ok {
-							strTags := make([]string, len(tags))
-							for j, tag := range tags {
-								strTags[j] = fmt.Sprint(tag)
-							}
-							photoMap["tags"] = strTags
-						}
-						photos[i] = photoMap
-					}
-				}
-				metadata[key] = photos
-			} else {
-				// For other arrays, convert to []string
-				strArr := make([]string, len(v))
-				for i, item := range v {
-					strArr[i] = fmt.Sprint(item)
-				}
-				metadata[key] = strArr
-			}
-		case map[string]interface{}:
-			// Recursively convert nested maps
-			for subKey, subValue := range v {
-				if subArr, ok := subValue.([]interface{}); ok {
-					strArr := make([]string, len(subArr))
-					for i, item := range subArr {
-						strArr[i] = fmt.Sprint(item)
-					}
-					v[subKey] = strArr
-				}
-			}
-			metadata[key] = v
-		}
-	}
-
-	return metadata, nil
+	return result, nil
 }
 
 // GetByID retrieves an activity by its ID
 func (r *ActivityRepository) GetByID(id uuid.UUID) (*models.Activity, error) {
-	query := `
-		SELECT id, type, name, description, visibility, metadata, created_at, updated_at, deleted_at
-		FROM activities
-		WHERE id = $1 AND deleted_at IS NULL`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var activity *models.Activity
 
-	activity := &models.Activity{}
-	var metadataBytes []byte
-	err := r.db.QueryRow(query, id).Scan(
-		&activity.ID,
-		&activity.Type,
-		&activity.Name,
-		&activity.Description,
-		&activity.Visibility,
-		&metadataBytes,
-		&activity.CreatedAt,
-		&activity.UpdatedAt,
-		&activity.DeletedAt,
-	)
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT id, type, name, description, visibility, metadata, created_at, updated_at, deleted_at
+			FROM activities
+			WHERE id = $1 AND deleted_at IS NULL`
 
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("activity not found")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("error getting activity: %w", err)
-	}
-
-	metadata, err := convertMetadata(metadataBytes)
-	if err != nil {
-		return nil, err
-	}
-	activity.Metadata = metadata
-
-	return activity, nil
-}
-
-// Update updates an existing activity in the database
-func (r *ActivityRepository) Update(activity *models.Activity) error {
-	query := `
-		UPDATE activities
-		SET type = $1,
-			name = $2,
-			description = $3,
-			visibility = $4,
-			metadata = $5,
-			updated_at = $6
-		WHERE id = $7 AND deleted_at IS NULL
-		RETURNING id`
-
-	activity.UpdatedAt = time.Now()
-
-	// Convert metadata to JSON
-	var metadataJSON interface{} = nil
-	if activity.Metadata != nil {
-		var err error
-		jsonBytes, err := json.Marshal(activity.Metadata)
-		if err != nil {
-			return fmt.Errorf("error encoding metadata: %w", err)
-		}
-		metadataJSON = jsonBytes
-	}
-
-	err := r.db.QueryRow(
-		query,
-		activity.Type,
-		activity.Name,
-		activity.Description,
-		activity.Visibility,
-		metadataJSON,
-		activity.UpdatedAt,
-		activity.ID,
-	).Scan(&activity.ID)
-
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("activity not found")
-	}
-	if err != nil {
-		return fmt.Errorf("error updating activity: %w", err)
-	}
-
-	return nil
-}
-
-// Delete soft-deletes an activity
-func (r *ActivityRepository) Delete(id uuid.UUID) error {
-	query := `
-		UPDATE activities
-		SET deleted_at = $1
-		WHERE id = $2 AND deleted_at IS NULL`
-
-	result, err := r.db.Exec(query, time.Now(), id)
-	if err != nil {
-		return fmt.Errorf("error deleting activity: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error checking rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("activity not found")
-	}
-
-	return nil
-}
-
-// List retrieves a paginated list of non-deleted activities
-func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error) {
-	query := `
-		SELECT id, type, name, description, visibility, metadata, created_at, updated_at, deleted_at
-		FROM activities
-		WHERE deleted_at IS NULL
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2`
-
-	rows, err := r.db.Query(query, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("error listing activities: %w", err)
-	}
-	defer rows.Close()
-
-	var activities []*models.Activity
-	for rows.Next() {
-		activity := &models.Activity{}
-		var metadataBytes []byte
-		err := rows.Scan(
+		var metadata []byte
+		activity = &models.Activity{}
+		err := tx.QueryRow(query, id).Scan(
 			&activity.ID,
 			&activity.Type,
 			&activity.Name,
 			&activity.Description,
 			&activity.Visibility,
-			&metadataBytes,
+			&metadata,
 			&activity.CreatedAt,
 			&activity.UpdatedAt,
 			&activity.DeletedAt,
 		)
+
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("activity not found")
+		}
 		if err != nil {
-			return nil, fmt.Errorf("error scanning activity row: %w", err)
+			return fmt.Errorf("error getting activity: %w", err)
 		}
 
-		// Convert metadata from JSON
-		if metadataBytes != nil {
-			metadata := make(map[string]interface{})
-			if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
-				return nil, fmt.Errorf("error decoding metadata: %w", err)
-			}
-
-			// Convert array types to []string where needed
-			for key, value := range metadata {
-				if arr, ok := value.([]interface{}); ok {
-					strArr := make([]string, len(arr))
-					for i, v := range arr {
-						strArr[i] = fmt.Sprint(v)
-					}
-					metadata[key] = strArr
-				}
-			}
-
-			activity.Metadata = metadata
+		// Convert metadata
+		activity.Metadata, err = convertMetadata(metadata)
+		if err != nil {
+			return fmt.Errorf("error converting metadata: %w", err)
 		}
 
-		activities = append(activities, activity)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating activity rows: %w", err)
+	return activity, nil
+}
+
+// Update updates an existing activity
+func (r *ActivityRepository) Update(activity *models.Activity) error {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			UPDATE activities
+			SET type = $1,
+				name = $2,
+				description = $3,
+				visibility = $4,
+				metadata = $5,
+				updated_at = $6
+			WHERE id = $7 AND deleted_at IS NULL
+			RETURNING id`
+
+		// Convert metadata to JSON
+		var metadataJSON interface{} = nil
+		if activity.Metadata != nil {
+			var err error
+			jsonBytes, err := json.Marshal(activity.Metadata)
+			if err != nil {
+				return fmt.Errorf("error encoding metadata: %w", err)
+			}
+			metadataJSON = jsonBytes
+		}
+
+		activity.UpdatedAt = time.Now()
+
+		err := tx.QueryRow(
+			query,
+			activity.Type,
+			activity.Name,
+			activity.Description,
+			activity.Visibility,
+			metadataJSON,
+			activity.UpdatedAt,
+			activity.ID,
+		).Scan(&activity.ID)
+
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("activity not found")
+		}
+		if err != nil {
+			return fmt.Errorf("error updating activity: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// Delete soft-deletes an activity
+func (r *ActivityRepository) Delete(id uuid.UUID) error {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			UPDATE activities
+			SET deleted_at = $1
+			WHERE id = $2 AND deleted_at IS NULL`
+
+		result, err := tx.Exec(query, time.Now(), id)
+		if err != nil {
+			return fmt.Errorf("error deleting activity: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("error checking rows affected: %w", err)
+		}
+
+		if rowsAffected == 0 {
+			return fmt.Errorf("activity not found")
+		}
+
+		return nil
+	})
+}
+
+// List retrieves a paginated list of non-deleted activities
+func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error) {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var activities []*models.Activity
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT id, type, name, description, visibility, metadata, created_at, updated_at, deleted_at
+			FROM activities
+			WHERE deleted_at IS NULL
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2`
+
+		rows, err := tx.Query(query, limit, offset)
+		if err != nil {
+			return fmt.Errorf("error listing activities: %w", err)
+		}
+		defer rows.Close()
+
+		activities = make([]*models.Activity, 0)
+		for rows.Next() {
+			activity := &models.Activity{}
+			var metadata []byte
+			err := rows.Scan(
+				&activity.ID,
+				&activity.Type,
+				&activity.Name,
+				&activity.Description,
+				&activity.Visibility,
+				&metadata,
+				&activity.CreatedAt,
+				&activity.UpdatedAt,
+				&activity.DeletedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error scanning activity row: %w", err)
+			}
+
+			// Convert metadata
+			activity.Metadata, err = convertMetadata(metadata)
+			if err != nil {
+				return fmt.Errorf("error converting metadata: %w", err)
+			}
+
+			activities = append(activities, activity)
+		}
+
+		if err = rows.Err(); err != nil {
+			return fmt.Errorf("error iterating activity rows: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return activities, nil
