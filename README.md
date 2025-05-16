@@ -48,29 +48,63 @@ Ensure test coverage remains above 90% for all new code.
 ## Known Issues
 
 1. Type System and Model Issues:
-   - Type mismatches between models and database layer (UUID and OwnerType)
-   - Inconsistent validation between service and repository layers
-   - List sync status validation failures
-   - Foreign key constraints not properly handled in test data setup
+   
+   a. Type Consistency Problems:
+   - [x] JSONMap implementation complete (Scan and Value methods implemented)
+   - [x] Metadata type standardized to use JSONMap
+   - [x] Database constraints for nullable fields added
+   - [x] Default values for boolean and numeric fields added
+   - [ ] Type mismatches between models and database layer (UUID and OwnerType)
+   
+   b. Validation Layer Issues:
+   - [x] Cross-field validations added (location data, seasonal dates, guest membership)
+   - [ ] Inconsistent validation between service and repository layers
+   - [ ] Incomplete validation for sync-related fields
+   - [ ] No validation for maximum field lengths or content format
+   
+   c. Model Relationship Issues:
+   - [x] Foreign key constraints properly handled with cascade rules
+   - [x] Clear ownership cascade rules for related entities
+   - [x] Proper cleanup handling for related records
+   - [x] Soft-delete propagation implemented with triggers and constraints
 
-2. Test Coverage and Quality:
-   - Zero coverage in cmd/api and cmd/migrate packages
-   - Low coverage (78.6%) in middleware package
-   - Poor coverage (31.5%) in testutil package
-   - Mock expectations not properly aligned with actual service behavior
-   - Test data setup/teardown infrastructure issues
+   d. Data Integrity Issues:
+   - [ ] List sync status validation failures
+   - [ ] Inconsistent timestamp handling across models
+   - [ ] Missing transaction boundaries for multi-table operations
+   - [ ] No handling of concurrent modifications
 
-3. Error Handling and Safety:
-   - Inconsistent error handling patterns across layers
-   - Nil pointer safety issues in activity handler
-   - Improper error propagation in service layer
-   - Inconsistent error type matching in tests
+Plan of Attack for Type System and Model Issues:
 
-4. Database and Infrastructure:
-   - Foreign key constraint violations in test data
-   - Missing proper database constraint handling
-   - Undefined repository methods (e.g., MarkItemChosen)
-   - Test database setup/cleanup issues
+1. Type System Cleanup (Priority: High)
+   - [x] Create comprehensive type mapping documentation
+   - [x] Implement proper JSONMap scanning/value methods
+   - [x] Standardize nullable field handling
+   - [ ] Add strong typing for all enum-like fields
+
+2. Validation Enhancement (Priority: High)
+   - [x] Implement cross-field validation helpers
+   - [x] Add database constraint validations
+   - [ ] Create validation middleware for API layer
+   - [ ] Add field length and format validations
+
+3. Model Relationship Refactoring (Priority: Medium)
+   - [x] Document entity relationship diagrams
+   - [x] Implement proper cascade rules
+   - [x] Add relationship integrity checks
+   - [x] Create cleanup utilities for testing
+
+4. Data Integrity Implementation (Priority: High)
+   - [ ] Add optimistic locking for concurrent modifications
+   - [ ] Implement proper transaction boundaries
+   - [ ] Create sync status state machine
+   - [ ] Add audit logging for critical operations
+
+Next Steps:
+1. [x] Implement database enum types and constraints for string-based enums (VisibilityType, OwnerType, etc.)
+2. [x] Standardize nullable field handling across all models
+3. [x] Add proper foreign key constraints and cascade rules
+4. [ ] Implement transaction boundaries for multi-table operations
 
 ## Future Work
 
@@ -80,13 +114,15 @@ Ensure test coverage remains above 90% for all new code.
    - Create robust test data setup/teardown infrastructure
    - Standardize mock usage patterns and expectations
    - Add integration tests for database constraints
+   - Add tests for soft delete propagation and cascade rules
 
 2. Code Quality and Safety:
    - Standardize error handling patterns across all layers
    - Implement proper null safety checks in handlers
    - Align model validation with database constraints
-   - Review and update foreign key relationships
    - Add comprehensive input validation
+   - Add transaction boundaries for multi-table operations
+   - Implement optimistic locking for concurrent modifications
 
 3. Documentation and Standards:
    - Document error handling patterns
@@ -94,6 +130,7 @@ Ensure test coverage remains above 90% for all new code.
    - Update API documentation with validation rules
    - Document test data setup procedures
    - Create contribution guidelines for tests
+   - Document cascade rules and soft delete behavior
 
 4. Infrastructure and Tooling:
    - Add automated test coverage checks
@@ -101,6 +138,7 @@ Ensure test coverage remains above 90% for all new code.
    - Add linting for consistent error handling
    - Create test data generation tools
    - Add performance benchmarks
+   - Add monitoring for database constraint violations
 
 ## Contributing
 

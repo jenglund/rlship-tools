@@ -441,3 +441,222 @@ func TestListConflict_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestJSONMap_Scan(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   interface{}
+		want    JSONMap
+		wantErr bool
+	}{
+		{
+			name:  "nil input",
+			input: nil,
+			want:  JSONMap{},
+		},
+		{
+			name:  "empty bytes",
+			input: []byte{},
+			want:  JSONMap{},
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  JSONMap{},
+		},
+		{
+			name:  "valid JSON bytes",
+			input: []byte(`{"key": "value", "nums": [1, 2, 3]}`),
+			want:  JSONMap{"key": "value", "nums": []string{"1", "2", "3"}},
+		},
+		{
+			name:  "valid JSON string",
+			input: `{"key": "value", "nums": [1, 2, 3]}`,
+			want:  JSONMap{"key": "value", "nums": []string{"1", "2", "3"}},
+		},
+		{
+			name:    "invalid JSON",
+			input:   []byte(`{"key": "value"`),
+			wantErr: true,
+		},
+		{
+			name:    "unsupported type",
+			input:   123,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m JSONMap
+			err := (&m).Scan(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, m)
+			}
+		})
+	}
+}
+
+func TestJSONMap_Value(t *testing.T) {
+	tests := []struct {
+		name    string
+		m       JSONMap
+		want    []byte
+		wantErr bool
+	}{
+		{
+			name: "nil map",
+			m:    nil,
+			want: nil,
+		},
+		{
+			name: "empty map",
+			m:    JSONMap{},
+			want: []byte("{}"),
+		},
+		{
+			name: "simple map",
+			m:    JSONMap{"key": "value"},
+			want: []byte(`{"key":"value"}`),
+		},
+		{
+			name: "map with string array",
+			m:    JSONMap{"arr": []string{"1", "2", "3"}},
+			want: []byte(`{"arr":["1","2","3"]}`),
+		},
+		{
+			name: "complex map",
+			m: JSONMap{
+				"str":   "value",
+				"num":   123,
+				"bool":  true,
+				"arr":   []string{"a", "b", "c"},
+				"null":  nil,
+				"float": 123.45,
+			},
+			want: []byte(`{"arr":["a","b","c"],"bool":true,"float":123.45,"null":null,"num":123,"str":"value"}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.m.Value()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.want == nil {
+					assert.Nil(t, got)
+				} else {
+					assert.JSONEq(t, string(tt.want), string(got.([]byte)))
+				}
+			}
+		})
+	}
+}
+
+func TestJSONMap_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		m       JSONMap
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "nil map",
+			m:    nil,
+			want: "null",
+		},
+		{
+			name: "empty map",
+			m:    JSONMap{},
+			want: "{}",
+		},
+		{
+			name: "simple map",
+			m:    JSONMap{"key": "value"},
+			want: `{"key":"value"}`,
+		},
+		{
+			name: "map with array",
+			m:    JSONMap{"arr": []string{"1", "2", "3"}},
+			want: `{"arr":["1","2","3"]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.m.MarshalJSON()
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.JSONEq(t, tt.want, string(got))
+			}
+		})
+	}
+}
+
+func TestJSONMap_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    JSONMap
+		wantErr bool
+	}{
+		{
+			name:  "null input",
+			input: "null",
+			want:  JSONMap{},
+		},
+		{
+			name:  "empty object",
+			input: "{}",
+			want:  JSONMap{},
+		},
+		{
+			name:  "simple object",
+			input: `{"key":"value"}`,
+			want:  JSONMap{"key": "value"},
+		},
+		{
+			name:  "object with array",
+			input: `{"arr":[1,2,3]}`,
+			want:  JSONMap{"arr": []string{"1", "2", "3"}},
+		},
+		{
+			name:  "complex object",
+			input: `{"str":"value","num":123,"bool":true,"arr":[1,2,3],"null":null}`,
+			want: JSONMap{
+				"str":  "value",
+				"num":  float64(123),
+				"bool": true,
+				"arr":  []string{"1", "2", "3"},
+				"null": nil,
+			},
+		},
+		{
+			name:    "invalid JSON",
+			input:   `{"key":"value"`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m JSONMap
+			err := m.UnmarshalJSON([]byte(tt.input))
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, m)
+			}
+		})
+	}
+}

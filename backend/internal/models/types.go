@@ -1,8 +1,11 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"database/sql/driver"
 
 	"github.com/google/uuid"
 )
@@ -147,12 +150,108 @@ type JSONMap map[string]interface{}
 
 // Scan implements the sql.Scanner interface
 func (m *JSONMap) Scan(value interface{}) error {
-	// Implementation will depend on your database driver and JSON handling
+	if value == nil {
+		*m = make(JSONMap)
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return fmt.Errorf("%w: unsupported JSONMap scan type: %T", ErrInvalidInput, value)
+	}
+
+	// Handle empty string/bytes as empty map
+	if len(bytes) == 0 {
+		*m = make(JSONMap)
+		return nil
+	}
+
+	// Parse JSON into map
+	var result map[string]interface{}
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		return fmt.Errorf("%w: invalid JSON data: %v", ErrInvalidInput, err)
+	}
+
+	// Convert any []interface{} to []string where appropriate
+	for key, value := range result {
+		if arr, ok := value.([]interface{}); ok {
+			strArr := make([]string, len(arr))
+			for i, v := range arr {
+				strArr[i] = fmt.Sprint(v)
+			}
+			result[key] = strArr
+		}
+	}
+
+	*m = result
 	return nil
 }
 
 // Value implements the driver.Valuer interface
-func (m JSONMap) Value() (interface{}, error) {
-	// Implementation will depend on your database driver and JSON handling
-	return nil, nil
+func (m JSONMap) Value() (driver.Value, error) {
+	if m == nil {
+		return nil, nil
+	}
+
+	// Convert any []string back to []interface{} for consistent JSON encoding
+	converted := make(map[string]interface{})
+	for key, value := range m {
+		if strArr, ok := value.([]string); ok {
+			interfaceArr := make([]interface{}, len(strArr))
+			for i, v := range strArr {
+				interfaceArr[i] = v
+			}
+			converted[key] = interfaceArr
+		} else {
+			converted[key] = value
+		}
+	}
+
+	return json.Marshal(converted)
+}
+
+// MarshalJSON implements the json.Marshaler interface
+func (m JSONMap) MarshalJSON() ([]byte, error) {
+	if m == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(map[string]interface{}(m))
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface
+func (m *JSONMap) UnmarshalJSON(data []byte) error {
+	if m == nil {
+		return fmt.Errorf("%w: JSONMap is nil", ErrInvalidInput)
+	}
+
+	// Handle null JSON value
+	if string(data) == "null" {
+		*m = make(JSONMap)
+		return nil
+	}
+
+	// Parse JSON into temporary map
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("%w: invalid JSON data: %v", ErrInvalidInput, err)
+	}
+
+	// Convert any []interface{} to []string where appropriate
+	for key, value := range raw {
+		if arr, ok := value.([]interface{}); ok {
+			strArr := make([]string, len(arr))
+			for i, v := range arr {
+				strArr[i] = fmt.Sprint(v)
+			}
+			raw[key] = strArr
+		}
+	}
+
+	*m = raw
+	return nil
 }

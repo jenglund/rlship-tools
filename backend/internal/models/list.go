@@ -197,7 +197,7 @@ func (l *LocationRef) Validate() error {
 }
 
 // Metadata represents additional data for a list item
-type Metadata map[string]interface{}
+type Metadata = JSONMap
 
 // Validate performs validation on the Metadata
 func (m Metadata) Validate() error {

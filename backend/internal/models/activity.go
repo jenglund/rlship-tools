@@ -23,7 +23,7 @@ type Activity struct {
 	Name        string         `json:"name" db:"name"`
 	Description string         `json:"description" db:"description"`
 	Visibility  VisibilityType `json:"visibility" db:"visibility"`
-	Metadata    interface{}    `json:"metadata,omitempty" db:"metadata"`
+	Metadata    JSONMap        `json:"metadata,omitempty" db:"metadata"`
 	CreatedAt   time.Time      `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at" db:"updated_at"`
 	DeletedAt   *time.Time     `json:"deleted_at,omitempty" db:"deleted_at"`
