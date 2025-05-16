@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -42,6 +43,18 @@ func (h *ListHandler) RegisterRoutes(r chi.Router) {
 		r.Post("/{listID}/sync", h.SyncList)
 		r.Get("/{listID}/conflicts", h.GetListConflicts)
 		r.Post("/{listID}/conflicts/{conflictID}/resolve", h.ResolveListConflict)
+
+		// Owner management
+		r.Post("/{listID}/owners", h.AddListOwner)
+		r.Delete("/{listID}/owners/{ownerID}", h.RemoveListOwner)
+		r.Get("/{listID}/owners", h.GetListOwners)
+		r.Get("/user/{userID}", h.GetUserLists)
+		r.Get("/tribe/{tribeID}", h.GetTribeLists)
+
+		// Sharing management
+		r.Post("/{listID}/share", h.ShareList)
+		r.Delete("/{listID}/share/{tribeID}", h.UnshareList)
+		r.Get("/shared/{tribeID}", h.GetSharedLists)
 	})
 }
 
@@ -299,4 +312,172 @@ func (h *ListHandler) ResolveListConflict(w http.ResponseWriter, r *http.Request
 	}
 
 	response.NoContent(w)
+}
+
+// AddListOwner handles adding a new owner to a list
+func (h *ListHandler) AddListOwner(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
+	var req struct {
+		OwnerID   uuid.UUID `json:"owner_id"`
+		OwnerType string    `json:"owner_type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.service.AddListOwner(listID, req.OwnerID, req.OwnerType); err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.NoContent(w)
+}
+
+// RemoveListOwner handles removing an owner from a list
+func (h *ListHandler) RemoveListOwner(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
+	ownerID, err := uuid.Parse(chi.URLParam(r, "ownerID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid owner ID")
+		return
+	}
+
+	if err := h.service.RemoveListOwner(listID, ownerID); err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.NoContent(w)
+}
+
+// GetListOwners handles retrieving all owners of a list
+func (h *ListHandler) GetListOwners(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
+	owners, err := h.service.GetListOwners(listID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, owners)
+}
+
+// GetUserLists handles retrieving all lists owned by a user
+func (h *ListHandler) GetUserLists(w http.ResponseWriter, r *http.Request) {
+	userID, err := uuid.Parse(chi.URLParam(r, "userID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	lists, err := h.service.GetUserLists(userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, lists)
+}
+
+// GetTribeLists handles retrieving all lists owned by a tribe
+func (h *ListHandler) GetTribeLists(w http.ResponseWriter, r *http.Request) {
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
+		return
+	}
+
+	lists, err := h.service.GetTribeLists(tribeID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, lists)
+}
+
+// ShareList handles sharing a list with a tribe
+func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
+	var req struct {
+		TribeID   uuid.UUID  `json:"tribe_id"`
+		UserID    uuid.UUID  `json:"user_id"`
+		ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := h.service.ShareListWithTribe(listID, req.TribeID, req.UserID, req.ExpiresAt); err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.NoContent(w)
+}
+
+// UnshareList handles removing a list share from a tribe
+func (h *ListHandler) UnshareList(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
+		return
+	}
+
+	// Get the user ID from the authenticated context
+	userID := r.Context().Value("user_id").(uuid.UUID)
+
+	if err := h.service.UnshareListWithTribe(listID, tribeID, userID); err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.NoContent(w)
+}
+
+// GetSharedLists handles retrieving all lists shared with a tribe
+func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
+		return
+	}
+
+	lists, err := h.service.GetSharedLists(tribeID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, lists)
 }

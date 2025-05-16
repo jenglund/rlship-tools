@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
@@ -95,6 +96,46 @@ func (m *MockListRepository) GetConflicts(listID uuid.UUID) ([]*models.ListConfl
 func (m *MockListRepository) ResolveConflict(conflictID uuid.UUID) error {
 	args := m.Called(conflictID)
 	return args.Error(0)
+}
+
+func (m *MockListRepository) AddOwner(listID, userID uuid.UUID, ownerType string) error {
+	args := m.Called(listID, userID, ownerType)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) RemoveOwner(listID, userID uuid.UUID) error {
+	args := m.Called(listID, userID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error) {
+	args := m.Called(listID)
+	return args.Get(0).([]*models.ListOwner), args.Error(1)
+}
+
+func (m *MockListRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(userID)
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(tribeID)
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) ShareWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
+	args := m.Called(listID, tribeID, userID, expiresAt)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
+	args := m.Called(listID, tribeID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(tribeID)
+	return args.Get(0).([]*models.List), args.Error(1)
 }
 
 func TestListService(t *testing.T) {
@@ -279,6 +320,122 @@ func TestListService(t *testing.T) {
 		mockRepo.On("ResolveConflict", conflict.ID).Return(nil)
 		err = service.ResolveListConflict(conflict.ID)
 		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("List Ownership", func(t *testing.T) {
+		listID := uuid.New()
+		userID := uuid.New()
+		tribeID := uuid.New()
+
+		// Test AddListOwner
+		mockRepo.On("AddOwner", listID, userID, "user").Return(nil)
+		err := service.AddListOwner(listID, userID, "user")
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+
+		// Test invalid owner type
+		err = service.AddListOwner(listID, userID, "invalid")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid owner type")
+
+		// Test RemoveListOwner
+		mockRepo.On("RemoveOwner", listID, userID).Return(nil)
+		err = service.RemoveListOwner(listID, userID)
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+
+		// Test GetListOwners
+		owners := []*models.ListOwner{
+			{ListID: listID, OwnerID: userID, OwnerType: "user"},
+			{ListID: listID, OwnerID: tribeID, OwnerType: "tribe"},
+		}
+		mockRepo.On("GetOwners", listID).Return(owners, nil)
+		retrieved, err := service.GetListOwners(listID)
+		assert.NoError(t, err)
+		assert.Equal(t, owners, retrieved)
+		mockRepo.AssertExpectations(t)
+
+		// Test GetUserLists
+		lists := []*models.List{
+			{ID: listID, Name: "Test List"},
+		}
+		mockRepo.On("GetUserLists", userID).Return(lists, nil)
+		userLists, err := service.GetUserLists(userID)
+		assert.NoError(t, err)
+		assert.Equal(t, lists, userLists)
+		mockRepo.AssertExpectations(t)
+
+		// Test GetTribeLists
+		mockRepo.On("GetTribeLists", tribeID).Return(lists, nil)
+		tribeLists, err := service.GetTribeLists(tribeID)
+		assert.NoError(t, err)
+		assert.Equal(t, lists, tribeLists)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("List Sharing", func(t *testing.T) {
+		listID := uuid.New()
+		userID := uuid.New()
+		tribeID := uuid.New()
+		expiresAt := time.Now().Add(24 * time.Hour)
+
+		list := &models.List{
+			ID:   listID,
+			Name: "Test List",
+		}
+
+		// Test ShareListWithTribe - successful case
+		mockRepo.On("GetByID", listID).Return(list, nil)
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+			{ListID: listID, OwnerID: userID, OwnerType: "user"},
+		}, nil)
+		mockRepo.On("ShareWithTribe", listID, tribeID, userID, &expiresAt).Return(nil)
+
+		err := service.ShareListWithTribe(listID, tribeID, userID, &expiresAt)
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+
+		// Test ShareListWithTribe - no permission
+		mockRepo.On("GetByID", listID).Return(list, nil)
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+			{ListID: listID, OwnerID: uuid.New(), OwnerType: "user"},
+		}, nil)
+
+		err = service.ShareListWithTribe(listID, tribeID, userID, &expiresAt)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "does not have permission")
+		mockRepo.AssertExpectations(t)
+
+		// Test UnshareListWithTribe - successful case
+		mockRepo.On("GetByID", listID).Return(list, nil)
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+			{ListID: listID, OwnerID: userID, OwnerType: "user"},
+		}, nil)
+		mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil)
+
+		err = service.UnshareListWithTribe(listID, tribeID, userID)
+		assert.NoError(t, err)
+		mockRepo.AssertExpectations(t)
+
+		// Test UnshareListWithTribe - no permission
+		mockRepo.On("GetByID", listID).Return(list, nil)
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+			{ListID: listID, OwnerID: uuid.New(), OwnerType: "user"},
+		}, nil)
+
+		err = service.UnshareListWithTribe(listID, tribeID, userID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "does not have permission")
+		mockRepo.AssertExpectations(t)
+
+		// Test GetSharedLists
+		sharedLists := []*models.List{list}
+		mockRepo.On("GetSharedLists", tribeID).Return(sharedLists, nil)
+
+		retrieved, err := service.GetSharedLists(tribeID)
+		assert.NoError(t, err)
+		assert.Equal(t, sharedLists, retrieved)
 		mockRepo.AssertExpectations(t)
 	})
 }

@@ -20,29 +20,50 @@ type APIError struct {
 	Message string `json:"message"`
 }
 
-// Success sends a successful response
-func Success(c *gin.Context, data interface{}) {
+// Standard http.ResponseWriter functions
+
+// JSON sends a JSON response using standard http.ResponseWriter
+func JSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+// Error sends a JSON error response using standard http.ResponseWriter
+func Error(w http.ResponseWriter, status int, message string) {
+	JSON(w, status, map[string]string{"error": message})
+}
+
+// NoContent sends a 204 No Content response using standard http.ResponseWriter
+func NoContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Gin-specific functions
+
+// GinSuccess sends a successful response using Gin
+func GinSuccess(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, Response{
 		Success: true,
 		Data:    data,
 	})
 }
 
-// Created sends a 201 Created response
-func Created(c *gin.Context, data interface{}) {
+// GinCreated sends a 201 Created response using Gin
+func GinCreated(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusCreated, Response{
 		Success: true,
 		Data:    data,
 	})
 }
 
-// NoContent sends a 204 No Content response
-func NoContent(c *gin.Context) {
+// GinNoContent sends a 204 No Content response using Gin
+func GinNoContent(c *gin.Context) {
 	c.AbortWithStatus(http.StatusNoContent)
 }
 
-// SendError sends an error response
-func SendError(c *gin.Context, status int, code, message string) {
+// GinError sends an error response using Gin
+func GinError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, Response{
 		Success: false,
 		Error: &APIError{
@@ -52,39 +73,27 @@ func SendError(c *gin.Context, status int, code, message string) {
 	})
 }
 
-// BadRequest sends a 400 Bad Request response
-func BadRequest(c *gin.Context, message string) {
-	SendError(c, http.StatusBadRequest, "BAD_REQUEST", message)
+// GinBadRequest sends a 400 Bad Request response using Gin
+func GinBadRequest(c *gin.Context, message string) {
+	GinError(c, http.StatusBadRequest, "BAD_REQUEST", message)
 }
 
-// Unauthorized sends a 401 Unauthorized response
-func Unauthorized(c *gin.Context, message string) {
-	SendError(c, http.StatusUnauthorized, "UNAUTHORIZED", message)
+// GinUnauthorized sends a 401 Unauthorized response using Gin
+func GinUnauthorized(c *gin.Context, message string) {
+	GinError(c, http.StatusUnauthorized, "UNAUTHORIZED", message)
 }
 
-// Forbidden sends a 403 Forbidden response
-func Forbidden(c *gin.Context, message string) {
-	SendError(c, http.StatusForbidden, "FORBIDDEN", message)
+// GinForbidden sends a 403 Forbidden response using Gin
+func GinForbidden(c *gin.Context, message string) {
+	GinError(c, http.StatusForbidden, "FORBIDDEN", message)
 }
 
-// NotFound sends a 404 Not Found response
-func NotFound(c *gin.Context, message string) {
-	SendError(c, http.StatusNotFound, "NOT_FOUND", message)
+// GinNotFound sends a 404 Not Found response using Gin
+func GinNotFound(c *gin.Context, message string) {
+	GinError(c, http.StatusNotFound, "NOT_FOUND", message)
 }
 
-// InternalError sends a 500 Internal Server Error response
-func InternalError(c *gin.Context, err error) {
-	SendError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred")
-}
-
-// Error sends a JSON error response
-func Error(w http.ResponseWriter, status int, message string) {
-	JSON(w, status, map[string]string{"error": message})
-}
-
-// JSON sends a JSON response
-func JSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+// GinInternalError sends a 500 Internal Server Error response using Gin
+func GinInternalError(c *gin.Context, err error) {
+	GinError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred")
 }
