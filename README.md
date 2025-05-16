@@ -62,10 +62,10 @@ Ensure test coverage remains above 90% for all new code.
    - [x] Cross-field validations added (location data, seasonal dates, guest membership)
    - [x] Consistent validation between service and repository layers
    - [x] Incomplete validation for sync-related fields
-   - [ ] Type assertion needed for Metadata in activity handlers
-   - [ ] Invalid operation on JSONMap in activity_photos_test.go
-   - [ ] UUID array type mismatch in list_test.go
-   - [ ] OwnerType string to pointer conversion in list_test.go
+   - [x] Type assertion needed for Metadata in activity handlers
+   - [x] Invalid operation on JSONMap in activity_photos_test.go
+   - [x] UUID array type mismatch in list_test.go
+   - [x] OwnerType string to pointer conversion in list_test.go
    
    c. Database Migration Issues:
    - [ ] Migration failure: metadata column does not exist

@@ -51,6 +51,15 @@ func TestActivityPhotos(t *testing.T) {
 		updated, err := repo.GetByID(activity.ID)
 		require.NoError(t, err)
 		assert.Equal(t, activity.Metadata, updated.Metadata)
+
+		// Verify the structure of the metadata
+		updatedPhotos, ok := updated.Metadata["photos"].([]interface{})
+		require.True(t, ok, "photos should be a slice of interface{}")
+		require.Len(t, updatedPhotos, 1)
+
+		photo, ok := updatedPhotos[0].(map[string]interface{})
+		require.True(t, ok, "photo should be a map[string]interface{}")
+		assert.Equal(t, "https://example.com/photos/1.jpg", photo["url"])
 	})
 
 	t.Run("Add Multiple Photos", func(t *testing.T) {
@@ -78,6 +87,17 @@ func TestActivityPhotos(t *testing.T) {
 		updated, err := repo.GetByID(activity.ID)
 		require.NoError(t, err)
 		assert.Equal(t, activity.Metadata, updated.Metadata)
+
+		// Verify the structure of the metadata
+		updatedPhotos, ok := updated.Metadata["photos"].([]interface{})
+		require.True(t, ok, "photos should be a slice of interface{}")
+		require.Len(t, updatedPhotos, 2)
+
+		for i, p := range updatedPhotos {
+			photo, ok := p.(map[string]interface{})
+			require.True(t, ok, "photo should be a map[string]interface{}")
+			assert.Equal(t, photos[i]["url"], photo["url"])
+		}
 	})
 
 	t.Run("Remove Photo", func(t *testing.T) {
@@ -145,8 +165,9 @@ func TestActivityPhotos(t *testing.T) {
 }
 
 func TestActivityPhotosRepository(t *testing.T) {
-	setup := testutil.SetupTest(t)
-	repo := NewActivityPhotosRepository(setup.DB)
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+	repo := NewActivityPhotosRepository(db)
 
 	// Create test activity
 	activity := &models.Activity{

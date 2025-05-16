@@ -63,10 +63,19 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 
 	var metadata models.JSONMap
 	if req.Metadata != nil {
-		var ok bool
-		metadata, ok = req.Metadata.(map[string]interface{})
-		if !ok {
-			response.GinBadRequest(c, "Metadata must be a JSON object")
+		switch m := req.Metadata.(type) {
+		case map[string]interface{}:
+			metadata = models.JSONMap(m)
+		case models.JSONMap:
+			metadata = m
+		default:
+			response.GinBadRequest(c, "Metadata must be a valid JSON object")
+			return
+		}
+
+		// Validate metadata
+		if err := metadata.Validate(); err != nil {
+			response.GinBadRequest(c, err.Error())
 			return
 		}
 	}
@@ -169,16 +178,29 @@ func (h *ActivityHandler) UpdateActivity(c *gin.Context) {
 		return
 	}
 
-	metadata, ok := req.Metadata.(map[string]interface{})
-	if !ok {
-		response.GinBadRequest(c, "Metadata must be a JSON object")
-		return
+	var metadata models.JSONMap
+	if req.Metadata != nil {
+		switch m := req.Metadata.(type) {
+		case map[string]interface{}:
+			metadata = models.JSONMap(m)
+		case models.JSONMap:
+			metadata = m
+		default:
+			response.GinBadRequest(c, "Metadata must be a valid JSON object")
+			return
+		}
+
+		// Validate metadata
+		if err := metadata.Validate(); err != nil {
+			response.GinBadRequest(c, err.Error())
+			return
+		}
 	}
 
 	activity.Name = req.Name
 	activity.Description = req.Description
 	activity.Visibility = req.Visibility
-	activity.Metadata = models.JSONMap(metadata)
+	activity.Metadata = metadata
 	activity.UpdatedAt = time.Now()
 
 	if err := h.repos.Activities.Update(activity); err != nil {

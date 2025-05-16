@@ -13,11 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	ownerTypeUser  = models.OwnerTypeUser
-	ownerTypeTribe = models.OwnerTypeTribe
-)
-
 func setupTestDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("postgres", "postgres://postgres:postgres@localhost:5432/rlship_test?sslmode=disable")
 	require.NoError(t, err)
@@ -30,11 +25,22 @@ func TestListRepository(t *testing.T) {
 
 	repo := NewListRepository(db)
 	user := testutil.CreateTestUser(t, db)
+	tribe := testutil.CreateTestTribe(t, db, []testutil.TestUser{
+		{
+			ID:          user.ID,
+			FirebaseUID: user.FirebaseUID,
+			Provider:    user.Provider,
+			Email:       user.Email,
+			Name:        user.Name,
+			AvatarURL:   user.AvatarURL,
+		},
+	})
 
 	t.Run("Basic CRUD Operations", func(t *testing.T) {
 		// Create a test list
 		maxItems := 10
 		cooldownDays := 7
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "Test List",
@@ -44,7 +50,7 @@ func TestListRepository(t *testing.T) {
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 
 		// Test Create
@@ -86,6 +92,7 @@ func TestListRepository(t *testing.T) {
 
 	t.Run("List Items Management", func(t *testing.T) {
 		// Create a test list
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "Test List",
@@ -93,7 +100,7 @@ func TestListRepository(t *testing.T) {
 			Visibility:    models.VisibilityPublic,
 			DefaultWeight: 1.0,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -158,13 +165,14 @@ func TestListRepository(t *testing.T) {
 		)
 
 		// Create test lists
+		ownerType := models.OwnerTypeUser
 		list1 := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "List 1",
 			DefaultWeight: 1.0,
 			CooldownDays:  testutil.IntPtr(cooldownDays),
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 		err := repo.Create(list1)
 		require.NoError(t, err)
@@ -174,7 +182,7 @@ func TestListRepository(t *testing.T) {
 			Name:          "List 2",
 			DefaultWeight: 2.0,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 		err = repo.Create(list2)
 		require.NoError(t, err)
@@ -237,6 +245,7 @@ func TestListRepository(t *testing.T) {
 	})
 
 	t.Run("Sync Management", func(t *testing.T) {
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "Test List",
@@ -244,7 +253,7 @@ func TestListRepository(t *testing.T) {
 			Visibility:    models.VisibilityPublic,
 			DefaultWeight: 1.0,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 			SyncStatus:    models.ListSyncStatusNone,
 			SyncSource:    models.SyncSourceGoogleMaps,
 		}
@@ -292,6 +301,7 @@ func TestListRepository(t *testing.T) {
 	})
 
 	t.Run("Share Management", func(t *testing.T) {
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "Test List",
@@ -299,7 +309,7 @@ func TestListRepository(t *testing.T) {
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -345,6 +355,7 @@ func TestListRepository(t *testing.T) {
 		})
 
 		// Create a test list
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "Shared List",
@@ -352,13 +363,20 @@ func TestListRepository(t *testing.T) {
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
 
 		// Test ShareWithTribe
-		err = repo.ShareWithTribe(list.ID, tribe.ID, models.SharingTypeEdit)
+		share := &models.ListShare{
+			ListID:    list.ID,
+			TribeID:   tribe.ID,
+			UserID:    user.ID,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		err = repo.ShareWithTribe(share)
 		require.NoError(t, err)
 
 		// Test GetSharedTribes
@@ -399,6 +417,7 @@ func TestListRepository(t *testing.T) {
 		})
 
 		// Create a test list
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeLocation,
 			Name:          "Expiring Shared List",
@@ -406,14 +425,22 @@ func TestListRepository(t *testing.T) {
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
 			OwnerID:       &user.ID,
-			OwnerType:     &ownerTypeUser,
+			OwnerType:     &ownerType,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
 
 		// Share list with expiration
 		expiresAt := time.Now().Add(24 * time.Hour)
-		err = repo.ShareWithTribeExpiring(list.ID, tribe.ID, models.SharingTypeEdit, expiresAt)
+		share := &models.ListShare{
+			ListID:    list.ID,
+			TribeID:   tribe.ID,
+			UserID:    user.ID,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			ExpiresAt: &expiresAt,
+		}
+		err = repo.ShareWithTribe(share)
 		require.NoError(t, err)
 
 		// Test GetSharedTribes before expiration
@@ -519,8 +546,8 @@ func TestListRepository_GetOwners(t *testing.T) {
 		INSERT INTO list_owners (list_id, owner_id, owner_type)
 		VALUES 
 			($1, $2, $3),
-			($1, $3, $4)`,
-		listID, userID, models.OwnerTypeUser, models.OwnerTypeTribe,
+			($1, $4, $5)`,
+		listID, userID, models.OwnerTypeUser, tribeID, models.OwnerTypeTribe,
 	)
 	require.NoError(t, err)
 
@@ -614,44 +641,6 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, lists)
 	})
-}
-
-func TestListRepository_ShareWithTribe(t *testing.T) {
-	db := setupTestDB(t)
-	repo := NewListRepository(db)
-
-	// Create test list
-	list := &models.List{
-		Type:          models.ListTypeLocation,
-		Name:          "Test List",
-		Description:   "Test Description",
-		Visibility:    models.VisibilityPublic,
-		DefaultWeight: 1.0,
-	}
-	err := repo.Create(list)
-	require.NoError(t, err)
-
-	// Create test user
-	user := testutil.CreateTestUser(t, db)
-
-	// Create test tribe
-	tribe := testutil.CreateTestTribe(t, db, []testutil.TestUser{user})
-
-	// Test sharing
-	share := &models.ListShare{
-		ListID:    list.ID,
-		TribeID:   tribe.ID,
-		UserID:    user.ID,
-		ExpiresAt: nil,
-	}
-	err = repo.ShareWithTribe(share)
-	require.NoError(t, err)
-
-	// Test GetSharedLists
-	sharedLists, err := repo.GetSharedLists(tribe.ID)
-	require.NoError(t, err)
-	require.Len(t, sharedLists, 1)
-	assert.Equal(t, list.ID, sharedLists[0].ID)
 }
 
 func TestListRepository_UnshareWithTribe(t *testing.T) {
