@@ -54,9 +54,10 @@ type List struct {
 	Name          string         `json:"name" db:"name"`
 	Description   string         `json:"description" db:"description"`
 	Visibility    VisibilityType `json:"visibility" db:"visibility"`
-	SyncStatus    ListSyncStatus `json:"sync_status" db:"sync_status"`
-	SyncSource    string         `json:"sync_source" db:"sync_source"`
-	SyncID        string         `json:"sync_id" db:"sync_id"`
+	SyncConfig    *SyncConfig    `json:"-" db:"-"`                     // Internal sync configuration
+	SyncStatus    ListSyncStatus `json:"sync_status" db:"sync_status"` // Denormalized for querying
+	SyncSource    SyncSource     `json:"sync_source" db:"sync_source"` // Denormalized for querying
+	SyncID        string         `json:"sync_id" db:"sync_id"`         // Denormalized for querying
 	LastSyncAt    *time.Time     `json:"last_sync_at" db:"last_sync_at"`
 	DefaultWeight float64        `json:"default_weight" db:"default_weight"`
 	MaxItems      *int           `json:"max_items" db:"max_items"`
@@ -84,9 +85,42 @@ func (l *List) Validate() error {
 	if err := l.Visibility.Validate(); err != nil {
 		return err
 	}
-	if err := l.SyncStatus.Validate(); err != nil {
-		return err
+
+	// Validate sync configuration
+	if l.SyncConfig != nil {
+		if err := l.SyncConfig.Validate(); err != nil {
+			return err
+		}
+		// Ensure denormalized fields match the config
+		if l.SyncStatus != l.SyncConfig.Status {
+			return fmt.Errorf("%w: sync status mismatch", ErrInvalidInput)
+		}
+		if l.SyncSource != l.SyncConfig.Source {
+			return fmt.Errorf("%w: sync source mismatch", ErrInvalidInput)
+		}
+		if l.SyncID != l.SyncConfig.ID {
+			return fmt.Errorf("%w: sync ID mismatch", ErrInvalidInput)
+		}
+		if !((l.LastSyncAt == nil && l.SyncConfig.LastSyncAt == nil) ||
+			(l.LastSyncAt != nil && l.SyncConfig.LastSyncAt != nil && l.LastSyncAt.Equal(*l.SyncConfig.LastSyncAt))) {
+			return fmt.Errorf("%w: last sync time mismatch", ErrInvalidInput)
+		}
+	} else {
+		// If no sync config, ensure sync fields are in their default state
+		if l.SyncStatus != ListSyncStatusNone {
+			return fmt.Errorf("%w: sync status must be none when no config is present", ErrInvalidInput)
+		}
+		if l.SyncSource != SyncSourceNone {
+			return fmt.Errorf("%w: sync source must be none when no config is present", ErrInvalidInput)
+		}
+		if l.SyncID != "" {
+			return fmt.Errorf("%w: sync ID must be empty when no config is present", ErrInvalidInput)
+		}
+		if l.LastSyncAt != nil {
+			return fmt.Errorf("%w: last sync time must be empty when no config is present", ErrInvalidInput)
+		}
 	}
+
 	if l.Name == "" {
 		return fmt.Errorf("%w: list name is required", ErrInvalidInput)
 	}
@@ -295,8 +329,8 @@ type ListRepository interface {
 
 	// Sync management
 	UpdateSyncStatus(listID uuid.UUID, status ListSyncStatus) error
-	GetConflicts(listID uuid.UUID) ([]*ListConflict, error)
-	CreateConflict(conflict *ListConflict) error
+	GetConflicts(listID uuid.UUID) ([]*SyncConflict, error)
+	CreateConflict(conflict *SyncConflict) error
 	ResolveConflict(conflictID uuid.UUID) error
 	GetListsBySource(source string) ([]*List, error)
 }

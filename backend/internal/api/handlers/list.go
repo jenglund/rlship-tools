@@ -258,16 +258,29 @@ func (h *ListHandler) GenerateMenu(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, lists)
 }
 
-// SyncList handles synchronizing a list with its external source
+// SyncList handles syncing a list with its external source
 func (h *ListHandler) SyncList(w http.ResponseWriter, r *http.Request) {
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		response.Error(w, http.StatusBadRequest, "Invalid list ID format")
 		return
 	}
 
 	if err := h.service.SyncList(listID); err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			response.Error(w, http.StatusNotFound, "List not found")
+		case errors.Is(err, models.ErrSyncDisabled):
+			response.Error(w, http.StatusBadRequest, "Sync is not enabled for this list")
+		case errors.Is(err, models.ErrExternalSourceUnavailable):
+			response.Error(w, http.StatusServiceUnavailable, "External sync source is unavailable")
+		case errors.Is(err, models.ErrExternalSourceTimeout):
+			response.Error(w, http.StatusGatewayTimeout, "External sync source timed out")
+		case errors.Is(err, models.ErrExternalSourceError):
+			response.Error(w, http.StatusBadGateway, "External sync source error")
+		default:
+			response.Error(w, http.StatusInternalServerError, "Failed to sync list")
+		}
 		return
 	}
 
@@ -278,13 +291,20 @@ func (h *ListHandler) SyncList(w http.ResponseWriter, r *http.Request) {
 func (h *ListHandler) GetListConflicts(w http.ResponseWriter, r *http.Request) {
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		response.Error(w, http.StatusBadRequest, "Invalid list ID format")
 		return
 	}
 
 	conflicts, err := h.service.GetListConflicts(listID)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			response.Error(w, http.StatusNotFound, "List not found")
+		case errors.Is(err, models.ErrSyncDisabled):
+			response.Error(w, http.StatusBadRequest, "Sync is not enabled for this list")
+		default:
+			response.Error(w, http.StatusInternalServerError, "Failed to get list conflicts")
+		}
 		return
 	}
 
@@ -295,13 +315,13 @@ func (h *ListHandler) GetListConflicts(w http.ResponseWriter, r *http.Request) {
 func (h *ListHandler) ResolveListConflict(w http.ResponseWriter, r *http.Request) {
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		response.Error(w, http.StatusBadRequest, "Invalid list ID format")
 		return
 	}
 
 	conflictID, err := uuid.Parse(chi.URLParam(r, "conflictID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid conflict ID")
+		response.Error(w, http.StatusBadRequest, "Invalid conflict ID format")
 		return
 	}
 
@@ -314,7 +334,20 @@ func (h *ListHandler) ResolveListConflict(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.service.ResolveListConflict(listID, conflictID, resolution.Resolution); err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			response.Error(w, http.StatusNotFound, "List not found")
+		case errors.Is(err, models.ErrConflictNotFound):
+			response.Error(w, http.StatusNotFound, "Conflict not found")
+		case errors.Is(err, models.ErrConflictAlreadyResolved):
+			response.Error(w, http.StatusConflict, "Conflict already resolved")
+		case errors.Is(err, models.ErrInvalidResolution):
+			response.Error(w, http.StatusBadRequest, "Invalid resolution")
+		case errors.Is(err, models.ErrSyncDisabled):
+			response.Error(w, http.StatusBadRequest, "Sync is not enabled for this list")
+		default:
+			response.Error(w, http.StatusInternalServerError, "Failed to resolve conflict")
+		}
 		return
 	}
 
