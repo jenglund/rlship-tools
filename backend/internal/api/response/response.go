@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -74,4 +75,16 @@ func NotFound(c *gin.Context, message string) {
 // InternalError sends a 500 Internal Server Error response
 func InternalError(c *gin.Context, err error) {
 	SendError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred")
+}
+
+// Error sends a JSON error response
+func Error(w http.ResponseWriter, status int, message string) {
+	JSON(w, status, map[string]string{"error": message})
+}
+
+// JSON sends a JSON response
+func JSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
 }
