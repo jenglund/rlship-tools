@@ -71,7 +71,7 @@ Ensure test coverage remains above 90% for all new code.
    d. Data Integrity Issues:
    - [ ] List sync status validation failures
    - [ ] Inconsistent timestamp handling across models
-   - [ ] Missing transaction boundaries for multi-table operations
+   - [x] Transaction boundaries implemented for multi-table operations
    - [ ] No handling of concurrent modifications
 
 Plan of Attack for Type System and Model Issues:
@@ -96,7 +96,7 @@ Plan of Attack for Type System and Model Issues:
 
 4. Data Integrity Implementation (Priority: High)
    - [ ] Add optimistic locking for concurrent modifications
-   - [ ] Implement proper transaction boundaries
+   - [x] Implement proper transaction boundaries
    - [ ] Create sync status state machine
    - [ ] Add audit logging for critical operations
 
@@ -104,7 +104,8 @@ Next Steps:
 1. [x] Implement database enum types and constraints for string-based enums (VisibilityType, OwnerType, etc.)
 2. [x] Standardize nullable field handling across all models
 3. [x] Add proper foreign key constraints and cascade rules
-4. [ ] Implement transaction boundaries for multi-table operations
+4. [x] Implement transaction boundaries for multi-table operations
+5. [ ] Add optimistic locking for concurrent modifications
 
 ## Future Work
 
@@ -115,14 +116,17 @@ Next Steps:
    - Standardize mock usage patterns and expectations
    - Add integration tests for database constraints
    - Add tests for soft delete propagation and cascade rules
+   - Add tests for transaction boundaries and rollbacks
 
 2. Code Quality and Safety:
    - Standardize error handling patterns across all layers
    - Implement proper null safety checks in handlers
    - Align model validation with database constraints
    - Add comprehensive input validation
-   - Add transaction boundaries for multi-table operations
-   - Implement optimistic locking for concurrent modifications
+   - [x] Add transaction boundaries for multi-table operations
+   - [ ] Implement optimistic locking for concurrent modifications
+   - [ ] Add deadlock detection and prevention
+   - [ ] Implement retry logic for transient failures
 
 3. Documentation and Standards:
    - Document error handling patterns
@@ -131,6 +135,8 @@ Next Steps:
    - Document test data setup procedures
    - Create contribution guidelines for tests
    - Document cascade rules and soft delete behavior
+   - Document transaction boundaries and isolation levels
+   - Create guidelines for handling concurrent modifications
 
 4. Infrastructure and Tooling:
    - Add automated test coverage checks
@@ -139,6 +145,8 @@ Next Steps:
    - Create test data generation tools
    - Add performance benchmarks
    - Add monitoring for database constraint violations
+   - Add monitoring for transaction performance
+   - Add monitoring for deadlocks and lock contention
 
 ## Contributing
 
