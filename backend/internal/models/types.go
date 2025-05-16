@@ -51,6 +51,7 @@ type BaseModel struct {
 	CreatedAt time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
+	Version   int        `json:"version" db:"version"`
 }
 
 // Validate performs basic validation on the base model
@@ -66,6 +67,9 @@ func (b *BaseModel) Validate() error {
 	}
 	if b.DeletedAt != nil && b.DeletedAt.Before(b.CreatedAt) {
 		return fmt.Errorf("%w: deleted_at cannot be before created_at", ErrInvalidInput)
+	}
+	if b.Version < 1 {
+		return fmt.Errorf("%w: version must be at least 1", ErrInvalidInput)
 	}
 	return nil
 }

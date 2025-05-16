@@ -63,52 +63,74 @@ func TestBaseModel_Validate(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		b       BaseModel
+		model   BaseModel
 		wantErr bool
 	}{
 		{
-			name: "valid",
-			b: BaseModel{
+			name: "valid model",
+			model: BaseModel{
 				ID:        validID,
 				CreatedAt: now,
 				UpdatedAt: now,
+				Version:   1,
 			},
 			wantErr: false,
 		},
 		{
-			name: "nil id",
-			b: BaseModel{
-				ID:        uuid.Nil,
+			name: "nil ID",
+			model: BaseModel{
 				CreatedAt: now,
 				UpdatedAt: now,
+				Version:   1,
 			},
 			wantErr: true,
 		},
 		{
 			name: "zero created_at",
-			b: BaseModel{
+			model: BaseModel{
 				ID:        validID,
-				CreatedAt: time.Time{},
 				UpdatedAt: now,
+				Version:   1,
 			},
 			wantErr: true,
 		},
 		{
 			name: "zero updated_at",
-			b: BaseModel{
+			model: BaseModel{
 				ID:        validID,
 				CreatedAt: now,
-				UpdatedAt: time.Time{},
+				Version:   1,
 			},
 			wantErr: true,
 		},
 		{
 			name: "deleted_at before created_at",
-			b: BaseModel{
+			model: BaseModel{
 				ID:        validID,
 				CreatedAt: now,
 				UpdatedAt: now,
 				DeletedAt: &time.Time{},
+				Version:   1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero version",
+			model: BaseModel{
+				ID:        validID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				Version:   0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative version",
+			model: BaseModel{
+				ID:        validID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				Version:   -1,
 			},
 			wantErr: true,
 		},
@@ -116,7 +138,7 @@ func TestBaseModel_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.b.Validate()
+			err := tt.model.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, ErrInvalidInput)

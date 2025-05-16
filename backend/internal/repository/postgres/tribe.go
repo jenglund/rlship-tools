@@ -191,10 +191,13 @@ func (r *TribeRepository) Update(tribe *models.Tribe) error {
 			visibility = $4,
 			metadata = $5,
 			updated_at = $6
-		WHERE id = $7 AND deleted_at IS NULL
-		RETURNING id`
+		WHERE id = $7 
+		AND version = $8
+		AND deleted_at IS NULL
+		RETURNING version`
 
 	tribe.UpdatedAt = time.Now()
+	var newVersion int
 
 	err = tx.QueryRow(
 		query,
@@ -205,14 +208,18 @@ func (r *TribeRepository) Update(tribe *models.Tribe) error {
 		tribe.Metadata,
 		tribe.UpdatedAt,
 		tribe.ID,
-	).Scan(&tribe.ID)
+		tribe.Version,
+	).Scan(&newVersion)
 
 	if err == sql.ErrNoRows {
-		return fmt.Errorf("tribe not found")
+		return fmt.Errorf("tribe not found or was modified by another user")
 	}
 	if err != nil {
 		return fmt.Errorf("error updating tribe: %w", err)
 	}
+
+	// Update the version in the model
+	tribe.Version = newVersion
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
@@ -388,25 +395,34 @@ func (r *TribeRepository) UpdateMember(tribeID, userID uuid.UUID, memberType mod
 	}
 	defer tx.Rollback()
 
+	// First get the current version
+	var currentVersion int
+	err = tx.QueryRow("SELECT version FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NULL", tribeID, userID).Scan(&currentVersion)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("tribe member not found")
+	}
+	if err != nil {
+		return fmt.Errorf("error getting tribe member version: %w", err)
+	}
+
 	query := `
 		UPDATE tribe_members
 		SET membership_type = $1,
 			expires_at = $2,
 			updated_at = $3
-		WHERE tribe_id = $4 AND user_id = $5 AND deleted_at IS NULL`
+		WHERE tribe_id = $4 
+		AND user_id = $5 
+		AND version = $6
+		AND deleted_at IS NULL
+		RETURNING version`
 
-	result, err := tx.Exec(query, memberType, expiresAt, time.Now(), tribeID, userID)
+	var newVersion int
+	err = tx.QueryRow(query, memberType, expiresAt, time.Now(), tribeID, userID, currentVersion).Scan(&newVersion)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("tribe member was modified by another user")
+	}
 	if err != nil {
 		return fmt.Errorf("error updating tribe member: %w", err)
-	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error checking rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("tribe member not found")
 	}
 
 	// Commit transaction
