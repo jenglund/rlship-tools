@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -12,58 +13,57 @@ import (
 // TribeRepository implements models.TribeRepository using PostgreSQL
 type TribeRepository struct {
 	db *sql.DB
+	tm *TransactionManager
 }
 
 // NewTribeRepository creates a new PostgreSQL tribe repository
 func NewTribeRepository(db *sql.DB) *TribeRepository {
-	return &TribeRepository{db: db}
+	return &TribeRepository{
+		db: db,
+		tm: NewTransactionManager(db),
+	}
 }
 
 // Create inserts a new tribe into the database
 func (r *TribeRepository) Create(tribe *models.Tribe) error {
-	// Start transaction
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer tx.Rollback()
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	query := `
-		INSERT INTO tribes (
-			id, name, type, description, visibility,
-			metadata, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id`
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			INSERT INTO tribes (
+				id, name, type, description, visibility,
+				metadata, created_at, updated_at, version
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			RETURNING version`
 
-	if tribe.ID == uuid.Nil {
-		tribe.ID = uuid.New()
-	}
-	now := time.Now()
-	tribe.CreatedAt = now
-	tribe.UpdatedAt = now
+		if tribe.ID == uuid.Nil {
+			tribe.ID = uuid.New()
+		}
+		now := time.Now()
+		tribe.CreatedAt = now
+		tribe.UpdatedAt = now
+		tribe.Version = 1
 
-	err = tx.QueryRow(
-		query,
-		tribe.ID,
-		tribe.Name,
-		tribe.Type,
-		tribe.Description,
-		tribe.Visibility,
-		tribe.Metadata,
-		tribe.CreatedAt,
-		tribe.UpdatedAt,
-	).Scan(&tribe.ID)
+		err := tx.QueryRow(
+			query,
+			tribe.ID,
+			tribe.Name,
+			tribe.Type,
+			tribe.Description,
+			tribe.Visibility,
+			tribe.Metadata,
+			tribe.CreatedAt,
+			tribe.UpdatedAt,
+			tribe.Version,
+		).Scan(&tribe.Version)
 
-	if err != nil {
-		return fmt.Errorf("error creating tribe: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("error creating tribe: %w", err)
+		}
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // GetByID retrieves a tribe by its ID
@@ -176,57 +176,48 @@ func (r *TribeRepository) getMembersWithTx(tx *sql.Tx, tribeID uuid.UUID) ([]*mo
 
 // Update updates an existing tribe in the database
 func (r *TribeRepository) Update(tribe *models.Tribe) error {
-	// Start transaction
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer tx.Rollback()
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	query := `
-		UPDATE tribes
-		SET name = $1,
-			type = $2,
-			description = $3,
-			visibility = $4,
-			metadata = $5,
-			updated_at = $6
-		WHERE id = $7 
-		AND version = $8
-		AND deleted_at IS NULL
-		RETURNING version`
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			UPDATE tribes
+			SET name = $1,
+				type = $2,
+				description = $3,
+				visibility = $4,
+				metadata = $5,
+				updated_at = $6
+			WHERE id = $7 
+			AND version = $8
+			AND deleted_at IS NULL
+			RETURNING version`
 
-	tribe.UpdatedAt = time.Now()
-	var newVersion int
+		tribe.UpdatedAt = time.Now()
+		var newVersion int
 
-	err = tx.QueryRow(
-		query,
-		tribe.Name,
-		tribe.Type,
-		tribe.Description,
-		tribe.Visibility,
-		tribe.Metadata,
-		tribe.UpdatedAt,
-		tribe.ID,
-		tribe.Version,
-	).Scan(&newVersion)
+		err := tx.QueryRow(
+			query,
+			tribe.Name,
+			tribe.Type,
+			tribe.Description,
+			tribe.Visibility,
+			tribe.Metadata,
+			tribe.UpdatedAt,
+			tribe.ID,
+			tribe.Version,
+		).Scan(&newVersion)
 
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("tribe not found or was modified by another user")
-	}
-	if err != nil {
-		return fmt.Errorf("error updating tribe: %w", err)
-	}
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("tribe not found or was modified by another user")
+		}
+		if err != nil {
+			return fmt.Errorf("error updating tribe: %w", err)
+		}
 
-	// Update the version in the model
-	tribe.Version = newVersion
-
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
-
-	return nil
+		tribe.Version = newVersion
+		return nil
+	})
 }
 
 // Delete soft-deletes a tribe and its members
@@ -388,49 +379,42 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 
 // UpdateMember updates a member's type and expiration
 func (r *TribeRepository) UpdateMember(tribeID, userID uuid.UUID, memberType models.MembershipType, expiresAt *time.Time) error {
-	// Start transaction
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer tx.Rollback()
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	// First get the current version
-	var currentVersion int
-	err = tx.QueryRow("SELECT version FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NULL", tribeID, userID).Scan(&currentVersion)
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("tribe member not found")
-	}
-	if err != nil {
-		return fmt.Errorf("error getting tribe member version: %w", err)
-	}
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// First get the current version
+		var currentVersion int
+		err := tx.QueryRow("SELECT version FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NULL", tribeID, userID).Scan(&currentVersion)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("tribe member not found")
+		}
+		if err != nil {
+			return fmt.Errorf("error getting tribe member version: %w", err)
+		}
 
-	query := `
-		UPDATE tribe_members
-		SET membership_type = $1,
-			expires_at = $2,
-			updated_at = $3
-		WHERE tribe_id = $4 
-		AND user_id = $5 
-		AND version = $6
-		AND deleted_at IS NULL
-		RETURNING version`
+		query := `
+			UPDATE tribe_members
+			SET membership_type = $1,
+				expires_at = $2,
+				updated_at = $3
+			WHERE tribe_id = $4 
+			AND user_id = $5 
+			AND version = $6
+			AND deleted_at IS NULL
+			RETURNING version`
 
-	var newVersion int
-	err = tx.QueryRow(query, memberType, expiresAt, time.Now(), tribeID, userID, currentVersion).Scan(&newVersion)
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("tribe member was modified by another user")
-	}
-	if err != nil {
-		return fmt.Errorf("error updating tribe member: %w", err)
-	}
+		var newVersion int
+		err = tx.QueryRow(query, memberType, expiresAt, time.Now(), tribeID, userID, currentVersion).Scan(&newVersion)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("tribe member was modified by another user")
+		}
+		if err != nil {
+			return fmt.Errorf("error updating tribe member: %w", err)
+		}
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // RemoveMember removes a user from a tribe

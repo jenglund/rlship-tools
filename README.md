@@ -9,6 +9,7 @@ Tribe is a social activity planning application designed to help groups of peopl
 - **Location Integration**: Sync with Google Maps lists for place suggestions
 - **Availability Management**: Track when tribe members are free/interested in activities
 - **Smart Suggestions**: Get activity recommendations based on history and preferences
+- **Federation** (Future): Support for federated instances allowing users to connect across different Tribe clusters while maintaining control over data sharing and privacy
 
 ## Project Structure
 
@@ -130,6 +131,7 @@ Next Steps:
    - [x] Implement optimistic locking for concurrent modifications
    - [ ] Add deadlock detection and prevention
    - [ ] Implement retry logic for transient failures
+   - [ ] Add audit logging for critical operations (Low Priority)
 
 3. Documentation and Standards:
    - Document error handling patterns
@@ -151,6 +153,34 @@ Next Steps:
    - Add monitoring for transaction performance
    - Add monitoring for deadlocks and lock contention
    - Add monitoring for optimistic locking failures
+
+5. Federation Support (Future):
+   - Design federation protocol for inter-instance communication
+   - Implement selective federation controls
+     - Allow instance owners to control which other instances they federate with
+     - Support granular control over what data/connections are shared
+     - Enable federation transitivity controls (who can share federation connections)
+   - Add federation-aware data models
+     - Support distributed unique identifiers
+     - Handle data ownership across instances
+     - Implement conflict resolution for federated data
+   - Implement privacy controls
+     - Allow users to control data visibility across federation
+     - Support instance-level privacy policies
+     - Enable selective sharing of tribe connections
+   - Add federation management tools
+     - Federation status monitoring
+     - Connection health checks
+     - Federation audit logs
+   - Design security measures
+     - Instance verification
+     - Secure communication channels
+     - Rate limiting and abuse prevention
+   - Create federation documentation
+     - Protocol specifications
+     - Implementation guidelines
+     - Security best practices
+     - Privacy considerations
 
 ## Contributing
 
