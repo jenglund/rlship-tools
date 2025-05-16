@@ -167,6 +167,61 @@ go run cmd/api/main.go
 
 The API server will be available at http://localhost:8080
 
+### Kubernetes Local Development
+
+For local development with Kubernetes:
+
+1. Enable Kubernetes in Docker Desktop:
+   - Open Docker Desktop
+   - Go to Settings/Preferences
+   - Select "Kubernetes"
+   - Check "Enable Kubernetes"
+   - Click "Apply & Restart"
+
+2. Install required tools:
+```bash
+# Install kubectl
+brew install kubectl
+
+# Install Helm
+brew install helm
+
+# Install ingress-nginx controller
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+helm install ingress-nginx ingress-nginx/ingress-nginx
+```
+
+3. Deploy the application:
+```bash
+# Deploy all services
+./infrastructure/scripts/deploy-local.sh
+```
+
+4. Access the services:
+   - Web Frontend: http://localhost
+   - API: http://localhost/api
+   - Lists Service: http://localhost/lists
+   - Activities Service: http://localhost/activities
+   - Interests Service: http://localhost/interests
+
+5. View service status:
+```bash
+# Check pod status
+kubectl get pods -n tribe
+
+# Check service status
+kubectl get services -n tribe
+
+# Check ingress status
+kubectl get ingress -n tribe
+
+# View logs for a specific pod
+kubectl logs -n tribe <pod-name>
+```
+
+For more details about the Kubernetes setup, see the [infrastructure/README.md](infrastructure/README.md) file.
+
 ### Frontend Setup
 
 1. Navigate to the mobile app directory:
