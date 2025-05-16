@@ -1,0 +1,6 @@
+-- Add missing columns to list_items table
+ALTER TABLE list_items ADD COLUMN IF NOT EXISTS available BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE list_items ADD COLUMN IF NOT EXISTS seasonal BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE list_items ADD COLUMN IF NOT EXISTS use_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE list_items ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE list_items ADD COLUMN IF NOT EXISTS end_date DATE; 

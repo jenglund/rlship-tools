@@ -57,6 +57,9 @@ func (h *ListHandler) RegisterRoutes(r chi.Router) {
 		r.Post("/{listID}/share", h.ShareList)
 		r.Delete("/{listID}/share/{tribeID}", h.UnshareList)
 		r.Get("/shared/{tribeID}", h.GetSharedLists)
+
+		// New handler
+		r.Get("/{listID}/shares", h.GetListShares)
 	})
 }
 
@@ -542,6 +545,46 @@ func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, lists)
+}
+
+// GetListShares handles retrieving all shares for a list
+func (h *ListHandler) GetListShares(w http.ResponseWriter, r *http.Request) {
+	listID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid list ID")
+		return
+	}
+
+	// Get the user ID from the authenticated context
+	userID := r.Context().Value("user_id").(uuid.UUID)
+
+	// Check if the user has permission to view the list shares
+	owners, err := h.service.GetListOwners(listID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	hasPermission := false
+	for _, owner := range owners {
+		if owner.OwnerID == userID && owner.OwnerType == "user" {
+			hasPermission = true
+			break
+		}
+	}
+
+	if !hasPermission {
+		response.Error(w, http.StatusForbidden, "you do not have permission to view this list's shares")
+		return
+	}
+
+	shares, err := h.service.GetListShares(listID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, shares)
 }
 
 // handleError converts service errors to appropriate HTTP responses

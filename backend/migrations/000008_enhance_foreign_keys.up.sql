@@ -59,18 +59,32 @@ CREATE TRIGGER trigger_user_soft_delete
     FOR EACH ROW
     EXECUTE FUNCTION propagate_user_soft_delete();
 
--- Add constraint to ensure tribe_members deleted_at is not before its tribe's deleted_at
-ALTER TABLE tribe_members
-    ADD CONSTRAINT tribe_members_deleted_at_check
-    CHECK (
-        deleted_at IS NULL OR
-        deleted_at >= (SELECT deleted_at FROM tribes WHERE id = tribe_id)
-    );
+-- Add trigger to ensure tribe_members deleted_at is not before its tribe's or user's deleted_at
+CREATE OR REPLACE FUNCTION validate_tribe_member_deleted_at()
+RETURNS TRIGGER AS $$
+DECLARE
+    tribe_deleted_at TIMESTAMP WITH TIME ZONE;
+    user_deleted_at TIMESTAMP WITH TIME ZONE;
+BEGIN
+    IF NEW.deleted_at IS NOT NULL THEN
+        SELECT deleted_at INTO tribe_deleted_at FROM tribes WHERE id = NEW.tribe_id;
+        SELECT deleted_at INTO user_deleted_at FROM users WHERE id = NEW.user_id;
+        
+        IF tribe_deleted_at IS NOT NULL AND NEW.deleted_at < tribe_deleted_at THEN
+            RAISE EXCEPTION 'tribe_member.deleted_at cannot be before its tribe.deleted_at';
+        END IF;
+        
+        IF user_deleted_at IS NOT NULL AND NEW.deleted_at < user_deleted_at THEN
+            RAISE EXCEPTION 'tribe_member.deleted_at cannot be before its user.deleted_at';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- Add constraint to ensure tribe_members deleted_at is not before its user's deleted_at
-ALTER TABLE tribe_members
-    ADD CONSTRAINT tribe_members_user_deleted_at_check
-    CHECK (
-        deleted_at IS NULL OR
-        deleted_at >= (SELECT deleted_at FROM users WHERE id = user_id)
-    ); 
+-- Create trigger for validating deleted_at
+DROP TRIGGER IF EXISTS trigger_validate_tribe_member_deleted_at ON tribe_members;
+CREATE TRIGGER trigger_validate_tribe_member_deleted_at
+    BEFORE INSERT OR UPDATE ON tribe_members
+    FOR EACH ROW
+    EXECUTE FUNCTION validate_tribe_member_deleted_at(); 

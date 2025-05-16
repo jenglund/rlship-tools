@@ -34,6 +34,16 @@ var (
 	ErrExternalSourceTimeout     = errors.New("external sync source timeout")
 )
 
+// Activity Photo errors
+var (
+	ErrInvalidID         = errors.New("invalid ID")
+	ErrInvalidActivityID = errors.New("invalid activity ID")
+	ErrInvalidURL        = errors.New("invalid URL")
+	ErrInvalidCreatedAt  = errors.New("invalid created at time")
+	ErrInvalidUpdatedAt  = errors.New("invalid updated at time")
+	ErrInvalidDeletedAt  = errors.New("deleted at time cannot be before created at time")
+)
+
 // IsSyncError checks if an error is a sync-related error
 func IsSyncError(err error) bool {
 	return errors.Is(err, ErrInvalidSyncConfig) ||

@@ -1,10 +1,3 @@
--- Convert metadata columns to JSONB type
-ALTER TABLE activities ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb;
-ALTER TABLE lists ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb;
-ALTER TABLE list_items ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb;
-ALTER TABLE tribes ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb;
-ALTER TABLE tribe_members ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb;
-
 -- Add NOT NULL constraint with default empty object
 ALTER TABLE activities ALTER COLUMN metadata SET DEFAULT '{}'::jsonb;
 ALTER TABLE lists ALTER COLUMN metadata SET DEFAULT '{}'::jsonb;

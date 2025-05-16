@@ -124,31 +124,6 @@ func (m *MenuParams) Validate() error {
 	return nil
 }
 
-// ListConflict represents a conflict between local and external list data
-type ListConflict struct {
-	BaseModel
-	ListID       uuid.UUID  `json:"list_id" db:"list_id"`
-	ItemID       *uuid.UUID `json:"item_id,omitempty" db:"item_id"`
-	ConflictType string     `json:"conflict_type" db:"conflict_type"`
-	LocalData    JSONMap    `json:"local_data" db:"local_data"`
-	ExternalData JSONMap    `json:"external_data" db:"external_data"`
-	ResolvedAt   *time.Time `json:"resolved_at,omitempty" db:"resolved_at"`
-}
-
-// Validate performs validation on the list conflict
-func (c *ListConflict) Validate() error {
-	if err := c.BaseModel.Validate(); err != nil {
-		return err
-	}
-	if c.ListID == uuid.Nil {
-		return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
-	}
-	if c.ConflictType == "" {
-		return fmt.Errorf("%w: conflict type is required", ErrInvalidInput)
-	}
-	return nil
-}
-
 // JSONMap is a type alias for map[string]interface{} that implements database scanning
 type JSONMap map[string]interface{}
 

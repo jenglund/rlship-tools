@@ -3,6 +3,9 @@ ALTER TABLE tribe_members DROP CONSTRAINT IF EXISTS tribe_members_deleted_at_che
 ALTER TABLE tribe_members DROP CONSTRAINT IF EXISTS tribe_members_user_deleted_at_check;
 
 -- Drop triggers and functions
+DROP TRIGGER IF EXISTS trigger_validate_tribe_member_deleted_at ON tribe_members;
+DROP FUNCTION IF EXISTS validate_tribe_member_deleted_at();
+
 DROP TRIGGER IF EXISTS trigger_tribe_soft_delete ON tribes;
 DROP TRIGGER IF EXISTS trigger_user_soft_delete ON users;
 DROP FUNCTION IF EXISTS propagate_tribe_soft_delete();

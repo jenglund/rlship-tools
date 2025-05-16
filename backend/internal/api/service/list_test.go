@@ -156,7 +156,7 @@ func TestListService_Sync(t *testing.T) {
 	list := &models.List{
 		ID:         listID,
 		Type:       models.ListTypeGoogleMap,
-		SyncSource: string(models.SyncSourceGoogleMaps),
+		SyncSource: models.SyncSourceGoogleMaps,
 	}
 
 	t.Run("Sync List", func(t *testing.T) {

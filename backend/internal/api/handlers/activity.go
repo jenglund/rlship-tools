@@ -57,23 +57,31 @@ type CreateActivityRequest struct {
 func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 	var req CreateActivityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.GinBadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, err.Error())
 		return
+	}
+
+	var metadata models.JSONMap
+	if req.Metadata != nil {
+		var ok bool
+		metadata, ok = req.Metadata.(map[string]interface{})
+		if !ok {
+			response.GinBadRequest(c, "Metadata must be a JSON object")
+			return
+		}
 	}
 
 	activity := &models.Activity{
 		ID:          uuid.New(),
-		Type:        req.Type,
 		Name:        req.Name,
 		Description: req.Description,
-		Visibility:  req.Visibility,
-		Metadata:    req.Metadata,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		Type:        req.Type,
+		Metadata:    metadata,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	if err := h.repos.Activities.Create(activity); err != nil {
-		fmt.Printf("Error creating activity: %v\n", err)
 		response.GinInternalError(c, err)
 		return
 	}
@@ -143,36 +151,35 @@ type UpdateActivityRequest struct {
 
 // UpdateActivity updates an existing activity
 func (h *ActivityHandler) UpdateActivity(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
+	var req UpdateActivityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.GinBadRequest(c, err.Error())
+		return
+	}
+
+	activityID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		response.GinBadRequest(c, "Invalid activity ID")
 		return
 	}
 
-	var req UpdateActivityRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.GinBadRequest(c, "Invalid request body")
-		return
-	}
-
-	activity, err := h.repos.Activities.GetByID(id)
+	activity, err := h.repos.Activities.GetByID(activityID)
 	if err != nil {
-		response.GinNotFound(c, "Activity not found")
+		response.GinInternalError(c, err)
 		return
 	}
 
-	if req.Name != "" {
-		activity.Name = req.Name
+	metadata, ok := req.Metadata.(map[string]interface{})
+	if !ok {
+		response.GinBadRequest(c, "Metadata must be a JSON object")
+		return
 	}
-	if req.Description != "" {
-		activity.Description = req.Description
-	}
-	if req.Visibility != "" {
-		activity.Visibility = req.Visibility
-	}
-	if req.Metadata != nil {
-		activity.Metadata = req.Metadata
-	}
+
+	activity.Name = req.Name
+	activity.Description = req.Description
+	activity.Visibility = req.Visibility
+	activity.Metadata = models.JSONMap(metadata)
+	activity.UpdatedAt = time.Now()
 
 	if err := h.repos.Activities.Update(activity); err != nil {
 		response.GinInternalError(c, err)

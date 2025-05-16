@@ -76,9 +76,9 @@ func (m *MockListService) SyncList(listID uuid.UUID) error {
 	return args.Error(0)
 }
 
-func (m *MockListService) GetListConflicts(listID uuid.UUID) ([]*models.ListConflict, error) {
+func (m *MockListService) GetListConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
 	args := m.Called(listID)
-	return args.Get(0).([]*models.ListConflict), args.Error(1)
+	return args.Get(0).([]*models.SyncConflict), args.Error(1)
 }
 
 func (m *MockListService) ResolveListConflict(listID, conflictID uuid.UUID, resolution string) error {
@@ -132,6 +132,11 @@ func (m *MockListService) List(offset, limit int) ([]*models.List, error) {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListService) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
+	args := m.Called(listID)
+	return args.Get(0).([]*models.ListShare), args.Error(1)
 }
 
 func timeMatch(expected *time.Time) interface{} {
@@ -300,15 +305,15 @@ func TestListHandler(t *testing.T) {
 	t.Run("GetListConflicts", func(t *testing.T) {
 		listID := uuid.New()
 		now := time.Now()
-		conflicts := []*models.ListConflict{
+		conflicts := []*models.SyncConflict{
 			{
-				BaseModel: models.BaseModel{
-					ID:        uuid.New(),
-					CreatedAt: now,
-					UpdatedAt: now,
-				},
-				ListID:       listID,
-				ConflictType: "modified",
+				ID:         uuid.New(),
+				ListID:     listID,
+				Type:       "modified",
+				LocalData:  "Local Name",
+				RemoteData: "Remote Name",
+				CreatedAt:  now,
+				UpdatedAt:  now,
 			},
 		}
 
@@ -321,7 +326,7 @@ func TestListHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var response []*models.ListConflict
+		var response []*models.SyncConflict
 		err := json.NewDecoder(rec.Body).Decode(&response)
 		require.NoError(t, err)
 		assert.Len(t, response, 1)
@@ -470,6 +475,116 @@ func TestListHandler(t *testing.T) {
 		// Verify the response
 		assert.Equal(t, http.StatusNoContent, rec.Code)
 		mockService.AssertExpectations(t)
+	})
+
+	t.Run("GetListShares", func(t *testing.T) {
+		mockService := new(MockListService)
+		handler := NewListHandler(mockService)
+
+		validListID := uuid.New()
+		validUserID := uuid.New()
+		validShares := []*models.ListShare{
+			{
+				ListID:    validListID,
+				TribeID:   uuid.New(),
+				UserID:    validUserID,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+		}
+
+		tests := []struct {
+			name           string
+			listID         string
+			setupAuth      func(*http.Request)
+			setupMocks     func()
+			expectedStatus int
+			expectedError  string
+		}{
+			{
+				name:   "success",
+				listID: validListID.String(),
+				setupAuth: func(r *http.Request) {
+					ctx := context.WithValue(r.Context(), "user_id", validUserID)
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func() {
+					mockService.On("GetListOwners", validListID).Return([]*models.ListOwner{
+						{OwnerID: validUserID, OwnerType: "user"},
+					}, nil)
+					mockService.On("GetListShares", validListID).Return(validShares, nil)
+				},
+				expectedStatus: http.StatusOK,
+			},
+			{
+				name:   "invalid list ID",
+				listID: "invalid-uuid",
+				setupAuth: func(r *http.Request) {
+					ctx := context.WithValue(r.Context(), "user_id", validUserID)
+					*r = *r.WithContext(ctx)
+				},
+				expectedStatus: http.StatusBadRequest,
+				expectedError:  "invalid list ID",
+			},
+			{
+				name:   "unauthorized",
+				listID: validListID.String(),
+				setupAuth: func(r *http.Request) {
+					ctx := context.WithValue(r.Context(), "user_id", uuid.New())
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func() {
+					mockService.On("GetListOwners", validListID).Return([]*models.ListOwner{
+						{OwnerID: uuid.New(), OwnerType: "user"},
+					}, nil)
+				},
+				expectedStatus: http.StatusForbidden,
+				expectedError:  "you do not have permission to view this list's shares",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				rctx := chi.NewRouteContext()
+				rctx.URLParams.Add("id", tt.listID)
+
+				w := httptest.NewRecorder()
+				r := httptest.NewRequest("GET", "/", nil)
+				r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+				if tt.setupAuth != nil {
+					tt.setupAuth(r)
+				}
+
+				if tt.setupMocks != nil {
+					tt.setupMocks()
+				}
+
+				handler.GetListShares(w, r)
+
+				assert.Equal(t, tt.expectedStatus, w.Code)
+
+				if tt.expectedError != "" {
+					var response struct {
+						Success bool `json:"success"`
+						Error   struct {
+							Message string `json:"message"`
+						} `json:"error"`
+					}
+					err := json.NewDecoder(w.Body).Decode(&response)
+					require.NoError(t, err)
+					assert.False(t, response.Success)
+					assert.Equal(t, tt.expectedError, response.Error.Message)
+				} else if tt.expectedStatus == http.StatusOK {
+					var response []*models.ListShare
+					err := json.NewDecoder(w.Body).Decode(&response)
+					require.NoError(t, err)
+					assert.Equal(t, validShares, response)
+				}
+
+				mockService.AssertExpectations(t)
+			})
+		}
 	})
 }
 

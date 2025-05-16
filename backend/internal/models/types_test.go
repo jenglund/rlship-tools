@@ -238,6 +238,7 @@ func TestLocation_Validate(t *testing.T) {
 					ID:        uuid.New(),
 					CreatedAt: time.Now(),
 					UpdatedAt: time.Now(),
+					Version:   1,
 				},
 				Name:      "Test Location",
 				Address:   "123 Test St",
@@ -391,69 +392,6 @@ func TestMenuParams_Validate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.m.Validate()
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.ErrorIs(t, err, ErrInvalidInput)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestListConflict_Validate(t *testing.T) {
-	now := time.Now()
-	validID := uuid.New()
-	validBase := BaseModel{
-		ID:        validID,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	tests := []struct {
-		name    string
-		c       ListConflict
-		wantErr bool
-	}{
-		{
-			name: "valid",
-			c: ListConflict{
-				BaseModel:    validBase,
-				ListID:       uuid.New(),
-				ConflictType: "modified",
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid base model",
-			c: ListConflict{
-				BaseModel:    BaseModel{},
-				ListID:       uuid.New(),
-				ConflictType: "modified",
-			},
-			wantErr: true,
-		},
-		{
-			name: "nil list ID",
-			c: ListConflict{
-				BaseModel:    validBase,
-				ConflictType: "modified",
-			},
-			wantErr: true,
-		},
-		{
-			name: "empty conflict type",
-			c: ListConflict{
-				BaseModel: validBase,
-				ListID:    uuid.New(),
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.c.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.ErrorIs(t, err, ErrInvalidInput)

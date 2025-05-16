@@ -79,7 +79,12 @@ func TestTribe_Validate(t *testing.T) {
 		{
 			name: "valid",
 			t: Tribe{
-				BaseModel:   validBase,
+				BaseModel: BaseModel{
+					ID:        validID,
+					CreatedAt: now,
+					UpdatedAt: now,
+					Version:   1,
+				},
 				Name:        "Test Tribe",
 				Type:        TribeTypeCouple,
 				Description: "A test tribe",
@@ -165,7 +170,12 @@ func TestTribeMember_Validate(t *testing.T) {
 		{
 			name: "valid full member",
 			tm: TribeMember{
-				BaseModel:      validBase,
+				BaseModel: BaseModel{
+					ID:        validID,
+					CreatedAt: now,
+					UpdatedAt: now,
+					Version:   1,
+				},
 				TribeID:        uuid.New(),
 				UserID:         uuid.New(),
 				MembershipType: MembershipFull,
@@ -176,7 +186,12 @@ func TestTribeMember_Validate(t *testing.T) {
 		{
 			name: "valid guest member with future expiry",
 			tm: TribeMember{
-				BaseModel:      validBase,
+				BaseModel: BaseModel{
+					ID:        validID,
+					CreatedAt: now,
+					UpdatedAt: now,
+					Version:   1,
+				},
 				TribeID:        uuid.New(),
 				UserID:         uuid.New(),
 				MembershipType: MembershipGuest,

@@ -12,11 +12,23 @@ CREATE TYPE activity_type AS ENUM ('location', 'interest', 'list', 'activity');
 ALTER TABLE activities ALTER COLUMN type TYPE activity_type USING type::activity_type;
 ALTER TABLE activities ALTER COLUMN visibility TYPE visibility_type USING visibility::visibility_type;
 
+-- First remove the default value for sync_status
+ALTER TABLE lists ALTER COLUMN sync_status DROP DEFAULT;
+
+-- Convert list columns to enum types
 ALTER TABLE lists ALTER COLUMN type TYPE list_type USING type::list_type;
 ALTER TABLE lists ALTER COLUMN visibility TYPE visibility_type USING visibility::visibility_type;
 ALTER TABLE lists ALTER COLUMN sync_status TYPE list_sync_status USING sync_status::list_sync_status;
 
-ALTER TABLE list_owners ALTER COLUMN owner_type TYPE owner_type USING owner_type::owner_type;
+-- Drop the CHECK constraint on owner_type before conversion
+ALTER TABLE lists DROP CONSTRAINT IF EXISTS lists_owner_type_check;
+
+-- Ensure owner_type values are valid before conversion
+UPDATE lists SET owner_type = 'user' WHERE owner_type NOT IN ('user', 'tribe');
+ALTER TABLE lists ALTER COLUMN owner_type TYPE owner_type USING owner_type::owner_type;
+
+-- Add back the default value after conversion
+ALTER TABLE lists ALTER COLUMN sync_status SET DEFAULT 'none'::list_sync_status;
 
 ALTER TABLE tribes ALTER COLUMN type TYPE tribe_type USING type::tribe_type;
 ALTER TABLE tribes ALTER COLUMN visibility TYPE visibility_type USING visibility::visibility_type;
@@ -32,8 +44,7 @@ ALTER TABLE activities ALTER COLUMN visibility SET NOT NULL;
 ALTER TABLE lists ALTER COLUMN type SET NOT NULL;
 ALTER TABLE lists ALTER COLUMN visibility SET NOT NULL;
 ALTER TABLE lists ALTER COLUMN sync_status SET NOT NULL;
-
-ALTER TABLE list_owners ALTER COLUMN owner_type SET NOT NULL;
+ALTER TABLE lists ALTER COLUMN owner_type SET NOT NULL;
 
 ALTER TABLE tribes ALTER COLUMN type SET NOT NULL;
 ALTER TABLE tribes ALTER COLUMN visibility SET NOT NULL;

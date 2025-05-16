@@ -32,10 +32,10 @@ func (lt ListType) Validate() error {
 type ListSyncStatus string
 
 const (
-	ListSyncStatusNone     ListSyncStatus = "none"     // No sync configured
-	ListSyncStatusSynced   ListSyncStatus = "synced"   // In sync with external source
-	ListSyncStatusPending  ListSyncStatus = "pending"  // Changes pending sync
-	ListSyncStatusConflict ListSyncStatus = "conflict" // Conflicts detected
+	ListSyncStatusNone     ListSyncStatus = "none"
+	ListSyncStatusPending  ListSyncStatus = "pending"
+	ListSyncStatusSynced   ListSyncStatus = "synced"
+	ListSyncStatusConflict ListSyncStatus = "conflict"
 )
 
 func (ls ListSyncStatus) Validate() error {
@@ -314,6 +314,7 @@ type ListRepository interface {
 	GetItems(listID uuid.UUID) ([]*ListItem, error)
 	GetEligibleItems(listIDs []uuid.UUID, filters map[string]interface{}) ([]*ListItem, error)
 	UpdateItemStats(itemID uuid.UUID, chosen bool) error
+	MarkItemChosen(itemID uuid.UUID) error
 
 	// Owner management
 	AddOwner(owner *ListOwner) error
@@ -321,11 +322,14 @@ type ListRepository interface {
 	GetOwners(listID uuid.UUID) ([]*ListOwner, error)
 	GetUserLists(userID uuid.UUID) ([]*List, error)
 	GetTribeLists(tribeID uuid.UUID) ([]*List, error)
+	GetListsByOwner(ownerID uuid.UUID, ownerType OwnerType) ([]*List, error)
 
 	// Share management
 	ShareWithTribe(share *ListShare) error
 	UnshareWithTribe(listID, tribeID uuid.UUID) error
 	GetSharedLists(tribeID uuid.UUID) ([]*List, error)
+	GetSharedTribes(listID uuid.UUID) ([]*Tribe, error)
+	GetListShares(listID uuid.UUID) ([]*ListShare, error)
 
 	// Sync management
 	UpdateSyncStatus(listID uuid.UUID, status ListSyncStatus) error
@@ -333,4 +337,5 @@ type ListRepository interface {
 	CreateConflict(conflict *SyncConflict) error
 	ResolveConflict(conflictID uuid.UUID) error
 	GetListsBySource(source string) ([]*List, error)
+	AddConflict(conflict *SyncConflict) error
 }

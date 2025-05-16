@@ -380,11 +380,14 @@ func TestSyncService_CreateConflict(t *testing.T) {
 		{
 			name: "create valid conflict",
 			conflict: &models.SyncConflict{
+				ID:         uuid.New(),
 				ListID:     listID,
 				ItemID:     &itemID,
 				Type:       "item_update",
-				LocalData:  models.JSONMap{"name": "Local Name"},
-				RemoteData: models.JSONMap{"name": "Remote Name"},
+				LocalData:  "Local Name",
+				RemoteData: "Remote Name",
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
 			},
 			setup: func() {
 				mockRepo.On("GetByID", listID).Return(&models.List{
@@ -404,8 +407,11 @@ func TestSyncService_CreateConflict(t *testing.T) {
 		{
 			name: "invalid conflict data",
 			conflict: &models.SyncConflict{
-				ListID: listID,
-				Type:   "",
+				ID:        uuid.New(),
+				ListID:    listID,
+				Type:      "",
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
 			},
 			setup:   func() {},
 			wantErr: true,
@@ -416,10 +422,13 @@ func TestSyncService_CreateConflict(t *testing.T) {
 		{
 			name: "list not found",
 			conflict: &models.SyncConflict{
+				ID:         uuid.New(),
 				ListID:     listID,
 				Type:       "item_update",
-				LocalData:  models.JSONMap{"name": "Local Name"},
-				RemoteData: models.JSONMap{"name": "Remote Name"},
+				LocalData:  "Local Name",
+				RemoteData: "Remote Name",
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
 			},
 			setup: func() {
 				mockRepo.On("GetByID", listID).Return(nil, models.ErrNotFound).Once()
@@ -470,10 +479,13 @@ func TestSyncService_ResolveConflict(t *testing.T) {
 			setup: func() {
 				mockRepo.On("GetConflicts", conflictID).Return([]*models.SyncConflict{
 					{
+						ID:         conflictID,
 						ListID:     listID,
 						Type:       "item_update",
-						LocalData:  models.JSONMap{"name": "Local Name"},
-						RemoteData: models.JSONMap{"name": "Remote Name"},
+						LocalData:  "Local Name",
+						RemoteData: "Remote Name",
+						CreatedAt:  now,
+						UpdatedAt:  now,
 					},
 				}, nil).Once()
 				mockRepo.On("ResolveConflict", conflictID).Return(nil).Once()
@@ -506,11 +518,13 @@ func TestSyncService_ResolveConflict(t *testing.T) {
 			name:       "already resolved",
 			resolution: "use_local",
 			setup: func() {
+				resolvedAt := now
 				mockRepo.On("GetConflicts", conflictID).Return([]*models.SyncConflict{
 					{
+						ID:         conflictID,
 						ListID:     listID,
 						Type:       "item_update",
-						ResolvedAt: &now,
+						ResolvedAt: &resolvedAt,
 					},
 				}, nil).Once()
 			},
@@ -525,6 +539,7 @@ func TestSyncService_ResolveConflict(t *testing.T) {
 			setup: func() {
 				mockRepo.On("GetConflicts", conflictID).Return([]*models.SyncConflict{
 					{
+						ID:     conflictID,
 						ListID: listID,
 						Type:   "item_update",
 					},

@@ -14,6 +14,7 @@ const (
 	ActivityTypeInterest ActivityType = "interest"
 	ActivityTypeList     ActivityType = "list"
 	ActivityTypeActivity ActivityType = "activity"
+	ActivityTypeEvent    ActivityType = "event"
 )
 
 // Activity represents any type of activity, interest, location, or list

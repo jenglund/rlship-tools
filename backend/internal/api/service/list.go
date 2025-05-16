@@ -29,7 +29,7 @@ type ListService interface {
 
 	// Sync management
 	SyncList(listID uuid.UUID) error
-	GetListConflicts(listID uuid.UUID) ([]*models.ListConflict, error)
+	GetListConflicts(listID uuid.UUID) ([]*models.SyncConflict, error)
 	ResolveListConflict(listID, conflictID uuid.UUID, resolution string) error
 
 	// Owner management
@@ -43,6 +43,9 @@ type ListService interface {
 	ShareListWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error
 	UnshareListWithTribe(listID, tribeID, userID uuid.UUID) error
 	GetSharedLists(tribeID uuid.UUID) ([]*models.List, error)
+
+	// GetListShares retrieves all shares for a list
+	GetListShares(listID uuid.UUID) ([]*models.ListShare, error)
 }
 
 // listService implements the ListService interface
@@ -286,7 +289,7 @@ func (s *listService) SyncList(listID uuid.UUID) error {
 }
 
 // GetListConflicts retrieves all unresolved conflicts for a list
-func (s *listService) GetListConflicts(listID uuid.UUID) ([]*models.ListConflict, error) {
+func (s *listService) GetListConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
 	return s.repo.GetConflicts(listID)
 }
 
@@ -296,7 +299,7 @@ func (s *listService) ResolveListConflict(listID, conflictID uuid.UUID, resoluti
 }
 
 // CreateListConflict creates a new sync conflict
-func (s *listService) CreateListConflict(conflict *models.ListConflict) error {
+func (s *listService) CreateListConflict(conflict *models.SyncConflict) error {
 	return s.repo.CreateConflict(conflict)
 }
 
@@ -383,4 +386,15 @@ func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) er
 // GetSharedLists retrieves all lists shared with a tribe
 func (s *listService) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
 	return s.repo.GetSharedLists(tribeID)
+}
+
+// GetListShares retrieves all shares for a list
+func (s *listService) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
+	// Verify list exists
+	_, err := s.repo.GetByID(listID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetListShares(listID)
 }

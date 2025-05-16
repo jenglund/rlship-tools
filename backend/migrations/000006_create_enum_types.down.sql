@@ -5,8 +5,7 @@ ALTER TABLE activities ALTER COLUMN visibility DROP NOT NULL;
 ALTER TABLE lists ALTER COLUMN type DROP NOT NULL;
 ALTER TABLE lists ALTER COLUMN visibility DROP NOT NULL;
 ALTER TABLE lists ALTER COLUMN sync_status DROP NOT NULL;
-
-ALTER TABLE list_owners ALTER COLUMN owner_type DROP NOT NULL;
+ALTER TABLE lists ALTER COLUMN owner_type DROP NOT NULL;
 
 ALTER TABLE tribes ALTER COLUMN type DROP NOT NULL;
 ALTER TABLE tribes ALTER COLUMN visibility DROP NOT NULL;
@@ -19,11 +18,21 @@ ALTER TABLE users ALTER COLUMN provider DROP NOT NULL;
 ALTER TABLE activities ALTER COLUMN type TYPE VARCHAR(20) USING type::text;
 ALTER TABLE activities ALTER COLUMN visibility TYPE VARCHAR(10) USING visibility::text;
 
+-- First remove the default value for sync_status
+ALTER TABLE lists ALTER COLUMN sync_status DROP DEFAULT;
+
+-- Convert list columns back to VARCHAR
 ALTER TABLE lists ALTER COLUMN type TYPE VARCHAR(20) USING type::text;
 ALTER TABLE lists ALTER COLUMN visibility TYPE VARCHAR(10) USING visibility::text;
 ALTER TABLE lists ALTER COLUMN sync_status TYPE VARCHAR(10) USING sync_status::text;
+ALTER TABLE lists ALTER COLUMN owner_type TYPE VARCHAR(10) USING CASE 
+    WHEN owner_type::text = 'user' THEN 'user'
+    WHEN owner_type::text = 'tribe' THEN 'tribe'
+    ELSE 'user'
+END;
 
-ALTER TABLE list_owners ALTER COLUMN owner_type TYPE VARCHAR(10) USING owner_type::text;
+-- Add back the default value after conversion
+ALTER TABLE lists ALTER COLUMN sync_status SET DEFAULT 'none';
 
 ALTER TABLE tribes ALTER COLUMN type TYPE VARCHAR(20) USING type::text;
 ALTER TABLE tribes ALTER COLUMN visibility TYPE VARCHAR(10) USING visibility::text;

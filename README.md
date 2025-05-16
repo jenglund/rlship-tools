@@ -56,114 +56,56 @@ Ensure test coverage remains above 90% for all new code.
    - [x] Database constraints for nullable fields added
    - [x] Default values for boolean and numeric fields added
    - [x] Type mismatches between models and database layer (UUID and OwnerType)
+   - [x] Type mismatch between ListConflict and SyncConflict in service and repository layers
    
    b. Validation Layer Issues:
    - [x] Cross-field validations added (location data, seasonal dates, guest membership)
    - [x] Consistent validation between service and repository layers
    - [x] Incomplete validation for sync-related fields
-   - [ ] No validation for maximum field lengths or content format
+   - [ ] Type assertion needed for Metadata in activity handlers
+   - [ ] Invalid operation on JSONMap in activity_photos_test.go
+   - [ ] UUID array type mismatch in list_test.go
+   - [ ] OwnerType string to pointer conversion in list_test.go
    
-   c. Model Relationship Issues:
-   - [x] Foreign key constraints properly handled with cascade rules
-   - [x] Clear ownership cascade rules for related entities
-   - [x] Proper cleanup handling for related records
-   - [x] Soft-delete propagation implemented with triggers and constraints
+   c. Database Migration Issues:
+   - [ ] Migration failure: metadata column does not exist
+   - [ ] JSONB type conversion issues
+   - [ ] Missing NOT NULL constraints
+   - [ ] Missing check constraints for JSON objects
 
-   d. Data Integrity Issues:
-   - [x] List sync status validation failures
-   - [x] Consistent timestamp handling across models
-   - [x] Transaction boundaries implemented for multi-table operations
-   - [x] Optimistic locking implemented for concurrent modifications
-   - [x] Proper transaction management for concurrent operations
-
-2. Sync System Issues:
-   
-   a. Error Handling:
-   - [x] Specific error types for sync-related issues
-   - [x] Improved error messages for better debugging
-   - [x] Proper error handling in handlers with appropriate HTTP status codes
-   - [x] Error type checking utilities
-
-   b. Testing Coverage:
-   - [x] Comprehensive sync service tests
-   - [x] Tests for edge cases in sync transitions
-   - [x] Tests for conflict resolution scenarios
-
-   c. Documentation:
-   - [x] Detailed documentation about sync workflows
-   - [x] Documentation for conflict resolution strategies
+2. Test Coverage Issues:
+   - [ ] Low coverage in cmd/api package (0.0%)
+   - [ ] Low coverage in cmd/migrate package (0.0%)
+   - [ ] Low coverage in internal/config package (0.0%)
+   - [ ] Low coverage in internal/testutil package (6.8%)
+   - [ ] Improve coverage in internal/models package (74.4%)
+   - [ ] Improve coverage in internal/middleware package (78.6%)
 
 ## Future Work
 
-1. Test Infrastructure Improvements:
-   - [ ] Implement comprehensive test coverage for cmd/* packages
-   - [ ] Improve middleware test coverage to exceed 90%
-   - [x] Create robust test data setup/teardown infrastructure
-   - [x] Standardize mock usage patterns and expectations
-   - [x] Add integration tests for database constraints
-   - [x] Add tests for soft delete propagation and cascade rules
-   - [ ] Add tests for transaction boundaries and rollbacks
-   - [ ] Add tests for optimistic locking and concurrent modifications
+1. Database Improvements:
+   - [ ] Squash migrations and recreate clean migration history
+   - [ ] Add proper indexes for performance optimization
+   - [ ] Add foreign key constraints for data integrity
+   - [ ] Add proper cascading deletes
 
-2. Code Quality and Safety:
-   - [x] Standardize error handling patterns across all layers
-   - [x] Implement proper null safety checks in handlers
-   - [x] Align model validation with database constraints
-   - [ ] Add comprehensive input validation
-   - [x] Add transaction boundaries for multi-table operations
-   - [x] Implement optimistic locking for concurrent modifications
-   - [ ] Add deadlock detection and prevention
-   - [x] Implement retry logic for transient failures
-   - [ ] Add audit logging for critical operations
+2. Test Improvements:
+   - [ ] Add integration tests for sync functionality
+   - [ ] Add performance tests for database operations
+   - [ ] Add stress tests for concurrent operations
+   - [ ] Add end-to-end tests for critical user flows
 
-3. Documentation and Standards:
-   - [x] Document error handling patterns
-   - [x] Create mock usage guidelines
-   - [ ] Update API documentation with validation rules
-   - [x] Document test data setup procedures
-   - [x] Create contribution guidelines for tests
-   - [x] Document cascade rules and soft delete behavior
-   - [x] Document transaction boundaries and isolation levels
-   - [x] Document optimistic locking and version handling
+3. Code Quality:
+   - [ ] Improve error handling consistency
+   - [ ] Add logging for better debugging
+   - [ ] Add metrics for monitoring
+   - [ ] Add tracing for request flows
 
-4. Infrastructure and Tooling:
-   - [ ] Add automated test coverage checks
-   - [ ] Implement database migration tests
-   - [x] Add linting for consistent error handling
-   - [x] Create test data generation tools
-   - [ ] Add performance benchmarks
-   - [ ] Add monitoring for database constraint violations
-   - [ ] Add monitoring for transaction performance
-   - [ ] Add monitoring for deadlocks and lock contention
-   - [ ] Add monitoring for optimistic locking failures
-
-5. Federation Support (Future):
-   - Design federation protocol for inter-instance communication
-   - Implement selective federation controls
-     - Allow instance owners to control which other instances they federate with
-     - Support granular control over what data/connections are shared
-     - Enable federation transitivity controls (who can share federation connections)
-   - Add federation-aware data models
-     - Support distributed unique identifiers
-     - Handle data ownership across instances
-     - Implement conflict resolution for federated data
-   - Implement privacy controls
-     - Allow users to control data visibility across federation
-     - Support instance-level privacy policies
-     - Enable selective sharing of tribe connections
-   - Add federation management tools
-     - Federation status monitoring
-     - Connection health checks
-     - Federation audit logs
-   - Design security measures
-     - Instance verification
-     - Secure communication channels
-     - Rate limiting and abuse prevention
-   - Create federation documentation
-     - Protocol specifications
-     - Implementation guidelines
-     - Security best practices
-     - Privacy considerations
+4. Documentation:
+   - [ ] Add API documentation
+   - [ ] Add deployment guide
+   - [ ] Add development setup guide
+   - [ ] Add troubleshooting guide
 
 ## Contributing
 

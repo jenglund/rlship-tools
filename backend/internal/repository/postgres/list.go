@@ -784,7 +784,7 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 }
 
 // CreateConflict creates a new list conflict
-func (r *listRepository) CreateConflict(conflict *models.ListConflict) error {
+func (r *listRepository) CreateConflict(conflict *models.SyncConflict) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -804,25 +804,29 @@ func (r *listRepository) CreateConflict(conflict *models.ListConflict) error {
 		if err != nil {
 			return fmt.Errorf("error marshaling local data: %w", err)
 		}
-		externalData, err := json.Marshal(conflict.ExternalData)
+
+		remoteData, err := json.Marshal(conflict.RemoteData)
 		if err != nil {
-			return fmt.Errorf("error marshaling external data: %w", err)
+			return fmt.Errorf("error marshaling remote data: %w", err)
 		}
 
 		query := `
 			INSERT INTO list_conflicts (
-				id, list_id, item_id, conflict_type,
-				local_data, external_data,
-				created_at, updated_at, version
-			) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), 1)`
+				id, list_id, type,
+				local_data, remote_data,
+				created_at, updated_at
+			) VALUES (
+				$1, $2, $3,
+				$4, $5,
+				NOW(), NOW()
+			)`
 
 		_, err = tx.Exec(query,
 			conflict.ID,
 			conflict.ListID,
-			conflict.ItemID,
-			conflict.ConflictType,
+			conflict.Type,
 			localData,
-			externalData,
+			remoteData,
 		)
 		if err != nil {
 			return fmt.Errorf("error creating conflict: %w", err)
@@ -833,16 +837,16 @@ func (r *listRepository) CreateConflict(conflict *models.ListConflict) error {
 }
 
 // GetConflicts retrieves all unresolved conflicts for a list
-func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.ListConflict, error) {
+func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
-	var conflicts []*models.ListConflict
+	var conflicts []*models.SyncConflict
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
-			SELECT id, list_id, item_id, conflict_type,
-				local_data, external_data,
-				created_at, updated_at, resolved_at, version
+			SELECT id, list_id, type,
+				local_data, remote_data,
+				created_at, updated_at, resolved_at
 			FROM list_conflicts
 			WHERE list_id = $1
 				AND resolved_at IS NULL
@@ -856,20 +860,18 @@ func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.ListConflict,
 		defer rows.Close()
 
 		for rows.Next() {
-			conflict := &models.ListConflict{}
-			var localData, externalData []byte
+			conflict := &models.SyncConflict{}
+			var localData, remoteData []byte
 
 			err := rows.Scan(
 				&conflict.ID,
 				&conflict.ListID,
-				&conflict.ItemID,
-				&conflict.ConflictType,
+				&conflict.Type,
 				&localData,
-				&externalData,
+				&remoteData,
 				&conflict.CreatedAt,
 				&conflict.UpdatedAt,
 				&conflict.ResolvedAt,
-				&conflict.Version,
 			)
 			if err != nil {
 				return fmt.Errorf("error scanning conflict: %w", err)
@@ -879,8 +881,8 @@ func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.ListConflict,
 			if err := json.Unmarshal(localData, &conflict.LocalData); err != nil {
 				return fmt.Errorf("error parsing local data: %w", err)
 			}
-			if err := json.Unmarshal(externalData, &conflict.ExternalData); err != nil {
-				return fmt.Errorf("error parsing external data: %w", err)
+			if err := json.Unmarshal(remoteData, &conflict.RemoteData); err != nil {
+				return fmt.Errorf("error parsing remote data: %w", err)
 			}
 
 			conflicts = append(conflicts, conflict)
@@ -1233,38 +1235,47 @@ func (r *listRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
 	})
 }
 
-// getListShares retrieves all shares for a list (internal helper)
-func (r *listRepository) getListShares(listID uuid.UUID) ([]*models.ListShare, error) {
-	query := `
-		SELECT list_id, tribe_id, user_id, created_at, expires_at, deleted_at
-		FROM list_shares
-		WHERE list_id = $1 AND deleted_at IS NULL`
-
-	rows, err := r.db.Query(query, listID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting list shares: %w", err)
-	}
-	defer rows.Close()
-
+// GetListShares retrieves all shares for a list
+func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 	var shares []*models.ListShare
-	for rows.Next() {
-		share := &models.ListShare{}
-		err := rows.Scan(
-			&share.ListID,
-			&share.TribeID,
-			&share.UserID,
-			&share.CreatedAt,
-			&share.ExpiresAt,
-			&share.DeletedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("error scanning list share row: %w", err)
-		}
-		shares = append(shares, share)
-	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating list share rows: %w", err)
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at
+			FROM list_sharing
+			WHERE list_id = $1 AND deleted_at IS NULL
+			ORDER BY created_at DESC`
+
+		rows, err := tx.Query(query, listID)
+		if err != nil {
+			return fmt.Errorf("error getting list shares: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			share := &models.ListShare{}
+			err := rows.Scan(
+				&share.ListID,
+				&share.TribeID,
+				&share.UserID,
+				&share.CreatedAt,
+				&share.UpdatedAt,
+				&share.ExpiresAt,
+				&share.DeletedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error scanning list share: %w", err)
+			}
+			shares = append(shares, share)
+		}
+
+		return rows.Err()
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return shares, nil
@@ -1324,4 +1335,179 @@ func (r *listRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 	}
 
 	return lists, nil
+}
+
+// AddConflict creates a new list conflict
+func (r *listRepository) AddConflict(conflict *models.SyncConflict) error {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Validate conflict
+		if err := conflict.Validate(); err != nil {
+			return err
+		}
+
+		// Generate ID if not provided
+		if conflict.ID == uuid.Nil {
+			conflict.ID = uuid.New()
+		}
+
+		// Marshal JSON data
+		localData, err := json.Marshal(conflict.LocalData)
+		if err != nil {
+			return fmt.Errorf("error marshaling local data: %w", err)
+		}
+
+		remoteData, err := json.Marshal(conflict.RemoteData)
+		if err != nil {
+			return fmt.Errorf("error marshaling remote data: %w", err)
+		}
+
+		query := `
+			INSERT INTO list_conflicts (
+				id, list_id, type,
+				local_data, remote_data,
+				created_at, updated_at
+			) VALUES (
+				$1, $2, $3,
+				$4, $5,
+				NOW(), NOW()
+			)`
+
+		_, err = tx.Exec(query,
+			conflict.ID,
+			conflict.ListID,
+			conflict.Type,
+			localData,
+			remoteData,
+		)
+		if err != nil {
+			return fmt.Errorf("error creating conflict: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// GetListsByOwner retrieves all lists owned by a specific owner
+func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.OwnerType) ([]*models.List, error) {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var lists []*models.List
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
+				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
+				l.default_weight, l.max_items, l.cooldown_days,
+				l.created_at, l.updated_at, l.deleted_at
+			FROM lists l
+			JOIN list_owners lo ON l.id = lo.list_id
+			WHERE lo.owner_id = $1
+				AND lo.owner_type = $2
+				AND l.deleted_at IS NULL
+				AND lo.deleted_at IS NULL
+			ORDER BY l.created_at DESC`
+
+		rows, err := tx.Query(query, ownerID, ownerType)
+		if err != nil {
+			return fmt.Errorf("error getting lists by owner: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			list := &models.List{}
+			err := rows.Scan(
+				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
+				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
+				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
+				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error scanning list: %w", err)
+			}
+
+			// Load all related data
+			if err := r.loadListData(tx, list); err != nil {
+				return err
+			}
+
+			lists = append(lists, list)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lists, nil
+}
+
+// GetSharedTribes retrieves all tribes that a list is shared with
+func (r *listRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, error) {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var tribes []*models.Tribe
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT DISTINCT t.id, t.name, t.type, t.description, t.visibility,
+				t.metadata, t.created_at, t.updated_at, t.deleted_at
+			FROM tribes t
+			JOIN list_sharing ls ON t.id = ls.tribe_id
+			WHERE ls.list_id = $1
+				AND ls.deleted_at IS NULL
+				AND t.deleted_at IS NULL
+				AND (ls.expires_at IS NULL OR ls.expires_at > NOW())
+			ORDER BY t.created_at DESC`
+
+		rows, err := tx.Query(query, listID)
+		if err != nil {
+			return fmt.Errorf("error getting shared tribes: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			tribe := &models.Tribe{}
+			var metadata []byte
+			err := rows.Scan(
+				&tribe.ID,
+				&tribe.Name,
+				&tribe.Type,
+				&tribe.Description,
+				&tribe.Visibility,
+				&metadata,
+				&tribe.CreatedAt,
+				&tribe.UpdatedAt,
+				&tribe.DeletedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error scanning tribe: %w", err)
+			}
+
+			if len(metadata) > 0 {
+				if err := json.Unmarshal(metadata, &tribe.Metadata); err != nil {
+					return fmt.Errorf("error parsing tribe metadata: %w", err)
+				}
+			}
+
+			tribes = append(tribes, tribe)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return tribes, nil
+}
+
+// MarkItemChosen marks an item as chosen and updates its stats
+func (r *listRepository) MarkItemChosen(itemID uuid.UUID) error {
+	return r.UpdateItemStats(itemID, true)
 }
