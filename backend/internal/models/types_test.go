@@ -25,6 +25,7 @@ func TestVisibilityType_Validate(t *testing.T) {
 			err := tt.v.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -48,6 +49,7 @@ func TestOwnerType_Validate(t *testing.T) {
 			err := tt.o.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -117,6 +119,7 @@ func TestBaseModel_Validate(t *testing.T) {
 			err := tt.b.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -192,6 +195,246 @@ func TestLocationRef_Validate(t *testing.T) {
 			err := tt.l.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestLocation_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		loc     *Location
+		wantErr bool
+	}{
+		{
+			name: "valid location",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:      "Test Location",
+				Address:   "123 Test St",
+				Latitude:  45.0,
+				Longitude: -122.0,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid latitude low",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:      "Test Location",
+				Address:   "123 Test St",
+				Latitude:  -91.0,
+				Longitude: -122.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid latitude high",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:      "Test Location",
+				Address:   "123 Test St",
+				Latitude:  91.0,
+				Longitude: -122.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid longitude low",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:      "Test Location",
+				Address:   "123 Test St",
+				Latitude:  45.0,
+				Longitude: -181.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid longitude high",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:      "Test Location",
+				Address:   "123 Test St",
+				Latitude:  45.0,
+				Longitude: 181.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty name",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Address:   "123 Test St",
+				Latitude:  45.0,
+				Longitude: -122.0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty address",
+			loc: &Location{
+				BaseModel: BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:      "Test Location",
+				Latitude:  45.0,
+				Longitude: -122.0,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.loc.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMenuParams_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		m       MenuParams
+		wantErr bool
+	}{
+		{
+			name: "valid",
+			m: MenuParams{
+				ListIDs: []uuid.UUID{uuid.New()},
+				Count:   1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "no list IDs",
+			m: MenuParams{
+				Count: 1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero count",
+			m: MenuParams{
+				ListIDs: []uuid.UUID{uuid.New()},
+				Count:   0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative count",
+			m: MenuParams{
+				ListIDs: []uuid.UUID{uuid.New()},
+				Count:   -1,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.m.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestListConflict_Validate(t *testing.T) {
+	now := time.Now()
+	validID := uuid.New()
+	validBase := BaseModel{
+		ID:        validID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	tests := []struct {
+		name    string
+		c       ListConflict
+		wantErr bool
+	}{
+		{
+			name: "valid",
+			c: ListConflict{
+				BaseModel:    validBase,
+				ListID:       uuid.New(),
+				ConflictType: "modified",
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid base model",
+			c: ListConflict{
+				BaseModel:    BaseModel{},
+				ListID:       uuid.New(),
+				ConflictType: "modified",
+			},
+			wantErr: true,
+		},
+		{
+			name: "nil list ID",
+			c: ListConflict{
+				BaseModel:    validBase,
+				ConflictType: "modified",
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty conflict type",
+			c: ListConflict{
+				BaseModel: validBase,
+				ListID:    uuid.New(),
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.c.Validate()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}

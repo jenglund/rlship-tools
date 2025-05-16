@@ -57,47 +57,150 @@ func NewListService(repo models.ListRepository) ListService {
 
 // CreateList creates a new list
 func (s *listService) CreateList(list *models.List) error {
-	return s.repo.Create(list)
+	// Validate list
+	if err := list.Validate(); err != nil {
+		return fmt.Errorf("invalid list: %w", err)
+	}
+
+	// Create list
+	if err := s.repo.Create(list); err != nil {
+		return fmt.Errorf("error creating list: %w", err)
+	}
+
+	return nil
 }
 
 // GetList retrieves a list by ID
 func (s *listService) GetList(id uuid.UUID) (*models.List, error) {
-	return s.repo.GetByID(id)
+	if id == uuid.Nil {
+		return nil, fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+
+	list, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("error getting list: %w", err)
+	}
+
+	return list, nil
 }
 
 // UpdateList updates an existing list
 func (s *listService) UpdateList(list *models.List) error {
-	return s.repo.Update(list)
+	// Validate list
+	if err := list.Validate(); err != nil {
+		return fmt.Errorf("invalid list: %w", err)
+	}
+
+	// Update list
+	if err := s.repo.Update(list); err != nil {
+		return fmt.Errorf("error updating list: %w", err)
+	}
+
+	return nil
 }
 
 // DeleteList deletes a list
 func (s *listService) DeleteList(id uuid.UUID) error {
-	return s.repo.Delete(id)
+	if id == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+
+	if err := s.repo.Delete(id); err != nil {
+		return fmt.Errorf("error deleting list: %w", err)
+	}
+
+	return nil
 }
 
 // List retrieves a paginated list of lists
 func (s *listService) List(offset, limit int) ([]*models.List, error) {
-	return s.repo.List(offset, limit)
+	if offset < 0 {
+		return nil, fmt.Errorf("%w: offset cannot be negative", models.ErrInvalidInput)
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("%w: limit must be positive", models.ErrInvalidInput)
+	}
+
+	lists, err := s.repo.List(offset, limit)
+	if err != nil {
+		return nil, fmt.Errorf("error listing lists: %w", err)
+	}
+
+	return lists, nil
 }
 
 // AddListItem adds an item to a list
 func (s *listService) AddListItem(item *models.ListItem) error {
-	return s.repo.AddItem(item)
+	// Validate item
+	if item.ListID == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+	if item.Name == "" {
+		return fmt.Errorf("%w: item name is required", models.ErrInvalidInput)
+	}
+
+	// Verify list exists
+	if _, err := s.repo.GetByID(item.ListID); err != nil {
+		return fmt.Errorf("error verifying list exists: %w", err)
+	}
+
+	// Add item
+	if err := s.repo.AddItem(item); err != nil {
+		return fmt.Errorf("error adding list item: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateListItem updates a list item
 func (s *listService) UpdateListItem(item *models.ListItem) error {
-	return s.repo.UpdateItem(item)
+	// Validate item
+	if item.ID == uuid.Nil {
+		return fmt.Errorf("%w: item ID is required", models.ErrInvalidInput)
+	}
+	if item.ListID == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+	if item.Name == "" {
+		return fmt.Errorf("%w: item name is required", models.ErrInvalidInput)
+	}
+
+	// Update item
+	if err := s.repo.UpdateItem(item); err != nil {
+		return fmt.Errorf("error updating list item: %w", err)
+	}
+
+	return nil
 }
 
 // RemoveListItem removes an item from a list
 func (s *listService) RemoveListItem(listID, itemID uuid.UUID) error {
-	return s.repo.RemoveItem(listID, itemID)
+	if listID == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+	if itemID == uuid.Nil {
+		return fmt.Errorf("%w: item ID is required", models.ErrInvalidInput)
+	}
+
+	if err := s.repo.RemoveItem(listID, itemID); err != nil {
+		return fmt.Errorf("error removing list item: %w", err)
+	}
+
+	return nil
 }
 
 // GetListItems retrieves all items in a list
 func (s *listService) GetListItems(listID uuid.UUID) ([]*models.ListItem, error) {
-	return s.repo.GetItems(listID)
+	if listID == uuid.Nil {
+		return nil, fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+
+	items, err := s.repo.GetItems(listID)
+	if err != nil {
+		return nil, fmt.Errorf("error getting list items: %w", err)
+	}
+
+	return items, nil
 }
 
 // GenerateMenu generates a menu from multiple lists based on weights and filters

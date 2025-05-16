@@ -7,6 +7,8 @@ toolchain go1.24.3
 require (
 	firebase.google.com/go/v4 v4.13.0
 	github.com/gin-gonic/gin v1.10.0
+	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-playground/assert/v2 v2.2.0
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
@@ -44,7 +46,6 @@ require (
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
-	github.com/go-chi/chi/v5 v5.2.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect

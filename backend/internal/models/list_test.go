@@ -494,80 +494,6 @@ func TestListItem_Validate(t *testing.T) {
 	}
 }
 
-func TestLocation_Validate(t *testing.T) {
-	tests := []struct {
-		name    string
-		loc     *Location
-		wantErr bool
-	}{
-		{
-			name: "valid location",
-			loc: &Location{
-				Latitude:  45.0,
-				Longitude: -122.0,
-				Address:   "123 Test St",
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid latitude low",
-			loc: &Location{
-				Latitude:  -91.0,
-				Longitude: -122.0,
-				Address:   "123 Test St",
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid latitude high",
-			loc: &Location{
-				Latitude:  91.0,
-				Longitude: -122.0,
-				Address:   "123 Test St",
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid longitude low",
-			loc: &Location{
-				Latitude:  45.0,
-				Longitude: -181.0,
-				Address:   "123 Test St",
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid longitude high",
-			loc: &Location{
-				Latitude:  45.0,
-				Longitude: 181.0,
-				Address:   "123 Test St",
-			},
-			wantErr: true,
-		},
-		{
-			name: "empty address",
-			loc: &Location{
-				Latitude:  45.0,
-				Longitude: -122.0,
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.loc.Validate()
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.ErrorIs(t, err, ErrInvalidInput)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestMetadata_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -671,6 +597,7 @@ func TestListOwner_Validate(t *testing.T) {
 			err := tt.owner.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -750,6 +677,7 @@ func TestListShare_Validate(t *testing.T) {
 			err := tt.share.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}

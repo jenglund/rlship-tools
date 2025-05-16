@@ -39,38 +39,75 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("Create", func(t *testing.T) {
 		t.Run("valid tribe", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
 			}
 
 			err := repo.Create(tribe)
 			require.NoError(t, err)
 			assert.NotEqual(t, uuid.Nil, tribe.ID)
-			assert.False(t, tribe.CreatedAt.IsZero())
-			assert.False(t, tribe.UpdatedAt.IsZero())
+
+			found, err := repo.GetByID(tribe.ID)
+			require.NoError(t, err)
+			assert.Equal(t, tribe.Name, found.Name)
 		})
 
 		t.Run("duplicate name", func(t *testing.T) {
+			now := time.Now()
 			tribe1 := &models.Tribe{
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
 			}
 
 			err := repo.Create(tribe1)
 			require.NoError(t, err)
 
 			tribe2 := &models.Tribe{
-				Name: tribe1.Name,
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        tribe1.Name,
+				Type:        models.TribeTypeCouple,
+				Description: "Another test tribe",
+				Visibility:  models.VisibilityPrivate,
 			}
 
 			err = repo.Create(tribe2)
-			assert.NoError(t, err) // Duplicate names are allowed for tribes
+			assert.Error(t, err)
 		})
 	})
 
 	t.Run("GetByID", func(t *testing.T) {
 		t.Run("existing tribe", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
 			}
 
 			err := repo.Create(tribe)
@@ -78,8 +115,10 @@ func TestTribeRepository(t *testing.T) {
 
 			found, err := repo.GetByID(tribe.ID)
 			require.NoError(t, err)
-			assert.Equal(t, tribe.ID, found.ID)
 			assert.Equal(t, tribe.Name, found.Name)
+			assert.Equal(t, tribe.Type, found.Type)
+			assert.Equal(t, tribe.Description, found.Description)
+			assert.Equal(t, tribe.Visibility, found.Visibility)
 		})
 
 		t.Run("non-existent tribe", func(t *testing.T) {
@@ -91,8 +130,17 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("Update", func(t *testing.T) {
 		t.Run("existing tribe", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
 			}
 
 			err := repo.Create(tribe)
@@ -113,8 +161,13 @@ func TestTribeRepository(t *testing.T) {
 		})
 
 		t.Run("non-existent tribe", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
-				ID:   uuid.New(),
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 
@@ -125,7 +178,13 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("Delete", func(t *testing.T) {
 		t.Run("existing tribe", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 
@@ -148,9 +207,15 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		// Create multiple tribes
+		now := time.Now()
 		tribes := make([]*models.Tribe, 3)
 		for i := range tribes {
 			tribes[i] = &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribes[i])
@@ -173,7 +238,13 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("AddMember", func(t *testing.T) {
 		t.Run("valid member addition", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -186,10 +257,17 @@ func TestTribeRepository(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, members, 1)
 			assert.Equal(t, user1.ID, members[0].UserID)
+			assert.Equal(t, models.MembershipFull, members[0].MembershipType)
 		})
 
 		t.Run("duplicate member", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -208,7 +286,13 @@ func TestTribeRepository(t *testing.T) {
 		})
 
 		t.Run("non-existent user", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -221,7 +305,13 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("UpdateMember", func(t *testing.T) {
 		t.Run("valid member update", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -236,7 +326,7 @@ func TestTribeRepository(t *testing.T) {
 			members, err := repo.GetMembers(tribe.ID)
 			require.NoError(t, err)
 			assert.Len(t, members, 1)
-			assert.Equal(t, models.MembershipGuest, members[0].Type)
+			assert.Equal(t, models.MembershipGuest, members[0].MembershipType)
 		})
 
 		t.Run("non-existent tribe", func(t *testing.T) {
@@ -245,7 +335,13 @@ func TestTribeRepository(t *testing.T) {
 		})
 
 		t.Run("non-existent user", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -258,7 +354,13 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("RemoveMember", func(t *testing.T) {
 		t.Run("valid member removal", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -281,7 +383,13 @@ func TestTribeRepository(t *testing.T) {
 		})
 
 		t.Run("non-existent user", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
@@ -294,15 +402,21 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("GetMembers", func(t *testing.T) {
 		t.Run("multiple members", func(t *testing.T) {
+			now := time.Now()
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)
 			require.NoError(t, err)
 
+			// Add both test users as members
 			err = repo.AddMember(tribe.ID, user1.ID, models.MembershipFull, nil, nil)
 			require.NoError(t, err)
-
 			err = repo.AddMember(tribe.ID, user2.ID, models.MembershipGuest, nil, nil)
 			require.NoError(t, err)
 
@@ -310,13 +424,15 @@ func TestTribeRepository(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, members, 2)
 
-			// Verify both users are in the members list
-			foundIDs := make(map[uuid.UUID]bool)
-			for _, m := range members {
-				foundIDs[m.UserID] = true
+			// Verify member details
+			for _, member := range members {
+				assert.NotNil(t, member.User)
+				if member.UserID == user1.ID {
+					assert.Equal(t, models.MembershipFull, member.MembershipType)
+				} else {
+					assert.Equal(t, models.MembershipGuest, member.MembershipType)
+				}
 			}
-			assert.True(t, foundIDs[user1.ID])
-			assert.True(t, foundIDs[user2.ID])
 		})
 
 		t.Run("non-existent tribe", func(t *testing.T) {
@@ -338,6 +454,11 @@ func TestTribeRepository(t *testing.T) {
 			userTribes := make([]*models.Tribe, 3)
 			for i := range userTribes {
 				userTribes[i] = &models.Tribe{
+					BaseModel: models.BaseModel{
+						ID:        uuid.New(),
+						CreatedAt: time.Now(),
+						UpdatedAt: time.Now(),
+					},
 					Name: "Test Tribe " + uuid.New().String()[:8],
 				}
 				err := repo.Create(userTribes[i])
@@ -349,6 +470,11 @@ func TestTribeRepository(t *testing.T) {
 
 			// Create a tribe that the user is not a member of
 			otherTribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
 				Name: "Other Tribe " + uuid.New().String()[:8],
 			}
 			err = repo.Create(otherTribe)
@@ -380,6 +506,11 @@ func TestTribeRepository(t *testing.T) {
 	t.Run("GetExpiredGuestMemberships", func(t *testing.T) {
 		t.Run("expired memberships exist", func(t *testing.T) {
 			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
 				Name: "Test Tribe " + uuid.New().String()[:8],
 			}
 			err := repo.Create(tribe)

@@ -22,6 +22,24 @@ func NewListRepository(db *sql.DB) models.ListRepository {
 
 // Create inserts a new list into the database
 func (r *listRepository) Create(list *models.List) error {
+	// Start transaction
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Validate list
+	if err := list.Validate(); err != nil {
+		return err
+	}
+
+	// Generate ID if not provided
+	if list.ID == uuid.Nil {
+		list.ID = uuid.New()
+	}
+
+	// Insert list
 	query := `
 		INSERT INTO lists (
 			id, type, name, description, visibility,
@@ -35,16 +53,74 @@ func (r *listRepository) Create(list *models.List) error {
 			NOW(), NOW()
 		)`
 
-	if list.ID == uuid.Nil {
-		list.ID = uuid.New()
-	}
-
-	_, err := r.db.Exec(query,
+	_, err = tx.Exec(query,
 		list.ID, list.Type, list.Name, list.Description, list.Visibility,
 		list.SyncStatus, list.SyncSource, list.SyncID, list.LastSyncAt,
 		list.DefaultWeight, list.MaxItems, list.CooldownDays,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("error creating list: %w", err)
+	}
+
+	// Add owner if provided
+	if list.OwnerID != nil && list.OwnerType != nil {
+		owner := &models.ListOwner{
+			ListID:    list.ID,
+			OwnerID:   *list.OwnerID,
+			OwnerType: *list.OwnerType,
+		}
+		if err := owner.Validate(); err != nil {
+			return err
+		}
+
+		query = `
+			INSERT INTO list_owners (
+				list_id, owner_id, owner_type,
+				created_at, updated_at
+			) VALUES ($1, $2, $3, NOW(), NOW())`
+
+		_, err = tx.Exec(query,
+			owner.ListID,
+			owner.OwnerID,
+			owner.OwnerType,
+		)
+		if err != nil {
+			return fmt.Errorf("error adding list owner: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	return nil
+}
+
+// loadListData loads all related data for a list
+func (r *listRepository) loadListData(list *models.List) error {
+	// Load items
+	items, err := r.GetItems(list.ID)
+	if err != nil {
+		return fmt.Errorf("error loading list items: %w", err)
+	}
+	list.Items = items
+
+	// Load owners
+	owners, err := r.GetOwners(list.ID)
+	if err != nil {
+		return fmt.Errorf("error loading list owners: %w", err)
+	}
+	list.Owners = owners
+
+	// Load shares
+	shares, err := r.getListShares(list.ID)
+	if err != nil {
+		return fmt.Errorf("error loading list shares: %w", err)
+	}
+	list.Shares = shares
+
+	return nil
 }
 
 // GetByID retrieves a list by its ID
@@ -72,18 +148,28 @@ func (r *listRepository) GetByID(id uuid.UUID) (*models.List, error) {
 		return nil, fmt.Errorf("error getting list: %w", err)
 	}
 
-	// Load items
-	items, err := r.GetItems(id)
-	if err != nil {
+	// Load all related data
+	if err := r.loadListData(list); err != nil {
 		return nil, err
 	}
-	list.Items = items
 
 	return list, nil
 }
 
 // Update updates an existing list
 func (r *listRepository) Update(list *models.List) error {
+	// Start transaction
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Validate list
+	if err := list.Validate(); err != nil {
+		return err
+	}
+
 	query := `
 		UPDATE lists SET
 			type = $1,
@@ -100,45 +186,137 @@ func (r *listRepository) Update(list *models.List) error {
 			updated_at = NOW()
 		WHERE id = $12 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query,
+	result, err := tx.Exec(query,
 		list.Type, list.Name, list.Description, list.Visibility,
 		list.SyncStatus, list.SyncSource, list.SyncID, list.LastSyncAt,
 		list.DefaultWeight, list.MaxItems, list.CooldownDays,
 		list.ID,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("error updating list: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("error checking rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("list not found: %v", list.ID)
+		return models.ErrNotFound
+	}
+
+	// Update owner if provided
+	if list.OwnerID != nil && list.OwnerType != nil {
+		// First, soft-delete existing owners
+		query = `
+			UPDATE list_owners
+			SET deleted_at = NOW()
+			WHERE list_id = $1 AND deleted_at IS NULL`
+
+		_, err = tx.Exec(query, list.ID)
+		if err != nil {
+			return fmt.Errorf("error removing existing owners: %w", err)
+		}
+
+		// Then add new owner
+		owner := &models.ListOwner{
+			ListID:    list.ID,
+			OwnerID:   *list.OwnerID,
+			OwnerType: *list.OwnerType,
+		}
+		if err := owner.Validate(); err != nil {
+			return err
+		}
+
+		query = `
+			INSERT INTO list_owners (
+				list_id, owner_id, owner_type,
+				created_at, updated_at
+			) VALUES ($1, $2, $3, NOW(), NOW())`
+
+		_, err = tx.Exec(query,
+			owner.ListID,
+			owner.OwnerID,
+			owner.OwnerType,
+		)
+		if err != nil {
+			return fmt.Errorf("error adding list owner: %w", err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %w", err)
 	}
 
 	return nil
 }
 
-// Delete soft-deletes a list
+// Delete soft-deletes a list and all related records
 func (r *listRepository) Delete(id uuid.UUID) error {
+	// Start transaction
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now()
+
+	// Soft delete list
 	query := `
 		UPDATE lists SET
-			deleted_at = NOW()
-		WHERE id = $1 AND deleted_at IS NULL`
+			deleted_at = $1
+		WHERE id = $2 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, id)
+	result, err := tx.Exec(query, now, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("error deleting list: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("error checking rows affected: %w", err)
 	}
 	if rows == 0 {
-		return fmt.Errorf("list not found: %v", id)
+		return models.ErrNotFound
+	}
+
+	// Soft delete list items
+	query = `
+		UPDATE list_items SET
+			deleted_at = $1
+		WHERE list_id = $2 AND deleted_at IS NULL`
+
+	_, err = tx.Exec(query, now, id)
+	if err != nil {
+		return fmt.Errorf("error deleting list items: %w", err)
+	}
+
+	// Soft delete list owners
+	query = `
+		UPDATE list_owners SET
+			deleted_at = $1
+		WHERE list_id = $2 AND deleted_at IS NULL`
+
+	_, err = tx.Exec(query, now, id)
+	if err != nil {
+		return fmt.Errorf("error deleting list owners: %w", err)
+	}
+
+	// Soft delete list shares
+	query = `
+		UPDATE list_sharing SET
+			deleted_at = $1
+		WHERE list_id = $2 AND deleted_at IS NULL`
+
+	_, err = tx.Exec(query, now, id)
+	if err != nil {
+		return fmt.Errorf("error deleting list shares: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %w", err)
 	}
 
 	return nil
@@ -159,7 +337,7 @@ func (r *listRepository) List(offset, limit int) ([]*models.List, error) {
 
 	rows, err := r.db.Query(query, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error listing lists: %w", err)
 	}
 	defer rows.Close()
 
@@ -173,18 +351,19 @@ func (r *listRepository) List(offset, limit int) ([]*models.List, error) {
 			&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
 		)
 		if err != nil {
+			return nil, fmt.Errorf("error scanning list row: %w", err)
+		}
+
+		// Load all related data
+		if err := r.loadListData(list); err != nil {
 			return nil, err
 		}
+
 		lists = append(lists, list)
 	}
 
-	// Load items for each list
-	for _, list := range lists {
-		items, err := r.GetItems(list.ID)
-		if err != nil {
-			return nil, err
-		}
-		list.Items = items
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating list rows: %w", err)
 	}
 
 	return lists, nil

@@ -21,7 +21,7 @@ func (v VisibilityType) Validate() error {
 	case VisibilityPrivate, VisibilityShared, VisibilityPublic:
 		return nil
 	default:
-		return fmt.Errorf("invalid visibility type: %s", v)
+		return fmt.Errorf("%w: invalid visibility type: %s", ErrInvalidInput, v)
 	}
 }
 
@@ -38,7 +38,7 @@ func (o OwnerType) Validate() error {
 	case OwnerTypeUser, OwnerTypeTribe:
 		return nil
 	default:
-		return fmt.Errorf("invalid owner type: %s", o)
+		return fmt.Errorf("%w: invalid owner type: %s", ErrInvalidInput, o)
 	}
 }
 
@@ -53,16 +53,16 @@ type BaseModel struct {
 // Validate performs basic validation on the base model
 func (b *BaseModel) Validate() error {
 	if b.ID == uuid.Nil {
-		return fmt.Errorf("id is required")
+		return fmt.Errorf("%w: id is required", ErrInvalidInput)
 	}
 	if b.CreatedAt.IsZero() {
-		return fmt.Errorf("created_at is required")
+		return fmt.Errorf("%w: created_at is required", ErrInvalidInput)
 	}
 	if b.UpdatedAt.IsZero() {
-		return fmt.Errorf("updated_at is required")
+		return fmt.Errorf("%w: updated_at is required", ErrInvalidInput)
 	}
 	if b.DeletedAt != nil && b.DeletedAt.Before(b.CreatedAt) {
-		return fmt.Errorf("deleted_at cannot be before created_at")
+		return fmt.Errorf("%w: deleted_at cannot be before created_at", ErrInvalidInput)
 	}
 	return nil
 }
@@ -84,16 +84,16 @@ func (l *Location) Validate() error {
 		return err
 	}
 	if l.Name == "" {
-		return fmt.Errorf("name is required")
+		return fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
 	if l.Address == "" {
-		return fmt.Errorf("address is required")
+		return fmt.Errorf("%w: address is required", ErrInvalidInput)
 	}
 	if l.Latitude < -90 || l.Latitude > 90 {
-		return fmt.Errorf("latitude must be between -90 and 90")
+		return fmt.Errorf("%w: latitude must be between -90 and 90", ErrInvalidInput)
 	}
 	if l.Longitude < -180 || l.Longitude > 180 {
-		return fmt.Errorf("longitude must be between -180 and 180")
+		return fmt.Errorf("%w: longitude must be between -180 and 180", ErrInvalidInput)
 	}
 	return nil
 }
@@ -109,10 +109,10 @@ type MenuParams struct {
 // Validate performs validation on the menu parameters
 func (m *MenuParams) Validate() error {
 	if len(m.ListIDs) == 0 {
-		return fmt.Errorf("at least one list ID is required")
+		return fmt.Errorf("%w: at least one list ID is required", ErrInvalidInput)
 	}
 	if m.Count <= 0 {
-		return fmt.Errorf("count must be positive")
+		return fmt.Errorf("%w: count must be positive", ErrInvalidInput)
 	}
 	return nil
 }
@@ -134,10 +134,10 @@ func (c *ListConflict) Validate() error {
 		return err
 	}
 	if c.ListID == uuid.Nil {
-		return fmt.Errorf("list ID is required")
+		return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
 	}
 	if c.ConflictType == "" {
-		return fmt.Errorf("conflict type is required")
+		return fmt.Errorf("%w: conflict type is required", ErrInvalidInput)
 	}
 	return nil
 }

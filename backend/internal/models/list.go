@@ -67,6 +67,10 @@ type List struct {
 	Items         []*ListItem    `json:"items,omitempty" db:"-"`
 	Owners        []*ListOwner   `json:"owners,omitempty" db:"-"`
 	Shares        []*ListShare   `json:"shares,omitempty" db:"-"`
+
+	// Owner fields for creation/update operations
+	OwnerID   *uuid.UUID `json:"owner_id,omitempty" db:"-"`
+	OwnerType *OwnerType `json:"owner_type,omitempty" db:"-"`
 }
 
 // Validate performs validation on the List
@@ -95,6 +99,20 @@ func (l *List) Validate() error {
 	if l.CooldownDays != nil && *l.CooldownDays < 0 {
 		return fmt.Errorf("%w: cooldown days cannot be negative", ErrInvalidInput)
 	}
+
+	// Validate owner fields if provided
+	if l.OwnerID != nil && l.OwnerType == nil {
+		return fmt.Errorf("%w: owner type is required when owner ID is provided", ErrInvalidInput)
+	}
+	if l.OwnerID == nil && l.OwnerType != nil {
+		return fmt.Errorf("%w: owner ID is required when owner type is provided", ErrInvalidInput)
+	}
+	if l.OwnerType != nil {
+		if err := l.OwnerType.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -280,4 +298,5 @@ type ListRepository interface {
 	GetConflicts(listID uuid.UUID) ([]*ListConflict, error)
 	CreateConflict(conflict *ListConflict) error
 	ResolveConflict(conflictID uuid.UUID) error
+	GetListsBySource(source string) ([]*List, error)
 }

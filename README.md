@@ -47,51 +47,60 @@ Ensure test coverage remains above 90% for all new code.
 
 ## Known Issues
 
-1. Need to implement proper data models for:
-   - Tribes and tribe membership
-   - Activity lists and items
-   - Location integration with Google Maps
-   - Availability tracking
-   - User preferences
+1. Type System and Model Issues:
+   - Type mismatches between models and database layer (UUID and OwnerType)
+   - Inconsistent validation between service and repository layers
+   - List sync status validation failures
+   - Foreign key constraints not properly handled in test data setup
 
-2. Database schema needs updates for:
-   - Proper foreign key constraints
-   - Indexes for performance
-   - Soft delete support
-   - Audit trails
+2. Test Coverage and Quality:
+   - Zero coverage in cmd/api and cmd/migrate packages
+   - Low coverage (78.6%) in middleware package
+   - Poor coverage (31.5%) in testutil package
+   - Mock expectations not properly aligned with actual service behavior
+   - Test data setup/teardown infrastructure issues
 
-3. Missing validation for:
-   - Tribe membership rules
-   - List sharing permissions
-   - Activity data
-   - Location data
+3. Error Handling and Safety:
+   - Inconsistent error handling patterns across layers
+   - Nil pointer safety issues in activity handler
+   - Improper error propagation in service layer
+   - Inconsistent error type matching in tests
+
+4. Database and Infrastructure:
+   - Foreign key constraint violations in test data
+   - Missing proper database constraint handling
+   - Undefined repository methods (e.g., MarkItemChosen)
+   - Test database setup/cleanup issues
 
 ## Future Work
 
-1. Core Features Implementation:
-   - Create and manage tribes
-   - Share and sync activity lists
-   - Google Maps integration
-   - Availability tracking system
-   - Smart activity suggestions
+1. Test Infrastructure Improvements:
+   - Implement comprehensive test coverage for cmd/* packages
+   - Improve middleware test coverage to exceed 90%
+   - Create robust test data setup/teardown infrastructure
+   - Standardize mock usage patterns and expectations
+   - Add integration tests for database constraints
 
-2. Infrastructure:
-   - Set up CI/CD pipelines
-   - Configure monitoring and logging
-   - Implement caching layer
-   - Add rate limiting
+2. Code Quality and Safety:
+   - Standardize error handling patterns across all layers
+   - Implement proper null safety checks in handlers
+   - Align model validation with database constraints
+   - Review and update foreign key relationships
+   - Add comprehensive input validation
 
-3. Testing:
-   - Add integration tests
-   - Set up end-to-end testing
-   - Implement performance testing
-   - Add security testing
+3. Documentation and Standards:
+   - Document error handling patterns
+   - Create mock usage guidelines
+   - Update API documentation with validation rules
+   - Document test data setup procedures
+   - Create contribution guidelines for tests
 
-4. Documentation:
-   - API documentation
-   - Development guides
-   - Deployment procedures
-   - User guides
+4. Infrastructure and Tooling:
+   - Add automated test coverage checks
+   - Implement database migration tests
+   - Add linting for consistent error handling
+   - Create test data generation tools
+   - Add performance benchmarks
 
 ## Contributing
 

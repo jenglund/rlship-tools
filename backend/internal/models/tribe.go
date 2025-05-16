@@ -26,7 +26,7 @@ func (t TribeType) Validate() error {
 		TribeTypeRoommates, TribeTypeCoworkers, TribeTypeCustom:
 		return nil
 	default:
-		return fmt.Errorf("invalid tribe type: %s", t)
+		return fmt.Errorf("%w: invalid tribe type: %s", ErrInvalidInput, t)
 	}
 }
 
@@ -44,7 +44,7 @@ func (m MembershipType) Validate() error {
 	case MembershipFull, MembershipLimited, MembershipGuest:
 		return nil
 	default:
-		return fmt.Errorf("invalid membership type: %s", m)
+		return fmt.Errorf("%w: invalid membership type: %s", ErrInvalidInput, m)
 	}
 }
 
@@ -65,7 +65,7 @@ func (t *Tribe) Validate() error {
 		return err
 	}
 	if t.Name == "" {
-		return fmt.Errorf("name is required")
+		return fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
 	if err := t.Type.Validate(); err != nil {
 		return err
@@ -94,22 +94,24 @@ func (tm *TribeMember) Validate() error {
 		return err
 	}
 	if tm.TribeID == uuid.Nil {
-		return fmt.Errorf("tribe_id is required")
+		return fmt.Errorf("%w: tribe_id is required", ErrInvalidInput)
 	}
 	if tm.UserID == uuid.Nil {
-		return fmt.Errorf("user_id is required")
+		return fmt.Errorf("%w: user_id is required", ErrInvalidInput)
 	}
 	if err := tm.MembershipType.Validate(); err != nil {
 		return err
 	}
 	if tm.DisplayName == "" {
-		return fmt.Errorf("display_name is required")
+		return fmt.Errorf("%w: display_name is required", ErrInvalidInput)
 	}
-	if tm.MembershipType == MembershipGuest && tm.ExpiresAt == nil {
-		return fmt.Errorf("guest membership requires expiration date")
-	}
-	if tm.ExpiresAt != nil && tm.ExpiresAt.Before(time.Now()) {
-		return fmt.Errorf("expiration date cannot be in the past")
+	if tm.MembershipType == MembershipGuest {
+		if tm.ExpiresAt == nil {
+			return fmt.Errorf("%w: guest membership requires expiration date", ErrInvalidInput)
+		}
+		if tm.ExpiresAt.Before(time.Now()) {
+			return fmt.Errorf("%w: expiration date cannot be in the past", ErrInvalidInput)
+		}
 	}
 	return nil
 }

@@ -29,6 +29,7 @@ func TestTribeType_Validate(t *testing.T) {
 			err := tt.tt.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -53,6 +54,7 @@ func TestMembershipType_Validate(t *testing.T) {
 			err := tt.mt.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -136,6 +138,7 @@ func TestTribe_Validate(t *testing.T) {
 			err := tt.t.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -267,6 +270,7 @@ func TestTribeMember_Validate(t *testing.T) {
 			err := tt.tm.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
+				assert.ErrorIs(t, err, ErrInvalidInput)
 			} else {
 				assert.NoError(t, err)
 			}
