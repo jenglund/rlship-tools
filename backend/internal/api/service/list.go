@@ -266,6 +266,7 @@ func (s *listService) GenerateMenu(params *models.MenuParams) ([]*models.List, e
 
 // SyncList synchronizes a list with its external source
 func (s *listService) SyncList(listID uuid.UUID) error {
+	// First try
 	list, err := s.repo.GetByID(listID)
 	if err != nil {
 		return err
@@ -277,8 +278,25 @@ func (s *listService) SyncList(listID uuid.UUID) error {
 	}
 
 	// Update sync status to pending
-	if err := s.repo.UpdateSyncStatus(listID, models.ListSyncStatusPending); err != nil {
-		return err
+	err = s.repo.UpdateSyncStatus(listID, models.ListSyncStatusPending)
+	if err != nil {
+		// Handle concurrent modification by retrying once
+		if err == models.ErrConcurrentModification {
+			// Retry with fresh data
+			list, err = s.repo.GetByID(listID)
+			if err != nil {
+				return err
+			}
+
+			// Try again with the updated list
+			err = s.repo.UpdateSyncStatus(listID, models.ListSyncStatusPending)
+			if err != nil {
+				return err
+			}
+		} else {
+			// For any other error, return immediately
+			return err
+		}
 	}
 
 	// TODO: Implement external source sync (Google Maps API integration)

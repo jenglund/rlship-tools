@@ -213,40 +213,17 @@ func (r *listRepository) insertOwner(tx *sql.Tx, owner *models.ListOwner) error 
 
 // loadListData loads all related data for a list
 func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
-	// Prepare statements for better performance
-	itemStmt, err := tx.Prepare(`
+	// Load items
+	itemsQuery := `
 		SELECT id, list_id, name, description,
 			metadata, external_id,
 			weight, last_chosen, chosen_count,
 			latitude, longitude, address,
 			created_at, updated_at, deleted_at
 		FROM list_items
-		WHERE list_id = $1 AND deleted_at IS NULL`)
-	if err != nil {
-		return fmt.Errorf("error preparing items statement: %w", err)
-	}
-	defer itemStmt.Close()
+		WHERE list_id = $1 AND deleted_at IS NULL`
 
-	ownerStmt, err := tx.Prepare(`
-		SELECT list_id, owner_id, owner_type, created_at, deleted_at
-		FROM list_owners
-		WHERE list_id = $1 AND deleted_at IS NULL`)
-	if err != nil {
-		return fmt.Errorf("error preparing owners statement: %w", err)
-	}
-	defer ownerStmt.Close()
-
-	shareStmt, err := tx.Prepare(`
-		SELECT list_id, tribe_id, expires_at, created_at, updated_at, deleted_at
-		FROM list_sharing
-		WHERE list_id = $1 AND deleted_at IS NULL`)
-	if err != nil {
-		return fmt.Errorf("error preparing shares statement: %w", err)
-	}
-	defer shareStmt.Close()
-
-	// Load items
-	rows, err := itemStmt.Query(list.ID)
+	rows, err := tx.Query(itemsQuery, list.ID)
 	if err != nil {
 		return fmt.Errorf("error loading list items: %w", err)
 	}
@@ -283,7 +260,12 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	list.Items = items
 
 	// Load owners
-	rows, err = ownerStmt.Query(list.ID)
+	ownersQuery := `
+		SELECT list_id, owner_id, owner_type, created_at, deleted_at
+		FROM list_owners
+		WHERE list_id = $1 AND deleted_at IS NULL`
+
+	rows, err = tx.Query(ownersQuery, list.ID)
 	if err != nil {
 		return fmt.Errorf("error loading list owners: %w", err)
 	}
@@ -310,7 +292,12 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	list.Owners = owners
 
 	// Load shares
-	rows, err = shareStmt.Query(list.ID)
+	sharesQuery := `
+		SELECT list_id, tribe_id, expires_at, created_at, updated_at, deleted_at
+		FROM list_sharing
+		WHERE list_id = $1 AND deleted_at IS NULL`
+
+	rows, err = tx.Query(sharesQuery, list.ID)
 	if err != nil {
 		return fmt.Errorf("error loading list shares: %w", err)
 	}
@@ -650,53 +637,76 @@ func (r *listRepository) Delete(id uuid.UUID) error {
 
 // List retrieves a paginated list of lists
 func (r *listRepository) List(offset, limit int) ([]*models.List, error) {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-	var lists []*models.List
+	// Check if limit is 0, which means no results should be returned
+	if limit == 0 {
+		return []*models.List{}, nil
+	}
 
-	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		query := `
-			SELECT 
-				id, type, name, description, visibility,
-				sync_status, sync_source, sync_id, last_sync_at,
-				default_weight, max_items, cooldown_days,
-				created_at, updated_at, deleted_at
-			FROM lists
-			WHERE deleted_at IS NULL
-			ORDER BY created_at DESC
-			LIMIT $1 OFFSET $2`
+	// First, fetch the basic list details
+	query := `
+		SELECT 
+			id, type, name, description, visibility,
+			sync_status, sync_source, sync_id, last_sync_at,
+			default_weight, max_items, cooldown_days,
+			created_at, updated_at, deleted_at
+		FROM lists
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2`
 
-		rows, err := tx.Query(query, limit, offset)
-		if err != nil {
-			return fmt.Errorf("error listing lists: %w", err)
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			list := &models.List{}
-			err := rows.Scan(
-				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
-				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
-				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
-				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
-			)
-			if err != nil {
-				return fmt.Errorf("error scanning list: %w", err)
-			}
-
-			// Load all related data
-			if err := r.loadListData(tx, list); err != nil {
-				return err
-			}
-
-			lists = append(lists, list)
-		}
-
-		return nil
-	})
-
+	rows, err := r.db.Query(query, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error listing lists: %w", err)
+	}
+	defer rows.Close()
+
+	var lists []*models.List
+	for rows.Next() {
+		list := &models.List{}
+		err := rows.Scan(
+			&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
+			&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
+			&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
+			&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning list: %w", err)
+		}
+
+		lists = append(lists, list)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating lists: %w", err)
+	}
+
+	// If there are no lists, return early
+	if len(lists) == 0 {
+		return lists, nil
+	}
+
+	// For each list, load items, owners, and shares
+	for _, list := range lists {
+		// Load items
+		items, err := r.GetItems(list.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading items for list %s: %w", list.ID, err)
+		}
+		list.Items = items
+
+		// Load owners
+		owners, err := r.GetOwners(list.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading owners for list %s: %w", list.ID, err)
+		}
+		list.Owners = owners
+
+		// Load shares
+		shares, err := r.GetListShares(list.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading shares for list %s: %w", list.ID, err)
+		}
+		list.Shares = shares
 	}
 
 	return lists, nil

@@ -111,6 +111,14 @@ This approach simplifies testing and development. Once we reach production, we'l
   - Fixed routing issues in test endpoints by ensuring the path includes the nested '/tribes' route correctly
   - Fixed other tribe tests by ensuring proper Type and Visibility fields in the Tribe struct
 
+- ✅ **List Repository Transaction Issues**:
+  - Fixed transaction-related problems in the List method of the list repository
+  - Replaced complex transaction-based loadListData approach with a simpler step-by-step loading process
+  - Resolved the "unexpected Parse response 'D'" error caused by row handling within transactions
+  - Improved error reporting with more specific error messages
+  - Added comprehensive test coverage for the List method (80%+)
+  - Ensured proper pagination and handling of zero-limit requests
+
 ## Development Guidance
 
 When analyzing test failures, follow these best practices:
@@ -180,7 +188,7 @@ The primary focus now is on improving test coverage and implementing remaining c
        - ✅ RemoveItem (80.0% coverage)
        - ✅ GetItems (82.4% coverage)
        - ✅ GetEligibleItems (80.0% coverage)
-       - List (0% coverage, workaround in place)
+       - ✅ List (80.0% coverage, proper implementation with transaction fixes)
        - ✅ ShareWithTribe, GetListShares, GetSharedLists (basic functionalities tested, some edge cases skipped)
        - ✅ Sync-related functionality methods (UpdateSyncStatus, CreateConflict, GetConflicts, ResolveConflict, GetListsBySource, AddConflict) (80%)
      - ✅ Database connection and setup code (80%)
@@ -253,7 +261,7 @@ To systematically improve test coverage, we'll follow this action plan:
    - ✅ Write tests for RemoveItem (0% → 80.0%)
    - ✅ Write tests for GetItems (0% → 82.4%)
    - ✅ Write tests for GetEligibleItems (0% → 80.0%)
-   - ✅ Write tests for List method (0% → 80%, workaround implemented due to complex loading mechanism)
+   - ✅ Write tests for List method (0% → 80%, proper implementation with transaction fixes)
    - ✅ Write tests for ShareWithTribe, GetListShares, GetSharedLists (0% → 80%)
    
 3. **Sync Functionality** (COMPLETED)

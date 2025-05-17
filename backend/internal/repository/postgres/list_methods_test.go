@@ -12,103 +12,152 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListRepository_ListSimple(t *testing.T) {
+func TestListRepository_List(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	// Create test lists directly in the database to avoid the loadListData issues
+	repo := NewListRepository(db)
 	testUser := testutil.CreateTestUser(t, db)
 
 	// Create multiple test lists for pagination testing
 	numLists := 5
-	createdListIDs := make([]uuid.UUID, numLists)
+	createdLists := make([]*models.List, numLists)
 
-	// Insert lists directly using SQL to bypass complex List loading
+	// Create lists using the repository to ensure proper data relationships
 	for i := 0; i < numLists; i++ {
-		id := uuid.New()
-		createdListIDs[i] = id
+		ownerType := models.OwnerTypeUser
+		maxItems := 100
+		cooldownDays := 7
 
-		_, err := db.Exec(`
-			INSERT INTO lists (
-				id, type, name, description, visibility,
-				sync_status, sync_source, sync_id,
-				default_weight, max_items, cooldown_days,
-				owner_id, owner_type,
-				created_at, updated_at
-			) VALUES (
-				$1, 'activity', $2, $3, 'private',
-				'none', 'none', '',
-				1.0, 100, 7,
-				$4, 'user',
-				NOW(), NOW()
-			)`,
-			id,
-			fmt.Sprintf("Test List %d", i),
-			fmt.Sprintf("List Description %c", rune('A'+i)),
-			testUser.ID,
-		)
+		list := &models.List{
+			Type:          models.ListTypeActivity,
+			Name:          fmt.Sprintf("Test List %d", i),
+			Description:   fmt.Sprintf("List Description %c", rune('A'+i)),
+			Visibility:    models.VisibilityPrivate,
+			DefaultWeight: 1.0,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
+		}
+
+		err := repo.Create(list)
 		require.NoError(t, err)
 
-		// Add owner
-		_, err = db.Exec(`
-			INSERT INTO list_owners (
-				list_id, owner_id, owner_type,
-				created_at, updated_at
-			) VALUES ($1, $2, 'user', NOW(), NOW())`,
-			id, testUser.ID,
-		)
-		require.NoError(t, err)
+		// Add some items to the list to test related data loading
+		for j := 0; j < 2; j++ {
+			item := &models.ListItem{
+				ListID:      list.ID,
+				Name:        fmt.Sprintf("Item %d for List %d", j, i),
+				Description: fmt.Sprintf("Test Item %d", j),
+				Weight:      1.0,
+				Metadata:    models.JSONMap{"order": j, "category": "test"},
+				Available:   true,
+			}
+
+			err := repo.AddItem(item)
+			require.NoError(t, err)
+		}
+
+		createdLists[i] = list
 
 		// Add a small delay to ensure created_at times are different
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Run("List With Zero Limit", func(t *testing.T) {
-		// Direct SQL query with zero limit to bypass loadListData
-		rows, err := db.Query(`
-			SELECT id FROM lists 
-			WHERE deleted_at IS NULL 
-			ORDER BY created_at DESC 
-			LIMIT 0`)
+	t.Run("List All Lists", func(t *testing.T) {
+		// Get all lists
+		lists, err := repo.List(0, 10)
 		require.NoError(t, err)
-		defer rows.Close()
 
-		count := 0
-		for rows.Next() {
-			count++
+		// Should return all lists
+		assert.Equal(t, numLists, len(lists), "Should return all created lists")
+
+		// Verify lists are returned in descending order of creation time
+		for i := 0; i < len(lists)-1; i++ {
+			assert.True(t, lists[i].CreatedAt.After(lists[i+1].CreatedAt) ||
+				lists[i].CreatedAt.Equal(lists[i+1].CreatedAt),
+				"Lists should be ordered by created_at DESC")
 		}
-		assert.Equal(t, 0, count, "Zero limit query should return no results")
+
+		// Verify each list has its related data loaded
+		for _, list := range lists {
+			// Verify basic list properties
+			assert.NotEqual(t, uuid.Nil, list.ID)
+			assert.NotEmpty(t, list.Name)
+			assert.NotEmpty(t, list.Description)
+			assert.Equal(t, models.ListTypeActivity, list.Type)
+
+			// Verify owners are loaded
+			assert.NotEmpty(t, list.Owners, "List owners should be loaded")
+			assert.Equal(t, testUser.ID, list.Owners[0].OwnerID)
+
+			// Verify items are loaded
+			assert.Equal(t, 2, len(list.Items), "Each list should have 2 items")
+			for _, item := range list.Items {
+				assert.NotEqual(t, uuid.Nil, item.ID)
+				assert.Equal(t, list.ID, item.ListID)
+				assert.NotEmpty(t, item.Name)
+				assert.NotEmpty(t, item.Description)
+				assert.NotEmpty(t, item.Metadata)
+			}
+		}
+	})
+
+	t.Run("List With Pagination", func(t *testing.T) {
+		// Get first page (2 items)
+		firstPage, err := repo.List(0, 2)
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(firstPage), "First page should have 2 items")
+
+		// Get second page (2 items)
+		secondPage, err := repo.List(2, 2)
+		require.NoError(t, err)
+		assert.Equal(t, 2, len(secondPage), "Second page should have 2 items")
+
+		// Get third page (1 item)
+		thirdPage, err := repo.List(4, 2)
+		require.NoError(t, err)
+		assert.Equal(t, 1, len(thirdPage), "Third page should have 1 item")
+
+		// Verify pagination works correctly
+		for _, list := range firstPage {
+			for _, secondList := range secondPage {
+				assert.NotEqual(t, list.ID, secondList.ID, "Lists should not appear on multiple pages")
+			}
+		}
+	})
+
+	t.Run("List With Zero Limit", func(t *testing.T) {
+		lists, err := repo.List(0, 0)
+		require.NoError(t, err)
+		assert.Empty(t, lists, "Zero limit query should return no results")
 	})
 
 	t.Run("List With Deleted Lists", func(t *testing.T) {
 		// Delete one of the lists
-		_, err := db.Exec(`
-			UPDATE lists
-			SET deleted_at = NOW()
-			WHERE id = $1`,
-			createdListIDs[0],
-		)
+		err := repo.Delete(createdLists[0].ID)
 		require.NoError(t, err)
 
-		// Direct SQL query to bypass loadListData
-		rows, err := db.Query(`
-			SELECT id FROM lists 
-			WHERE deleted_at IS NULL 
-			ORDER BY created_at DESC`)
+		// List should not include deleted lists
+		lists, err := repo.List(0, 10)
 		require.NoError(t, err)
-		defer rows.Close()
 
-		var ids []uuid.UUID
-		for rows.Next() {
-			var id uuid.UUID
-			err := rows.Scan(&id)
-			require.NoError(t, err)
-			ids = append(ids, id)
-		}
+		// Should be one less than the total
+		assert.Equal(t, numLists-1, len(lists), "Should not include deleted lists")
 
-		// Make sure the deleted list is not included
-		for _, id := range ids {
-			assert.NotEqual(t, createdListIDs[0], id, "Deleted list should not be returned")
+		// Verify the deleted list is not included
+		for _, list := range lists {
+			assert.NotEqual(t, createdLists[0].ID, list.ID, "Deleted list should not be returned")
 		}
 	})
 }
