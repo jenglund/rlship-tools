@@ -19,6 +19,22 @@ func main() {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
+	// Setup application
+	router, err := setupApp(cfg)
+	if err != nil {
+		log.Fatalf("Error setting up application: %v", err)
+	}
+
+	// Start server
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	log.Printf("Server starting on %s", addr)
+	if err := router.Run(addr); err != nil {
+		log.Fatalf("Error starting server: %v", err)
+	}
+}
+
+// setupApp configures and initializes the application
+func setupApp(cfg *config.Config) (*gin.Engine, error) {
 	// Initialize database connection
 	port := 5432 // Default port
 	if cfg.Database.Port != "" {
@@ -36,9 +52,8 @@ func main() {
 		cfg.Database.SSLMode,
 	)
 	if err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
+		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
-	defer db.Close()
 
 	// Initialize repositories
 	repos := postgres.NewRepositories(db)
@@ -46,9 +61,18 @@ func main() {
 	// Initialize Firebase Auth
 	firebaseAuth, err := middleware.NewFirebaseAuth(cfg.Firebase.CredentialsFile)
 	if err != nil {
-		log.Fatalf("Error initializing Firebase Auth: %v", err)
+		db.Close() // Clean up DB connection on error
+		return nil, fmt.Errorf("error initializing Firebase Auth: %w", err)
 	}
 
+	// Initialize and configure Gin router
+	router := setupRouter(repos, firebaseAuth)
+
+	return router, nil
+}
+
+// setupRouter creates and configures the Gin router with all routes and middlewares
+func setupRouter(repos *postgres.Repositories, firebaseAuth *middleware.FirebaseAuth) *gin.Engine {
 	// Initialize Gin router
 	router := gin.Default()
 
@@ -69,10 +93,5 @@ func main() {
 		tribeHandler.RegisterRoutes(api)
 	}
 
-	// Start server
-	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("Server starting on %s", addr)
-	if err := router.Run(addr); err != nil {
-		log.Fatalf("Error starting server: %v", err)
-	}
+	return router
 }

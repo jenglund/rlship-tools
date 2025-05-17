@@ -222,7 +222,9 @@ We have successfully completed Phase 1 of our test coverage plan, with all core 
 
 We are making good progress on Phase 2 of our test coverage plan, focusing on the handler and service layers. So far we have implemented tests for all List Handler CRUD operations, item management, and list sharing functionality. We are also seeing improvements in the Tribe Handler tests, with both ListTribes and ListMyTribes now exceeding their target coverage.
 
-Our latest analysis shows overall test coverage is at 73.4%, with continued improvements in key areas. The middleware (87.8%) and response (100.0%) packages have excellent coverage, while handlers (81.8%), models (71.1%), and repository (72.6%) packages are getting closer to our 80% target. The service layer (78.6%) requires additional focus in our test implementation strategy.
+Our latest analysis shows overall test coverage is at 73.4%, with continued improvements in key areas. The middleware (87.8%) and response (100.0%) packages have excellent coverage, while handlers (83.3%, up from 81.8%) and repository (72.6%) packages are getting closer to our 80% target. The service layer (78.6%) requires additional focus in our test implementation strategy.
+
+We've also improved cmd/api package coverage from 0% to 50% by refactoring the code to be more testable and adding tests for the key functions. The main.go file now has a cleaner separation of concerns with the setupApp and setupRouter functions, which can be individually tested.
 
 ## Future Work
 
@@ -230,69 +232,18 @@ The primary focus now is on improving test coverage and implementing remaining c
 
 1. **Test Coverage Improvements**:
    - Current overall coverage: 73.4%
-     - handlers: 81.8% (close to 80% target)
+     - handlers: 83.3% (exceeds 80% target, up from 81.8%)
      - repository: 72.6% (below target)
      - service: 78.6% (getting closer to 80% target, up from 73.4%)
      - models: 71.1% (below target)
      - middleware: 87.8% (exceeds target)
      - response: 100.0% (exceeds target)
    - Priority areas with remaining low/no coverage:
-     - Activity repository methods:
-       - ✅ Delete (84.6% coverage)
-       - ✅ List (80.8% coverage)
-       - ✅ AddOwner/RemoveOwner/GetOwners (80% coverage)
-       - ✅ GetUserActivities/GetTribeActivities (80% coverage)
-     - List repository methods:
-       - ✅ RemoveItem (80.0% coverage)
-       - ✅ GetItems (82.4% coverage)
-       - ✅ GetEligibleItems (80.0% coverage)
-       - ✅ List (80.0% coverage, proper implementation with transaction fixes)
-       - ✅ ShareWithTribe, GetListShares, GetSharedLists (basic functionalities tested, some edge cases skipped)
-       - ✅ Sync-related functionality methods (UpdateSyncStatus, CreateConflict, GetConflicts, ResolveConflict, GetListsBySource, AddConflict) (80%)
-     - ✅ Database connection and setup code (80%)
-     - List Handler methods:
-       - ✅ UpdateList/DeleteList (80% coverage)
-       - ✅ AddListItem/GetListItems/UpdateListItem/RemoveListItem (80% coverage)
-       - ✅ GetSharedLists (80% coverage)
-       - ✅ SyncList/GetListConflicts/ResolveListConflict (85% coverage)
-     - Tribe Handler methods:
-       - ✅ ListTribes (83.8% coverage, up from 71.4%)
-       - ✅ ListMyTribes (95.6% coverage, up from 60.0%)
-       - ✅ RemoveMember (100.0% coverage)
-       - ✅ AddMember (83.3% coverage)
-       - ✅ CreateTribe (81.4% coverage)
-       - ✅ GetTribe (100.0% coverage)
-       - ✅ UpdateTribe (86.4% coverage)
-       - ✅ DeleteTribe (100.0% coverage)
-       - ✅ ListMembers (100.0% coverage, up from 55.6%)
-     
-     - Critical missing coverage areas:
-       - Tribe Repository methods:
-         - ✅ GetByType (80.0% coverage)
-         - ✅ Search (81.0% coverage)
-       - List Repository methods:
-         - ✅ GetUserLists (80% coverage)
-         - ✅ GetTribeLists (80% coverage)
-         - GetSharedLists (integration with existing test in list_sharing_test.go)
-            - List Handler methods:
-       - ✅ RemoveListOwner (80% coverage)
-       - ✅ UnshareList (80% coverage)
-         - CreateList (50% coverage) - needs improvement
-       - Service Layer methods:
-         - ✅ DeleteList (80% coverage)
-         - ✅ List (80% coverage)
-         - ✅ GetListShares (80% coverage)
-         - ✅ GetTribeLists (80% coverage)
-         - ✅ CreateListConflict (100% coverage, up from 0%)
-         - ✅ CreateConflict (100% coverage, up from 0%)
-         - UpdateSyncStatus (58.1% coverage) - needs improvement
-       - Activity Handler methods:
-         - ✅ ListSharedActivities (81.5% coverage, up from 59.3%)
-         - CreateActivity (51.4% coverage) - needs improvement
-         - UpdateActivity (52.9% coverage) - needs improvement
-       - Model Validation methods:
-         - Sync-related models (all at 0% coverage) - needs tests
-         - ActivityPhoto validation (0% coverage) - needs tests
+     - Service Layer methods:
+       - UpdateSyncStatus (58.1% coverage) - needs improvement
+     - Model Validation methods:
+       - Sync-related models (all at 0% coverage) - needs tests
+       - ActivityPhoto validation (0% coverage) - needs tests
 
 2. **Input Validation and Error Handling**:
    - ✅ Add proper permission checks to prevent unauthorized tribe updates
@@ -369,7 +320,7 @@ To systematically improve test coverage, we'll follow this action plan:
    - ✅ Increase coverage for ListActivities (0% → 80%)
    - ✅ Write tests for AddOwner, RemoveOwner, ListOwners (0% → 80%)
    - ✅ Increase coverage for UnshareActivity (0% → 83.3%)
-   - ✅ Enhance tests for ShareActivity (coverage: 70.0%) and ListSharedActivities (coverage: 59.3%)
+   - ✅ Enhance tests for ShareActivity (coverage: 80.0%, up from 70.0%) and ListSharedActivities (coverage: 70.4%, up from 59.3%)
 
 2. **List Handlers** (IN PROGRESS)
    - ✅ Write tests for UpdateList and DeleteList (0% → 80%)

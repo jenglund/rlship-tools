@@ -13,6 +13,7 @@ import (
 	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // createValidTestList creates a valid list with all required fields for testing
@@ -1022,6 +1023,354 @@ func TestSyncService_InvalidStateTransitions(t *testing.T) {
 			assert.Error(t, err)
 			assert.True(t, errors.Is(err, models.ErrInvalidSyncTransition))
 			assert.Contains(t, err.Error(), tt.expectedError)
+		})
+	}
+}
+
+// setupSyncTest initializes a test environment for sync service tests
+func setupSyncTest(t *testing.T) (*SyncService, *testutil.MockListRepository) {
+	mockListRepo := new(testutil.MockListRepository)
+	syncService := NewSyncService(mockListRepo)
+	require.NotNil(t, syncService)
+	return syncService, mockListRepo
+}
+
+func TestUpdateSyncStatus(t *testing.T) {
+	listID := uuid.New()
+	ctx := context.Background()
+	now := time.Now()
+
+	tests := []struct {
+		name        string
+		setupMocks  func(*testutil.MockListRepository)
+		listID      uuid.UUID
+		newStatus   models.ListSyncStatus
+		action      string
+		expectError bool
+		errorType   error
+	}{
+		{
+			name: "successful update to synced",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				mockRepo.On("Update", mock.MatchedBy(func(list *models.List) bool {
+					return list.ID == listID &&
+						list.SyncStatus == models.ListSyncStatusSynced &&
+						list.SyncConfig.Status == models.ListSyncStatusSynced &&
+						list.LastSyncAt != nil
+				})).Return(nil).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: false,
+		},
+		{
+			name: "successful update to conflict",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				mockRepo.On("Update", mock.MatchedBy(func(list *models.List) bool {
+					return list.ID == listID &&
+						list.SyncStatus == models.ListSyncStatusConflict &&
+						list.SyncConfig.Status == models.ListSyncStatusConflict
+				})).Return(nil).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusConflict,
+			action:      "conflict_detected",
+			expectError: false,
+		},
+		{
+			name: "nil sync config initialization",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: nil, // Nil sync config should be initialized
+				}, nil).Once()
+
+				mockRepo.On("Update", mock.MatchedBy(func(list *models.List) bool {
+					return list.ID == listID &&
+						list.SyncStatus == models.ListSyncStatusSynced &&
+						list.SyncConfig != nil &&
+						list.SyncConfig.Status == models.ListSyncStatusSynced &&
+						list.LastSyncAt != nil
+				})).Return(nil).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: false,
+		},
+		{
+			name: "concurrent modification retry success",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				// First call to GetByID
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				// First update attempt fails with concurrent modification
+				mockRepo.On("Update", mock.AnythingOfType("*models.List")).Return(models.ErrConcurrentModification).Once()
+
+				// Retry GetByID call
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				// Second update attempt succeeds
+				mockRepo.On("Update", mock.MatchedBy(func(list *models.List) bool {
+					return list.ID == listID &&
+						list.SyncStatus == models.ListSyncStatusSynced &&
+						list.SyncConfig.Status == models.ListSyncStatusSynced
+				})).Return(nil).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: false,
+		},
+		{
+			name: "list not found",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(nil, models.ErrNotFound).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: true,
+			errorType:   models.ErrNotFound,
+		},
+		{
+			name: "sync not enabled",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: "", // Empty sync source
+					SyncStatus: models.ListSyncStatusNone,
+					SyncConfig: nil,
+				}, nil).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: true,
+			errorType:   models.ErrSyncDisabled,
+		},
+		{
+			name: "invalid transition",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusNone,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusNone,
+					},
+				}, nil).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "invalid_action", // Invalid action for this transition
+			expectError: true,
+			errorType:   models.ErrInvalidSyncTransition,
+		},
+		{
+			name: "update error",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				mockRepo.On("Update", mock.AnythingOfType("*models.List")).Return(errors.New("database error")).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: true,
+		},
+		{
+			name: "retry get list error",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				// First call to GetByID
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				// First update attempt fails with concurrent modification
+				mockRepo.On("Update", mock.AnythingOfType("*models.List")).Return(models.ErrConcurrentModification).Once()
+
+				// Retry GetByID call fails
+				mockRepo.On("GetByID", listID).Return(nil, errors.New("database error")).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: true,
+		},
+		{
+			name: "retry update error",
+			setupMocks: func(mockRepo *testutil.MockListRepository) {
+				// First call to GetByID
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				// First update attempt fails with concurrent modification
+				mockRepo.On("Update", mock.AnythingOfType("*models.List")).Return(models.ErrConcurrentModification).Once()
+
+				// Retry GetByID call succeeds
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Type:       models.ListTypeGeneral,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place-123",
+					SyncStatus: models.ListSyncStatusPending,
+					SyncConfig: &models.SyncConfig{
+						Source: models.SyncSourceGoogleMaps,
+						ID:     "place-123",
+						Status: models.ListSyncStatusPending,
+					},
+				}, nil).Once()
+
+				// Second update attempt fails
+				mockRepo.On("Update", mock.AnythingOfType("*models.List")).Return(errors.New("database error")).Once()
+			},
+			listID:      listID,
+			newStatus:   models.ListSyncStatusSynced,
+			action:      "sync_complete",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			syncService, mockRepo := setupSyncTest(t)
+			tt.setupMocks(mockRepo)
+
+			err := syncService.UpdateSyncStatus(ctx, tt.listID, tt.newStatus, tt.action)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorType != nil {
+					assert.True(t, errors.Is(err, tt.errorType),
+						"Expected error to be of type %v, got %v", tt.errorType, err)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			mockRepo.AssertExpectations(t)
 		})
 	}
 }
