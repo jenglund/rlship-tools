@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -11,53 +12,98 @@ import (
 	"github.com/jenglund/rlship-tools/internal/config"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Command required: up, down, or force")
+// Migrator defines the interface for database migrations
+type Migrator interface {
+	Up() error
+	Down() error
+	Force(version int) error
+	Version() (uint, bool, error)
+}
+
+// MigrateFactory is a function type that creates a new migrate instance
+type MigrateFactory func(sourceURL, databaseURL string) (Migrator, error)
+
+// ConfigLoader is a function type that loads configuration
+type ConfigLoader func() (*config.Config, error)
+
+// defaultMigrateFactory is the default implementation that uses migrate.New
+func defaultMigrateFactory(sourceURL, databaseURL string) (Migrator, error) {
+	return migrate.New(sourceURL, databaseURL)
+}
+
+// defaultConfigLoader is the default implementation that uses config.Load
+func defaultConfigLoader() (*config.Config, error) {
+	return config.Load()
+}
+
+// runMigrations handles the migration logic
+func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoader) error {
+	if len(args) < 2 {
+		return fmt.Errorf("Command required: up, down, or force")
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Error loading config: %v", err)
+	command := args[1]
+	// Validate command before doing anything else
+	switch command {
+	case "up", "down":
+		// Valid commands, continue
+	case "force":
+		if len(args) != 3 {
+			return fmt.Errorf("Version number required for force command")
+		}
+		if _, err := strconv.ParseUint(args[2], 10, 64); err != nil {
+			return fmt.Errorf("Invalid version number: %v", err)
+		}
+	default:
+		return fmt.Errorf("Invalid command. Use 'up', 'down', or 'force'")
 	}
 
-	m, err := migrate.New(
-		"file://migrations",
-		cfg.Database.URL,
-	)
+	if configLoader == nil {
+		configLoader = defaultConfigLoader
+	}
+
+	cfg, err := configLoader()
 	if err != nil {
-		log.Fatalf("Error creating migrate instance: %v", err)
+		return fmt.Errorf("Error loading config: %v", err)
+	}
+
+	if factory == nil {
+		factory = defaultMigrateFactory
+	}
+
+	m, err := factory("file://migrations", cfg.Database.URL)
+	if err != nil {
+		return fmt.Errorf("Error creating migrate instance: %v", err)
 	}
 
 	version, dirty, err := m.Version()
 	if err != nil && err != migrate.ErrNilVersion {
-		log.Fatalf("Error getting version: %v", err)
+		return fmt.Errorf("Error getting version: %v", err)
 	}
 	log.Printf("Current migration version: %d, Dirty: %v", version, dirty)
 
-	command := os.Args[1]
 	switch command {
 	case "up":
 		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			log.Fatalf("Error running migrations: %v", err)
+			return fmt.Errorf("Error running migrations: %v", err)
 		}
 	case "down":
 		if err := m.Down(); err != nil && err != migrate.ErrNoChange {
-			log.Fatalf("Error running migrations: %v", err)
+			return fmt.Errorf("Error running migrations: %v", err)
 		}
 	case "force":
-		if len(os.Args) != 3 {
-			log.Fatal("Version number required for force command")
-		}
-		version, err := strconv.ParseUint(os.Args[2], 10, 64)
-		if err != nil {
-			log.Fatalf("Invalid version number: %v", err)
-		}
+		version, _ := strconv.ParseUint(args[2], 10, 64) // Already validated above
 		if err := m.Force(int(version)); err != nil {
-			log.Fatalf("Error forcing version: %v", err)
+			return fmt.Errorf("Error forcing version: %v", err)
 		}
 		log.Printf("Successfully forced version to %d", version)
-	default:
-		log.Fatalf("Invalid command. Use 'up', 'down', or 'force'")
+	}
+
+	return nil
+}
+
+func main() {
+	if err := runMigrations(os.Args, defaultMigrateFactory, defaultConfigLoader); err != nil {
+		log.Fatal(err)
 	}
 }
