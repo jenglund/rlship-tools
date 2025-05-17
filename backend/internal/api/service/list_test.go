@@ -461,3 +461,400 @@ func TestListService_GetListShares(t *testing.T) {
 		assert.Equal(t, expectedErr, err)
 	})
 }
+
+// MockListRepository is a mock implementation of the ListRepository interface
+type MockListRepository struct {
+	mock.Mock
+}
+
+func (m *MockListRepository) Create(list *models.List) error {
+	args := m.Called(list)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) CreateList(list *models.List) error {
+	args := m.Called(list)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetByID(id uuid.UUID) (*models.List, error) {
+	args := m.Called(id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetBySlug(slug string) (*models.List, error) {
+	args := m.Called(slug)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) Update(list *models.List) error {
+	args := m.Called(list)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) Delete(id uuid.UUID) error {
+	args := m.Called(id)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) List(offset, limit int) ([]*models.List, error) {
+	args := m.Called(offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) AddItem(item *models.ListItem) error {
+	args := m.Called(item)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) {
+	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.ListItem), args.Error(1)
+}
+
+func (m *MockListRepository) UpdateItem(item *models.ListItem) error {
+	args := m.Called(item)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) RemoveItem(listID, itemID uuid.UUID) error {
+	args := m.Called(listID, itemID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSyncStatus) error {
+	args := m.Called(listID, status)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
+	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.SyncConflict), args.Error(1)
+}
+
+func (m *MockListRepository) ResolveConflict(conflictID uuid.UUID) error {
+	args := m.Called(conflictID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) CreateConflict(conflict *models.SyncConflict) error {
+	args := m.Called(conflict)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) AddOwner(owner *models.ListOwner) error {
+	args := m.Called(owner)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) RemoveOwner(listID, ownerID uuid.UUID) error {
+	args := m.Called(listID, ownerID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error) {
+	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.ListOwner), args.Error(1)
+}
+
+func (m *MockListRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(tribeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) ShareWithTribe(share *models.ListShare) error {
+	args := m.Called(share)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
+	args := m.Called(listID, tribeID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(tribeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
+	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.ListShare), args.Error(1)
+}
+
+func (m *MockListRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[string]interface{}) ([]*models.ListItem, error) {
+	args := m.Called(listIDs, filters)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.ListItem), args.Error(1)
+}
+
+func (m *MockListRepository) UpdateItemStats(itemID uuid.UUID, chosen bool) error {
+	args := m.Called(itemID, chosen)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) MarkItemChosen(itemID uuid.UUID) error {
+	args := m.Called(itemID)
+	return args.Error(0)
+}
+
+func (m *MockListRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.OwnerType) ([]*models.List, error) {
+	args := m.Called(ownerID, ownerType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, error) {
+	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Tribe), args.Error(1)
+}
+
+func (m *MockListRepository) GetListsBySource(source string) ([]*models.List, error) {
+	args := m.Called(source)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+// Helper function to check if an error is a common error type
+func isCommonError(err error) bool {
+	return errors.Is(err, models.ErrNotFound) ||
+		errors.Is(err, models.ErrForbidden) ||
+		errors.Is(err, models.ErrInvalidInput) ||
+		errors.Is(err, models.ErrUnauthorized)
+}
+
+// Using a simple error variable for testing
+var errInternalServer = fmt.Errorf("internal server error")
+
+func TestListService_UnshareListWithTribe(t *testing.T) {
+	mockRepo := new(MockListRepository)
+	service := NewListService(mockRepo)
+
+	listID := uuid.New()
+	tribeID := uuid.New()
+	userID := uuid.New()
+
+	tests := []struct {
+		name          string
+		listID        uuid.UUID
+		tribeID       uuid.UUID
+		userID        uuid.UUID
+		setupMocks    func(*MockListRepository)
+		expectedError error
+	}{
+		{
+			name:    "success",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return list with user as owner
+				mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+					{
+						ListID:    listID,
+						OwnerID:   userID,
+						OwnerType: "user",
+					},
+				}, nil)
+
+				// Mock UnshareWithTribe to succeed
+				mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil)
+			},
+			expectedError: nil,
+		},
+		{
+			name:    "list not found",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return list not found error
+				mockRepo.On("GetByID", listID).Return(nil, models.ErrNotFound)
+			},
+			expectedError: models.ErrNotFound,
+		},
+		{
+			name:    "error getting list",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return an unexpected error
+				mockRepo.On("GetByID", listID).Return(nil, errInternalServer)
+			},
+			expectedError: errInternalServer,
+		},
+		{
+			name:    "error getting owners",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return an error
+				mockRepo.On("GetOwners", listID).Return(nil, errInternalServer)
+			},
+			expectedError: errInternalServer,
+		},
+		{
+			name:    "user not an owner",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return list with different user as owner
+				mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+					{
+						ListID:    listID,
+						OwnerID:   uuid.New(), // Different user ID
+						OwnerType: "user",
+					},
+				}, nil)
+			},
+			expectedError: models.ErrForbidden,
+		},
+		{
+			name:    "tribe is owner but not user",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return list with tribe as owner but not user
+				mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+					{
+						ListID:    listID,
+						OwnerID:   tribeID,
+						OwnerType: "tribe", // Tribe, not user
+					},
+				}, nil)
+			},
+			expectedError: models.ErrForbidden,
+		},
+		{
+			name:    "error unsharing",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return list with user as owner
+				mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+					{
+						ListID:    listID,
+						OwnerID:   userID,
+						OwnerType: "user",
+					},
+				}, nil)
+
+				// Mock UnshareWithTribe to fail
+				mockRepo.On("UnshareWithTribe", listID, tribeID).Return(errInternalServer)
+			},
+			expectedError: errInternalServer,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset mock expectations
+			mockRepo.ExpectedCalls = nil
+			mockRepo.Calls = nil
+
+			// Setup mocks
+			tc.setupMocks(mockRepo)
+
+			// Call the service method
+			err := service.UnshareListWithTribe(tc.listID, tc.tribeID, tc.userID)
+
+			// Check error
+			if tc.expectedError != nil {
+				assert.Error(t, err)
+				// For common errors like ErrNotFound, check exact error
+				if isCommonError(tc.expectedError) {
+					assert.ErrorIs(t, err, tc.expectedError)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			// Verify all mocks were called as expected
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
