@@ -149,9 +149,14 @@ func CreateTestList(t *testing.T, db *sql.DB, tribeID uuid.UUID) TestList {
 	}
 
 	_, err := db.Exec(`
-		INSERT INTO lists (id, type, name, description, visibility, owner_id, owner_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, list.ID, list.Type, list.Name, "Test list", models.VisibilityPrivate, list.TribeID, models.OwnerTypeTribe)
+		INSERT INTO lists (
+			id, type, name, description, visibility, owner_id, owner_type,
+			sync_status, sync_source, sync_id, default_weight
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, list.ID, list.Type, list.Name, "Test list", models.VisibilityPrivate,
+		list.TribeID, "tribe", // Use string literal for owner_type
+		models.ListSyncStatusNone, models.SyncSourceNone, "", 1.0)
 
 	if err != nil {
 		t.Fatalf("Error creating test list: %v", err)

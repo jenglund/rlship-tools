@@ -20,6 +20,7 @@ const (
 // Activity represents any type of activity, interest, location, or list
 type Activity struct {
 	ID          uuid.UUID      `json:"id" db:"id"`
+	UserID      uuid.UUID      `json:"user_id" db:"user_id"`
 	Type        ActivityType   `json:"type" db:"type"`
 	Name        string         `json:"name" db:"name"`
 	Description string         `json:"description" db:"description"`

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -27,6 +26,10 @@ func TestListService_BasicCRUD(t *testing.T) {
 		Description:   "Test Description",
 		Visibility:    models.VisibilityPublic,
 		DefaultWeight: 1.0,
+		SyncStatus:    models.ListSyncStatusNone,
+		SyncSource:    models.SyncSourceNone,
+		SyncID:        "",
+		LastSyncAt:    nil,
 	}
 
 	t.Run("Create", func(t *testing.T) {
@@ -275,9 +278,5 @@ func TestListService_Sharing(t *testing.T) {
 }
 
 func TestCreateList(t *testing.T) {
-	mockRepo := new(testutil.MockListRepository)
-	service := NewListService(mockRepo)
-	ctx := context.Background()
-
 	// ... rest of the test cases ...
 }

@@ -15,15 +15,17 @@ func TestActivityHistory(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 
 	repo := NewActivityRepository(db)
+	testUser := testutil.CreateTestUser(t, db)
 
 	t.Run("Visit History", func(t *testing.T) {
 		// Create test activity
 		activity := &models.Activity{
+			UserID:      testUser.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Test Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPublic,
-			Metadata: map[string]interface{}{
+			Metadata: models.JSONMap{
 				"address": "123 Test St",
 				"visits":  []string{},
 			},
@@ -34,7 +36,7 @@ func TestActivityHistory(t *testing.T) {
 
 		// Add visit
 		visits := []string{time.Now().UTC().Format(time.RFC3339)}
-		activity.Metadata = map[string]interface{}{
+		activity.Metadata = models.JSONMap{
 			"address": "123 Test St",
 			"visits":  visits,
 		}
@@ -45,20 +47,19 @@ func TestActivityHistory(t *testing.T) {
 		// Verify visit was recorded
 		updated, err := repo.GetByID(activity.ID)
 		require.NoError(t, err)
-		metadata, ok := updated.Metadata.(map[string]interface{})
-		require.True(t, ok)
-		assert.Equal(t, "123 Test St", metadata["address"])
-		assert.Equal(t, visits, metadata["visits"])
+		assert.Equal(t, "123 Test St", updated.Metadata["address"])
+		assert.Equal(t, visits, updated.Metadata["visits"])
 	})
 
 	t.Run("Activity Metadata Updates", func(t *testing.T) {
 		// Create test activity with initial metadata
 		activity := &models.Activity{
+			UserID:      testUser.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Test Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPublic,
-			Metadata: map[string]interface{}{
+			Metadata: models.JSONMap{
 				"rating": 4.5,
 				"tags":   []string{"restaurant", "italian"},
 			},
@@ -68,7 +69,7 @@ func TestActivityHistory(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update metadata
-		activity.Metadata = map[string]interface{}{
+		activity.Metadata = models.JSONMap{
 			"rating": 4.8,
 			"tags":   []string{"restaurant", "italian", "pizza"},
 			"price":  "$$",
@@ -80,11 +81,9 @@ func TestActivityHistory(t *testing.T) {
 		// Verify metadata was updated
 		updated, err := repo.GetByID(activity.ID)
 		require.NoError(t, err)
-		metadata, ok := updated.Metadata.(map[string]interface{})
-		require.True(t, ok)
-		assert.Equal(t, 4.8, metadata["rating"])
-		assert.Equal(t, []string{"restaurant", "italian", "pizza"}, metadata["tags"])
-		assert.Equal(t, "$$", metadata["price"])
+		assert.Equal(t, 4.8, updated.Metadata["rating"])
+		assert.Equal(t, []string{"restaurant", "italian", "pizza"}, updated.Metadata["tags"])
+		assert.Equal(t, "$$", updated.Metadata["price"])
 	})
 
 	t.Run("Activity Type Specific Metadata", func(t *testing.T) {
@@ -95,11 +94,12 @@ func TestActivityHistory(t *testing.T) {
 			{
 				name: "Location Activity",
 				activity: &models.Activity{
+					UserID:      testUser.ID,
 					Type:        models.ActivityTypeLocation,
 					Name:        "Test Location",
 					Description: "Test Description",
 					Visibility:  models.VisibilityPublic,
-					Metadata: map[string]interface{}{
+					Metadata: models.JSONMap{
 						"address":     "123 Test St",
 						"latitude":    37.7749,
 						"longitude":   -122.4194,
@@ -110,11 +110,12 @@ func TestActivityHistory(t *testing.T) {
 			{
 				name: "Interest Activity",
 				activity: &models.Activity{
+					UserID:      testUser.ID,
 					Type:        models.ActivityTypeInterest,
 					Name:        "Test Interest",
 					Description: "Test Description",
 					Visibility:  models.VisibilityPublic,
-					Metadata: map[string]interface{}{
+					Metadata: models.JSONMap{
 						"category":   "Outdoor",
 						"difficulty": "Easy",
 						"duration":   "2 hours",
@@ -124,11 +125,12 @@ func TestActivityHistory(t *testing.T) {
 			{
 				name: "List Activity",
 				activity: &models.Activity{
+					UserID:      testUser.ID,
 					Type:        models.ActivityTypeList,
 					Name:        "Test List",
 					Description: "Test Description",
 					Visibility:  models.VisibilityPublic,
-					Metadata: map[string]interface{}{
+					Metadata: models.JSONMap{
 						"items": []string{"Item 1", "Item 2"},
 						"type":  "Bucket List",
 					},

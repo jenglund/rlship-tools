@@ -61,6 +61,21 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 		return
 	}
 
+	// Get the current user
+	firebaseUID := middleware.GetFirebaseUID(c)
+	if firebaseUID == "" {
+		fmt.Printf("Firebase UID not found in context\n")
+		response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
+		return
+	}
+
+	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
+	if err != nil {
+		fmt.Printf("Error getting user by Firebase UID: %v\n", err)
+		response.GinInternalError(c, err)
+		return
+	}
+
 	var metadata models.JSONMap
 	if req.Metadata != nil {
 		switch m := req.Metadata.(type) {
@@ -82,9 +97,11 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 
 	activity := &models.Activity{
 		ID:          uuid.New(),
+		UserID:      user.ID,
 		Name:        req.Name,
 		Description: req.Description,
 		Type:        req.Type,
+		Visibility:  req.Visibility,
 		Metadata:    metadata,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -96,20 +113,6 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 	}
 
 	// Add the current user as an owner
-	firebaseUID := middleware.GetFirebaseUID(c)
-	if firebaseUID == "" {
-		fmt.Printf("Firebase UID not found in context\n")
-		response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
-		return
-	}
-
-	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
-	if err != nil {
-		fmt.Printf("Error getting user by Firebase UID: %v\n", err)
-		response.GinInternalError(c, err)
-		return
-	}
-
 	if err := h.repos.Activities.AddOwner(activity.ID, user.ID, "user"); err != nil {
 		fmt.Printf("Error adding owner: %v\n", err)
 		response.GinInternalError(c, err)

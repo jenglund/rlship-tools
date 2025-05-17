@@ -16,10 +16,12 @@ func TestActivityPhotos(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 
 	repo := NewActivityRepository(db)
+	testUser := testutil.CreateTestUser(t, db)
 
 	// Create test activity
 	activity := &models.Activity{
 		ID:          uuid.New(),
+		UserID:      testUser.ID,
 		Type:        models.ActivityTypeLocation,
 		Name:        "Test Location",
 		Description: "Test Description",
@@ -168,10 +170,12 @@ func TestActivityPhotosRepository(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 	repo := NewActivityPhotosRepository(db)
+	testUser := testutil.CreateTestUser(t, db)
 
 	// Create test activity
 	activity := &models.Activity{
 		ID:          uuid.New(),
+		UserID:      testUser.ID,
 		Name:        "Test Activity",
 		Description: "Test Description",
 		Type:        models.ActivityTypeEvent,
@@ -179,6 +183,11 @@ func TestActivityPhotosRepository(t *testing.T) {
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
+
+	// Create activity first
+	activityRepo := NewActivityRepository(db)
+	err := activityRepo.Create(activity)
+	require.NoError(t, err)
 
 	// Create test photo
 	photo := &models.ActivityPhoto{

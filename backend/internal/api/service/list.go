@@ -62,12 +62,12 @@ func NewListService(repo models.ListRepository) ListService {
 func (s *listService) CreateList(list *models.List) error {
 	// Validate list
 	if err := list.Validate(); err != nil {
-		return fmt.Errorf("invalid list: %w", err)
+		return err
 	}
 
 	// Create list
 	if err := s.repo.Create(list); err != nil {
-		return fmt.Errorf("error creating list: %w", err)
+		return err
 	}
 
 	return nil
@@ -81,7 +81,7 @@ func (s *listService) GetList(id uuid.UUID) (*models.List, error) {
 
 	list, err := s.repo.GetByID(id)
 	if err != nil {
-		return nil, fmt.Errorf("error getting list: %w", err)
+		return nil, err
 	}
 
 	return list, nil
@@ -91,12 +91,12 @@ func (s *listService) GetList(id uuid.UUID) (*models.List, error) {
 func (s *listService) UpdateList(list *models.List) error {
 	// Validate list
 	if err := list.Validate(); err != nil {
-		return fmt.Errorf("invalid list: %w", err)
+		return err
 	}
 
 	// Update list
 	if err := s.repo.Update(list); err != nil {
-		return fmt.Errorf("error updating list: %w", err)
+		return err
 	}
 
 	return nil
@@ -369,7 +369,7 @@ func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) er
 
 	hasPermission := false
 	for _, owner := range owners {
-		if owner.OwnerType == "user" && owner.OwnerID == userID {
+		if owner.OwnerType == models.OwnerTypeUser && owner.OwnerID == userID {
 			hasPermission = true
 			break
 		}

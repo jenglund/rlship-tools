@@ -154,6 +154,14 @@ func (m *MockListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe,
 	return args.Get(0).([]*models.Tribe), args.Error(1)
 }
 
+func (m *MockListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
+	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.ListShare), args.Error(1)
+}
+
 // Sync management
 func (m *MockListRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSyncStatus) error {
 	args := m.Called(listID, status)
