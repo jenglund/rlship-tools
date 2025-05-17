@@ -69,12 +69,6 @@ Ensure test coverage remains above 90% for all new code.
    - [x] Activity validation added for required fields (user_id, visibility, etc.)
    - [x] Tribe metadata handling added for tribe creation
    - [x] List owner foreign key validation added
-   
-   c. Database Migration Issues:
-   - [ ] Migration failure: metadata column does not exist
-   - [ ] JSONB type conversion issues
-   - [ ] Missing NOT NULL constraints
-   - [ ] Missing check constraints for JSON objects
 
 2. Test Coverage Issues:
    - [ ] Low coverage in cmd/api package (0.0%)
@@ -82,7 +76,7 @@ Ensure test coverage remains above 90% for all new code.
    - [ ] Low coverage in internal/config package (0.0%)
    - [ ] Low coverage in internal/testutil package (6.8%)
    - [x] Improve coverage in internal/models package (activity validation tests added)
-   - [ ] Improve coverage in internal/middleware package (78.6%)
+   - [x] Improve coverage in internal/middleware package (added tests for repository errors, middleware chaining, and Firebase auth initialization)
 
 ## Future Work
 
