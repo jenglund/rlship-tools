@@ -31,36 +31,23 @@ func (r *listRepository) Create(list *models.List) error {
 	opts := DefaultTransactionOptions()
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// Validate list
-		if err := list.Validate(); err != nil {
-			return err
-		}
-
 		// Generate ID if not provided
 		if list.ID == uuid.Nil {
 			list.ID = uuid.New()
 		}
 
-		// Validate owner exists if provided
-		if list.OwnerID != nil && list.OwnerType != nil {
-			var exists bool
-			var query string
+		// Validate list
+		if err := list.Validate(); err != nil {
+			return err
+		}
 
-			switch *list.OwnerType {
-			case models.OwnerTypeUser:
-				query = `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL)`
-			case models.OwnerTypeTribe:
-				query = `SELECT EXISTS(SELECT 1 FROM tribes WHERE id = $1 AND deleted_at IS NULL)`
-			default:
-				return fmt.Errorf("%w: invalid owner type", models.ErrInvalidInput)
-			}
-
-			err := tx.QueryRow(query, *list.OwnerID).Scan(&exists)
-			if err != nil {
-				return fmt.Errorf("error checking owner existence: %w", err)
-			}
-			if !exists {
-				return fmt.Errorf("%w: owner does not exist", models.ErrInvalidInput)
+		// Ensure owner fields are set
+		if list.OwnerID == nil || list.OwnerType == nil {
+			if len(list.Owners) > 0 {
+				list.OwnerID = &list.Owners[0].OwnerID
+				list.OwnerType = &list.Owners[0].OwnerType
+			} else {
+				return fmt.Errorf("owner_id and owner_type are required")
 			}
 		}
 
@@ -70,47 +57,49 @@ func (r *listRepository) Create(list *models.List) error {
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id, last_sync_at,
 				default_weight, max_items, cooldown_days,
+				owner_id, owner_type,
 				created_at, updated_at
 			) VALUES (
 				$1, $2, $3, $4, $5,
 				$6, $7, $8, $9,
 				$10, $11, $12,
+				$13, $14,
 				NOW(), NOW()
-			)`
+			) RETURNING created_at, updated_at`
 
-		_, err := tx.Exec(query,
+		err := tx.QueryRow(query,
 			list.ID, list.Type, list.Name, list.Description, list.Visibility,
 			list.SyncStatus, list.SyncSource, list.SyncID, list.LastSyncAt,
 			list.DefaultWeight, list.MaxItems, list.CooldownDays,
-		)
+			list.OwnerID, list.OwnerType,
+		).Scan(&list.CreatedAt, &list.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("error creating list: %w", err)
 		}
 
-		// Add owner if provided
-		if list.OwnerID != nil && list.OwnerType != nil {
-			owner := &models.ListOwner{
-				ListID:    list.ID,
-				OwnerID:   *list.OwnerID,
-				OwnerType: *list.OwnerType,
-			}
-			if err := owner.Validate(); err != nil {
-				return err
-			}
+		// Add owners if provided
+		if len(list.Owners) > 0 {
+			for _, owner := range list.Owners {
+				owner.ListID = list.ID
+				owner.CreatedAt = list.CreatedAt
+				owner.UpdatedAt = list.UpdatedAt
 
-			query = `
-				INSERT INTO list_owners (
-					list_id, owner_id, owner_type,
-					created_at, updated_at
-				) VALUES ($1, $2, $3, NOW(), NOW())`
+				query := `
+					INSERT INTO list_owners (
+						list_id, owner_id, owner_type,
+						created_at, updated_at
+					) VALUES ($1, $2, $3, $4, $5)`
 
-			_, err = tx.Exec(query,
-				owner.ListID,
-				owner.OwnerID,
-				owner.OwnerType,
-			)
-			if err != nil {
-				return fmt.Errorf("error adding list owner: %w", err)
+				_, err = tx.Exec(query,
+					owner.ListID,
+					owner.OwnerID,
+					owner.OwnerType,
+					owner.CreatedAt,
+					owner.UpdatedAt,
+				)
+				if err != nil {
+					return fmt.Errorf("error adding list owner: %w", err)
+				}
 			}
 		}
 
@@ -159,6 +148,9 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating list items: %w", err)
+	}
 	list.Items = items
 
 	// Load owners
@@ -188,12 +180,15 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 		}
 		owners = append(owners, owner)
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating list owners: %w", err)
+	}
 	list.Owners = owners
 
 	// Load shares
 	query = `
-		SELECT list_id, user_id, tribe_id, created_at, updated_at, expires_at, deleted_at
-		FROM list_sharing
+		SELECT list_id, tribe_id, expires_at, created_at, updated_at, deleted_at
+		FROM list_shares
 		WHERE list_id = $1 AND deleted_at IS NULL`
 
 	rows, err = tx.Query(query, list.ID)
@@ -207,17 +202,19 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 		share := &models.ListShare{}
 		err := rows.Scan(
 			&share.ListID,
-			&share.UserID,
 			&share.TribeID,
+			&share.ExpiresAt,
 			&share.CreatedAt,
 			&share.UpdatedAt,
-			&share.ExpiresAt,
 			&share.DeletedAt,
 		)
 		if err != nil {
 			return fmt.Errorf("error scanning list share: %w", err)
 		}
 		shares = append(shares, share)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating list shares: %w", err)
 	}
 	list.Shares = shares
 
@@ -235,6 +232,7 @@ func (r *listRepository) GetByID(id uuid.UUID) (*models.List, error) {
 			SELECT id, type, name, description, visibility,
 				sync_status, sync_source, sync_id, last_sync_at,
 				default_weight, max_items, cooldown_days,
+				owner_id, owner_type,
 				created_at, updated_at
 			FROM lists
 			WHERE id = $1 AND deleted_at IS NULL`
@@ -253,6 +251,8 @@ func (r *listRepository) GetByID(id uuid.UUID) (*models.List, error) {
 			&list.DefaultWeight,
 			&list.MaxItems,
 			&list.CooldownDays,
+			&list.OwnerID,
+			&list.OwnerType,
 			&list.CreatedAt,
 			&list.UpdatedAt,
 		)
@@ -289,12 +289,22 @@ func (r *listRepository) Update(list *models.List) error {
 			return err
 		}
 
+		// Get existing list to preserve owner fields if not provided
+		if list.OwnerID == nil || list.OwnerType == nil {
+			existingList, err := r.GetByID(list.ID)
+			if err != nil {
+				return err
+			}
+			list.OwnerID = existingList.OwnerID
+			list.OwnerType = existingList.OwnerType
+		}
+
 		// Update list
 		query := `
-			UPDATE lists SET
-				type = $1,
-				name = $2,
-				description = $3,
+			UPDATE lists
+			SET name = $1,
+				description = $2,
+				type = $3,
 				visibility = $4,
 				sync_status = $5,
 				sync_source = $6,
@@ -303,13 +313,15 @@ func (r *listRepository) Update(list *models.List) error {
 				default_weight = $9,
 				max_items = $10,
 				cooldown_days = $11,
-				updated_at = NOW()
-			WHERE id = $12 AND deleted_at IS NULL`
+				updated_at = NOW(),
+				owner_id = $12,
+				owner_type = $13
+			WHERE id = $14 AND deleted_at IS NULL`
 
 		result, err := tx.Exec(query,
-			list.Type,
 			list.Name,
 			list.Description,
+			list.Type,
 			list.Visibility,
 			list.SyncStatus,
 			list.SyncSource,
@@ -318,57 +330,21 @@ func (r *listRepository) Update(list *models.List) error {
 			list.DefaultWeight,
 			list.MaxItems,
 			list.CooldownDays,
+			list.OwnerID,
+			list.OwnerType,
 			list.ID,
 		)
 		if err != nil {
 			return fmt.Errorf("error updating list: %w", err)
 		}
 
-		rows, err := result.RowsAffected()
+		rowsAffected, err := result.RowsAffected()
 		if err != nil {
 			return fmt.Errorf("error getting rows affected: %w", err)
 		}
-		if rows == 0 {
+
+		if rowsAffected == 0 {
 			return models.ErrNotFound
-		}
-
-		// Update owner if provided
-		if list.OwnerID != nil && list.OwnerType != nil {
-			owner := &models.ListOwner{
-				ListID:    list.ID,
-				OwnerID:   *list.OwnerID,
-				OwnerType: *list.OwnerType,
-			}
-			if err := owner.Validate(); err != nil {
-				return err
-			}
-
-			// First, soft delete any existing owners
-			query = `
-				UPDATE list_owners
-				SET deleted_at = NOW()
-				WHERE list_id = $1 AND deleted_at IS NULL`
-
-			_, err = tx.Exec(query, list.ID)
-			if err != nil {
-				return fmt.Errorf("error removing old owners: %w", err)
-			}
-
-			// Then add the new owner
-			query = `
-				INSERT INTO list_owners (
-					list_id, owner_id, owner_type,
-					created_at, updated_at
-				) VALUES ($1, $2, $3, NOW(), NOW())`
-
-			_, err = tx.Exec(query,
-				owner.ListID,
-				owner.OwnerID,
-				owner.OwnerType,
-			)
-			if err != nil {
-				return fmt.Errorf("error adding new owner: %w", err)
-			}
 		}
 
 		return nil
@@ -424,7 +400,7 @@ func (r *listRepository) Delete(id uuid.UUID) error {
 
 		// Soft delete list shares
 		query = `
-			UPDATE list_sharing
+			UPDATE list_shares
 			SET deleted_at = NOW()
 			WHERE list_id = $1 AND deleted_at IS NULL`
 
@@ -497,16 +473,14 @@ func (r *listRepository) AddItem(item *models.ListItem) error {
 	opts := DefaultTransactionOptions()
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Generate ID if not provided
 		if item.ID == uuid.Nil {
 			item.ID = uuid.New()
 		}
 
-		now := time.Now()
-		if item.CreatedAt.IsZero() {
-			item.CreatedAt = now
-		}
-		if item.UpdatedAt.IsZero() {
-			item.UpdatedAt = now
+		// Initialize metadata if nil
+		if item.Metadata == nil {
+			item.Metadata = make(map[string]interface{})
 		}
 
 		metadata, err := json.Marshal(item.Metadata)
@@ -526,16 +500,15 @@ func (r *listRepository) AddItem(item *models.ListItem) error {
 				$5, $6,
 				$7, $8, $9,
 				$10, $11, $12,
-				$13, $14
-			)`
+				NOW(), NOW()
+			) RETURNING created_at, updated_at`
 
-		_, err = tx.Exec(query,
+		err = tx.QueryRow(query,
 			item.ID, item.ListID, item.Name, item.Description,
 			metadata, item.ExternalID,
 			item.Weight, item.LastChosen, item.ChosenCount,
 			item.Latitude, item.Longitude, item.Address,
-			item.CreatedAt, item.UpdatedAt,
-		)
+		).Scan(&item.CreatedAt, &item.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("error adding list item: %w", err)
 		}
@@ -1487,18 +1460,18 @@ func (r *listRepository) AddConflict(conflict *models.SyncConflict) error {
 func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.OwnerType) ([]*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
-	var lists []*models.List
+	lists := make([]*models.List, 0)
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
-			SELECT l.id, l.type, l.name, l.description, l.visibility,
+			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
 				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
 				l.default_weight, l.max_items, l.cooldown_days,
+				l.owner_id, l.owner_type,
 				l.created_at, l.updated_at
 			FROM lists l
-			INNER JOIN list_owners lo ON l.id = lo.list_id
-			WHERE lo.owner_id = $1 AND lo.owner_type = $2
-				AND l.deleted_at IS NULL AND lo.deleted_at IS NULL
+			WHERE l.owner_id = $1 AND l.owner_type = $2
+				AND l.deleted_at IS NULL
 			ORDER BY l.created_at DESC`
 
 		rows, err := tx.Query(query, ownerID, ownerType)
@@ -1507,7 +1480,6 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		}
 		defer rows.Close()
 
-		lists = make([]*models.List, 0)
 		for rows.Next() {
 			list := &models.List{}
 			err := rows.Scan(
@@ -1523,6 +1495,8 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 				&list.DefaultWeight,
 				&list.MaxItems,
 				&list.CooldownDays,
+				&list.OwnerID,
+				&list.OwnerType,
 				&list.CreatedAt,
 				&list.UpdatedAt,
 			)

@@ -7,10 +7,10 @@ server:
 database:
   host: localhost
   port: 5432
-  name: tribe
+  name: rlship_tools
   user: postgres
   password: postgres
-  sslmode: "disable"
+  sslmode: disable
 
 # Redis Configuration
 redis:
@@ -20,8 +20,8 @@ redis:
 
 # Firebase Configuration
 firebase:
-  project_id: ""  # Set via FIREBASE_PROJECT_ID environment variable
-  credentials_file: ""  # Set via FIREBASE_CREDENTIALS_FILE environment variable
+  project_id: test-project
+  credentials_file: /tmp/firebase-credentials.json
 
 # JWT Configuration
 jwt:

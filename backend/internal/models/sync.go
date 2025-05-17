@@ -11,14 +11,16 @@ import (
 type SyncSource string
 
 const (
+	SyncSourceNone       SyncSource = "none"
 	SyncSourceGoogleMaps SyncSource = "google_maps"
-	SyncSourceNone       SyncSource = ""
+	SyncSourceManual     SyncSource = "manual"
+	SyncSourceImported   SyncSource = "imported"
 )
 
 // Validate checks if the sync source is valid
 func (s SyncSource) Validate() error {
 	switch s {
-	case SyncSourceGoogleMaps, SyncSourceNone:
+	case SyncSourceNone, SyncSourceGoogleMaps, SyncSourceManual, SyncSourceImported:
 		return nil
 	default:
 		return fmt.Errorf("%w: invalid sync source: %s", ErrInvalidInput, s)
@@ -92,8 +94,8 @@ func ValidateTransition(from, to ListSyncStatus, action string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: invalid sync status transition from %s to %s with action %s",
-		ErrInvalidInput, from, to, action)
+	return fmt.Errorf("invalid transition from '%s' to '%s' with action '%s'",
+		from, to, action)
 }
 
 // SyncConflict represents a sync conflict that needs resolution

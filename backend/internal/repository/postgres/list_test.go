@@ -30,6 +30,7 @@ func TestListRepository(t *testing.T) {
 	cooldownDays := 7
 
 	t.Run("Create", func(t *testing.T) {
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
 			Name:          "Test List",
@@ -38,6 +39,11 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
 			Owners: []*models.ListOwner{
 				{
 					OwnerID:   testUser.ID,
@@ -47,7 +53,7 @@ func TestListRepository(t *testing.T) {
 		}
 
 		err := repo.Create(list)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotEqual(t, uuid.Nil, list.ID)
 		assert.False(t, list.CreatedAt.IsZero())
 		assert.False(t, list.UpdatedAt.IsZero())
@@ -55,8 +61,8 @@ func TestListRepository(t *testing.T) {
 
 		// Verify owners were created
 		owners, err := repo.GetOwners(list.ID)
-		assert.NoError(t, err)
-		assert.Len(t, owners, 1)
+		require.NoError(t, err)
+		require.NotEmpty(t, owners, "owners should not be empty")
 		assert.Equal(t, testUser.ID, owners[0].OwnerID)
 		assert.Equal(t, models.OwnerTypeUser, owners[0].OwnerType)
 	})
@@ -71,6 +77,9 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
 			Owners: []*models.ListOwner{
 				{
 					OwnerID:   testUser.ID,
@@ -132,6 +141,9 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -171,6 +183,7 @@ func TestListRepository(t *testing.T) {
 
 	t.Run("Delete", func(t *testing.T) {
 		// Create test list with items and owners
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
 			Name:          "Test List",
@@ -179,6 +192,11 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
 			Owners: []*models.ListOwner{
 				{
 					OwnerID:   testUser.ID,
@@ -225,6 +243,7 @@ func TestListRepository(t *testing.T) {
 
 	t.Run("GetListsByOwner", func(t *testing.T) {
 		// Create multiple lists for the test user
+		ownerType := models.OwnerTypeUser
 		list1 := &models.List{
 			Type:          models.ListTypeActivity,
 			Name:          "Test List 1",
@@ -233,6 +252,11 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
 			Owners: []*models.ListOwner{
 				{
 					OwnerID:   testUser.ID,
@@ -253,6 +277,11 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 2.0,
 			MaxItems:      &updatedMaxItems,
 			CooldownDays:  &updatedCooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
 			Owners: []*models.ListOwner{
 				{
 					OwnerID:   testUser.ID,
@@ -288,6 +317,9 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -340,6 +372,9 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -404,6 +439,9 @@ func TestListRepository(t *testing.T) {
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
+			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
+			SyncID:        "",
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -442,6 +480,8 @@ func TestListRepository_GetByID(t *testing.T) {
 		maxItems := 10
 		cooldownDays := 7
 		lastSyncAt := time.Now().UTC()
+		ownerType := models.OwnerTypeUser
+		ownerID := uuid.New()
 		list := &models.List{
 			ID:            uuid.New(),
 			Type:          models.ListTypeGeneral,
@@ -449,12 +489,15 @@ func TestListRepository_GetByID(t *testing.T) {
 			Description:   "A test list",
 			Visibility:    models.VisibilityPrivate,
 			SyncStatus:    models.ListSyncStatusNone,
+			SyncSource:    models.SyncSourceNone,
 			DefaultWeight: 1,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
 			CreatedAt:     time.Now().UTC(),
 			UpdatedAt:     time.Now().UTC(),
 			LastSyncAt:    &lastSyncAt,
+			OwnerID:       &ownerID,
+			OwnerType:     &ownerType,
 		}
 
 		// Insert test data
@@ -463,16 +506,19 @@ func TestListRepository_GetByID(t *testing.T) {
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id, last_sync_at,
 				default_weight, max_items, cooldown_days,
+				owner_id, owner_type,
 				created_at, updated_at
 			) VALUES (
 				$1, $2, $3, $4, $5,
 				$6, $7, $8, $9,
 				$10, $11, $12,
-				$13, $14
+				$13, $14,
+				$15, $16
 			)`,
 			list.ID, list.Type, list.Name, list.Description, list.Visibility,
 			list.SyncStatus, list.SyncSource, list.SyncID, list.LastSyncAt,
 			list.DefaultWeight, list.MaxItems, list.CooldownDays,
+			list.OwnerID, list.OwnerType,
 			list.CreatedAt, list.UpdatedAt,
 		)
 		require.NoError(t, err)

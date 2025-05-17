@@ -46,7 +46,7 @@ CREATE TABLE tribes (
     description TEXT NOT NULL DEFAULT '',
     type tribe_type NOT NULL DEFAULT 'custom',
     visibility visibility_type NOT NULL DEFAULT 'private',
-    metadata JSONB NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
@@ -61,7 +61,7 @@ CREATE TABLE tribe_members (
     membership_type membership_type NOT NULL DEFAULT 'full',
     display_name TEXT,
     expires_at TIMESTAMP WITH TIME ZONE,
-    metadata JSONB NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
@@ -72,17 +72,20 @@ CREATE TABLE tribe_members (
 -- Create lists table
 CREATE TABLE lists (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_id UUID NOT NULL REFERENCES users(id),
+    owner_id UUID NOT NULL,
+    owner_type owner_type NOT NULL DEFAULT 'user',
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     visibility visibility_type NOT NULL DEFAULT 'private',
     type TEXT NOT NULL,
     default_weight FLOAT NOT NULL DEFAULT 1.0,
+    max_items INTEGER,
+    cooldown_days INTEGER,
     sync_source sync_source NOT NULL DEFAULT 'none',
     sync_id TEXT,
     sync_status sync_status NOT NULL DEFAULT 'none',
     last_sync_at TIMESTAMP WITH TIME ZONE,
-    metadata JSONB NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
@@ -92,11 +95,12 @@ CREATE TABLE lists (
 -- Create list_owners table
 CREATE TABLE list_owners (
     list_id UUID NOT NULL REFERENCES lists(id),
-    user_id UUID NOT NULL REFERENCES users(id),
+    owner_id UUID NOT NULL,
+    owner_type owner_type NOT NULL DEFAULT 'user',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
-    PRIMARY KEY (list_id, user_id)
+    PRIMARY KEY (list_id, owner_id, owner_type)
 );
 
 -- Create list_items table
@@ -106,7 +110,13 @@ CREATE TABLE list_items (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     weight FLOAT NOT NULL DEFAULT 1.0,
-    metadata JSONB NOT NULL DEFAULT '{}',
+    external_id TEXT,
+    latitude FLOAT,
+    longitude FLOAT,
+    address TEXT,
+    last_chosen TIMESTAMP WITH TIME ZONE,
+    chosen_count INTEGER NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
@@ -121,7 +131,7 @@ CREATE TABLE activities (
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     visibility visibility_type NOT NULL DEFAULT 'private',
-    metadata JSONB NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
@@ -144,7 +154,7 @@ CREATE TABLE activity_photos (
     url TEXT NOT NULL,
     caption TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
-    metadata JSONB NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
@@ -155,9 +165,11 @@ CREATE TABLE activity_photos (
 CREATE TABLE activity_shares (
     activity_id UUID NOT NULL REFERENCES activities(id),
     tribe_id UUID NOT NULL REFERENCES tribes(id),
+    user_id UUID NOT NULL REFERENCES users(id),
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
     PRIMARY KEY (activity_id, tribe_id)
 );
 
@@ -168,6 +180,7 @@ CREATE TABLE list_shares (
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
     PRIMARY KEY (list_id, tribe_id)
 );
 
@@ -190,7 +203,8 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_tribes_name ON tribes(name);
 CREATE INDEX idx_tribe_members_tribe_id ON tribe_members(tribe_id);
 CREATE INDEX idx_tribe_members_user_id ON tribe_members(user_id);
-CREATE INDEX idx_lists_owner ON lists(owner_id);
+CREATE INDEX idx_lists_owner_user ON lists(owner_id) WHERE owner_type = 'user';
+CREATE INDEX idx_lists_owner_tribe ON lists(owner_id) WHERE owner_type = 'tribe';
 CREATE INDEX idx_lists_sync_id ON lists(sync_id);
 CREATE INDEX idx_list_items_list_id ON list_items(list_id);
 CREATE INDEX idx_activities_user_id ON activities(user_id);
@@ -264,11 +278,6 @@ CREATE TRIGGER update_activity_shares_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER increment_activity_shares_version
-    BEFORE UPDATE ON activity_shares
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
-
 CREATE TRIGGER update_lists_updated_at
     BEFORE UPDATE ON lists
     FOR EACH ROW
@@ -299,26 +308,20 @@ CREATE TRIGGER increment_list_shares_version
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
--- Create foreign key validation function
+-- Create list owner validation function and trigger
 CREATE OR REPLACE FUNCTION validate_list_owner()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.owner_type = 'user' AND NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
-        RAISE EXCEPTION 'Invalid user ID in owner_id';
+        RAISE EXCEPTION 'User with ID % does not exist', NEW.owner_id;
     ELSIF NEW.owner_type = 'tribe' AND NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
-        RAISE EXCEPTION 'Invalid tribe ID in owner_id';
+        RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
     END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Create triggers for list owner validation
-CREATE TRIGGER validate_list_owner_insert
-    BEFORE INSERT ON lists
-    FOR EACH ROW
-    EXECUTE FUNCTION validate_list_owner();
-
-CREATE TRIGGER validate_list_owner_update
-    BEFORE UPDATE ON lists
+CREATE TRIGGER validate_list_owner_trigger
+    BEFORE INSERT OR UPDATE ON list_owners
     FOR EACH ROW
     EXECUTE FUNCTION validate_list_owner(); 

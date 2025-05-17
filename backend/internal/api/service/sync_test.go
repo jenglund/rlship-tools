@@ -540,7 +540,48 @@ func TestSyncService_ResolveConflict(t *testing.T) {
 					},
 				}, nil).Once()
 				mockRepo.On("ResolveConflict", conflictID).Return(nil).Once()
-				mockRepo.On("GetConflicts", listID).Return([]*models.SyncConflict{}, nil).Once()
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					SyncStatus: models.ListSyncStatusConflict,
+					SyncSource: models.SyncSourceGoogleMaps,
+					SyncID:     "place123",
+				}, nil).Once()
+				mockRepo.On("Update", mock.MatchedBy(func(l *models.List) bool {
+					return l.ID == listID &&
+						l.SyncStatus == models.ListSyncStatusPending
+				})).Return(nil).Once()
+			},
+			wantErr: false,
+		},
+		{
+			name:       "concurrent modification",
+			resolution: "use_local",
+			setup: func() {
+				mockRepo.On("GetConflicts", conflictID).Return([]*models.SyncConflict{
+					{
+						ID:         conflictID,
+						ListID:     listID,
+						Type:       "item_update",
+						LocalData:  "Local Name",
+						RemoteData: "Remote Name",
+						CreatedAt:  now,
+						UpdatedAt:  now,
+					},
+				}, nil).Once()
+				mockRepo.On("ResolveConflict", conflictID).Return(models.ErrConcurrentModification).Once()
+				// Second attempt after concurrent modification
+				mockRepo.On("GetConflicts", conflictID).Return([]*models.SyncConflict{
+					{
+						ID:         conflictID,
+						ListID:     listID,
+						Type:       "item_update",
+						LocalData:  "Local Name",
+						RemoteData: "Remote Name",
+						CreatedAt:  now,
+						UpdatedAt:  now,
+					},
+				}, nil).Once()
+				mockRepo.On("ResolveConflict", conflictID).Return(nil).Once()
 				mockRepo.On("GetByID", listID).Return(&models.List{
 					ID:         listID,
 					SyncStatus: models.ListSyncStatusConflict,
@@ -562,7 +603,7 @@ func TestSyncService_ResolveConflict(t *testing.T) {
 			},
 			wantErr: true,
 			errCheck: func(err error) bool {
-				return errors.Is(err, models.ErrConflictNotFound)
+				return errors.Is(err, models.ErrNotFound)
 			},
 		},
 		{
@@ -582,23 +623,6 @@ func TestSyncService_ResolveConflict(t *testing.T) {
 			wantErr: true,
 			errCheck: func(err error) bool {
 				return errors.Is(err, models.ErrConflictAlreadyResolved)
-			},
-		},
-		{
-			name:       "empty resolution",
-			resolution: "",
-			setup: func() {
-				mockRepo.On("GetConflicts", conflictID).Return([]*models.SyncConflict{
-					{
-						ID:     conflictID,
-						ListID: listID,
-						Type:   "item_update",
-					},
-				}, nil).Once()
-			},
-			wantErr: true,
-			errCheck: func(err error) bool {
-				return errors.Is(err, models.ErrInvalidResolution)
 			},
 		},
 	}

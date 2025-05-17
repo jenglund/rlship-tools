@@ -29,6 +29,7 @@ func TestActivitySharing(t *testing.T) {
 			Name:        "Test Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPublic,
+			Metadata:    models.JSONMap{},
 		}
 		err := repo.Create(activity)
 		require.NoError(t, err)
@@ -52,6 +53,7 @@ func TestActivitySharing(t *testing.T) {
 			Name:        "Test Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPublic,
+			Metadata:    models.JSONMap{},
 		}
 		err := repo.Create(activity)
 		require.NoError(t, err)
@@ -86,6 +88,7 @@ func TestActivitySharing(t *testing.T) {
 			Name:        "Test Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPublic,
+			Metadata:    models.JSONMap{},
 		}
 		err := repo.Create(activity)
 		require.NoError(t, err)
@@ -114,6 +117,7 @@ func TestActivitySharing(t *testing.T) {
 			Name:        "Test Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPublic,
+			Metadata:    models.JSONMap{},
 		}
 		err := repo.Create(activity)
 		require.NoError(t, err)
@@ -158,6 +162,7 @@ func TestActivitySharing(t *testing.T) {
 			Name:        "Private Location",
 			Description: "Test Description",
 			Visibility:  models.VisibilityPrivate,
+			Metadata:    models.JSONMap{},
 		}
 		err := repo.Create(activity)
 		require.NoError(t, err)

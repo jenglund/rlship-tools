@@ -126,7 +126,7 @@ func (s *SyncService) UpdateSyncStatus(ctx context.Context, listID uuid.UUID, ne
 
 	// Validate the state transition
 	if err := models.ValidateTransition(list.SyncStatus, newStatus, action); err != nil {
-		return fmt.Errorf("%w: %v", models.ErrInvalidSyncTransition, err)
+		return fmt.Errorf("%w: %s", models.ErrInvalidSyncTransition, err.Error())
 	}
 
 	// Update sync status
@@ -151,7 +151,42 @@ func (s *SyncService) UpdateSyncStatus(ctx context.Context, listID uuid.UUID, ne
 		return fmt.Errorf("%w: %v", models.ErrInvalidSyncConfig, err)
 	}
 
-	if err := s.listRepo.Update(list); err != nil {
+	err = s.listRepo.Update(list)
+	if err != nil {
+		if err == models.ErrConcurrentModification {
+			// Get the latest state and retry the operation
+			list, err = s.listRepo.GetByID(listID)
+			if err != nil {
+				return fmt.Errorf("failed to get latest list state: %w", err)
+			}
+			// Validate the transition with the latest state
+			if err := models.ValidateTransition(list.SyncStatus, newStatus, action); err != nil {
+				return fmt.Errorf("%w: %s", models.ErrInvalidSyncTransition, err.Error())
+			}
+			// Update the list with the new status
+			list.SyncStatus = newStatus
+			if list.SyncConfig == nil {
+				list.SyncConfig = &models.SyncConfig{
+					Source: list.SyncSource,
+					ID:     list.SyncID,
+					Status: newStatus,
+				}
+			}
+			list.SyncConfig.Status = newStatus
+			if newStatus == models.ListSyncStatusSynced {
+				now := time.Now()
+				list.SyncConfig.LastSyncAt = &now
+				list.LastSyncAt = &now
+			}
+			if err := list.Validate(); err != nil {
+				return fmt.Errorf("%w: %v", models.ErrInvalidSyncConfig, err)
+			}
+			err = s.listRepo.Update(list)
+			if err != nil {
+				return fmt.Errorf("failed to update list after retry: %w", err)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to update list: %w", err)
 	}
 
@@ -184,44 +219,43 @@ func (s *SyncService) ResolveConflict(ctx context.Context, conflictID uuid.UUID,
 		return fmt.Errorf("failed to get conflict: %w", err)
 	}
 	if len(conflicts) == 0 {
-		return fmt.Errorf("conflict not found: %w", models.ErrConflictNotFound)
+		return fmt.Errorf("conflict not found: %w", models.ErrNotFound)
 	}
 	conflict := conflicts[0]
 
-	// Check if already resolved
+	// Check if the conflict is already resolved
 	if conflict.ResolvedAt != nil {
-		return fmt.Errorf("cannot resolve conflict: %w", models.ErrConflictAlreadyResolved)
+		return fmt.Errorf("conflict already resolved: %w", models.ErrConflictAlreadyResolved)
 	}
 
-	// Validate resolution
-	if resolution == "" {
-		return fmt.Errorf("empty resolution: %w", models.ErrInvalidResolution)
-	}
-
-	// Mark conflict as resolved
-	now := time.Now()
-	conflict.Resolution = resolution
-	conflict.ResolvedAt = &now
-	conflict.UpdatedAt = now
-
-	if err := s.listRepo.ResolveConflict(conflictID); err != nil {
-		return fmt.Errorf("failed to resolve conflict: %w", err)
-	}
-
-	// Check if there are any remaining conflicts
-	conflicts, err = s.listRepo.GetConflicts(conflict.ListID)
+	// Try to resolve the conflict
+	err = s.listRepo.ResolveConflict(conflictID)
 	if err != nil {
-		return fmt.Errorf("failed to get conflicts: %w", err)
-	}
-
-	// If no more conflicts, transition back to pending
-	if len(conflicts) == 0 {
-		if err := s.UpdateSyncStatus(ctx, conflict.ListID, models.ListSyncStatusPending, "resolve_conflict"); err != nil {
-			return fmt.Errorf("failed to update sync status: %w", err)
+		if err == models.ErrConcurrentModification {
+			// Check if the conflict was resolved by another operation
+			conflicts, err = s.listRepo.GetConflicts(conflictID)
+			if err != nil {
+				return fmt.Errorf("failed to get latest conflict state: %w", err)
+			}
+			if len(conflicts) == 0 {
+				return fmt.Errorf("conflict not found: %w", models.ErrNotFound)
+			}
+			conflict = conflicts[0]
+			if conflict.ResolvedAt != nil {
+				return fmt.Errorf("conflict already resolved: %w", models.ErrConflictAlreadyResolved)
+			}
+			// Try to resolve again
+			err = s.listRepo.ResolveConflict(conflictID)
+			if err != nil {
+				return fmt.Errorf("failed to resolve conflict after retry: %w", err)
+			}
+		} else {
+			return fmt.Errorf("failed to resolve conflict: %w", err)
 		}
 	}
 
-	return nil
+	// Update list status to pending for re-sync
+	return s.UpdateSyncStatus(ctx, conflict.ListID, models.ListSyncStatusPending, "resolve_conflict")
 }
 
 // GetConflicts returns all unresolved conflicts for a list

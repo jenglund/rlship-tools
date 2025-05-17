@@ -8,3 +8,101 @@ Things to remember about the app we're developing, "Tribe".
 Fundamental design: "Tribes" are groups of people that are sharing things they want to do together. Fundamentally, the app is focused towards the needs of romantic couples (so planning things like date night by picking randomly from a list of options that they haven't been to in the last 3 months), but the app is intended to be equally functional for polyamorous relationships, friend groups, roommates, families, etc. The functionality shouldn't be exclusive to romantic couples, it's just designed largely to meet their needs first. But relationships come in all forms, and tribes are just bundles of relationships, so tribes will come in all forms too and we should try our best to support them, ESPECIALLY when it's a light lift to support them (like turning a string with a "partner" into a list of strings of partners).
 
 Tribes should be able to share lists of things they want to do, places they want to go (which should also be able to sync to what's in a list on Google Maps, so people can just add places to that list on Google Maps and Tribe will know about them and add them to the list as appropriate.), and an indicator to schedule when they will be/are free/interested for something (which could be via a calendar entry like in Google Calendar, or a button that can be pushed to indicate immediate/current interest, and/or interest for some particular amount of time.)
+
+
+### Development Guidance for Tribe
+
+#### Query and Data Operation Design
+1. **Separate Operations**: Each data operation (sharing, unsharing, expiration) must be handled independently:
+   - Each operation needs clear boundaries and responsibilities
+   - Avoid combining multiple operations in single queries
+   - Use CTEs to break down complex operations logically
+   - Document behavior expectations and boundaries
+
+2. **State Management**:
+   - Track complete lifecycle of all records
+   - Handle soft deletes and expirations consistently
+   - Maintain proper versioning for concurrent modifications
+   - Ensure proper cleanup of related records
+   - Consider using row versioning for concurrent modifications
+
+3. **Testing Strategy**:
+   - Test each operation in isolation first
+   - Then test interactions between operations
+   - Verify proper cleanup of related records
+   - Ensure consistent state after each operation
+   - Document test expectations clearly
+   - Validate assumptions before implementation
+   - Address root causes rather than symptoms
+
+4. **Development Process**:
+   - Break down complex operations into smaller, focused queries
+   - Use CTEs to make query logic clear and maintainable
+   - Document purpose and expectations of each query component
+   - Test components independently before integration
+   - Group related test cases logically
+   - Validate query logic formally before running tests
+   - Analyze failures to understand root causes
+   - Prioritize fixes based on core functionality impact
+
+TRIBE PROJECT DEBUGGING GUIDELINES
+
+1. Test Structure Improvements:
+- Implement table-driven tests for all sharing operations
+- Add detailed logging in tests to track state changes
+- Create helper functions for common test setup scenarios
+- Use test fixtures for complex data structures
+
+2. Database Query Best Practices:
+- Use CTEs for complex operations requiring multiple steps
+- Always include proper indexes for frequently queried columns
+- Implement row-level locking for concurrent operations
+- Add database constraints to enforce business rules
+
+3. Mock Testing Strategy:
+- Create detailed mock scenarios for each test case
+- Verify mock calls in order when sequence matters
+- Add mock call verification helpers
+- Document expected mock call sequences
+
+4. Debugging Approach:
+- Add comprehensive logging around state transitions
+- Implement transaction logging for debugging
+- Create debug endpoints for development
+- Add metrics for tracking operation success/failure
+
+5. Code Organization:
+- Separate complex queries into named functions
+- Create reusable test utilities
+- Implement clear error types for different failure cases
+- Add comprehensive documentation for complex operations
+
+6. Performance Considerations:
+- Add query execution plan analysis in tests
+- Implement proper indexing strategy
+- Use batch operations where possible
+- Monitor and log query execution times
+
+7. Error Handling:
+- Create specific error types for different failure cases
+- Add detailed error context
+- Implement proper error wrapping
+- Add error recovery mechanisms
+
+8. Concurrent Operations:
+- Implement proper locking mechanisms
+- Add retry logic for concurrent modifications
+- Use optimistic locking where appropriate
+- Add deadlock detection and recovery
+
+9. Testing Tools:
+- Create custom test assertions for common cases
+- Implement test data generators
+- Add test coverage reports
+- Create integration test suites
+
+10. Documentation:
+- Document all complex queries
+- Add examples for common operations
+- Create troubleshooting guides
+- Maintain up-to-date API documentation
