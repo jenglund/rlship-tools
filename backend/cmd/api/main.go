@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jenglund/rlship-tools/internal/api/handlers"
@@ -19,9 +20,16 @@ func main() {
 	}
 
 	// Initialize database connection
+	port := 5432 // Default port
+	if cfg.Database.Port != "" {
+		if p, err := strconv.Atoi(cfg.Database.Port); err == nil {
+			port = p
+		}
+	}
+
 	db, err := postgres.NewDB(
 		cfg.Database.Host,
-		cfg.Database.Port,
+		port,
 		cfg.Database.User,
 		cfg.Database.Password,
 		cfg.Database.Name,

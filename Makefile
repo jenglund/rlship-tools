@@ -1,4 +1,4 @@
-.PHONY: test test-backend test-frontend dev dev-backend dev-frontend clean
+.PHONY: test test-backend test-frontend dev dev-backend dev-frontend clean migrate-up migrate-down
 
 # Default target
 all: test
@@ -26,6 +26,15 @@ dev-backend:
 dev-frontend:
 	@echo "Starting frontend development server..."
 	cd apps/mobile && npm run web
+
+# Migration targets
+migrate-up:
+	@echo "Running migrations up..."
+	cd backend && go run cmd/migrate/main.go up
+
+migrate-down:
+	@echo "Running migrations down..."
+	cd backend && go run cmd/migrate/main.go down
 
 # Clean up
 clean:

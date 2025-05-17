@@ -9,28 +9,34 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Firebase FirebaseConfig
+	Server   ServerConfig   `mapstructure:"server"`
+	Database DatabaseConfig `mapstructure:"database"`
+	Firebase FirebaseConfig `mapstructure:"firebase"`
+	Auth     AuthConfig     `mapstructure:"auth"`
 }
 
 type ServerConfig struct {
-	Port int
-	Host string
+	Port int    `mapstructure:"port"`
+	Host string `mapstructure:"host"`
 }
 
 type DatabaseConfig struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
-	Name     string
-	SSLMode  string
+	Host     string `mapstructure:"host"`
+	Port     string `mapstructure:"port"`
+	Name     string `mapstructure:"name"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	URL      string `mapstructure:"url"`
+	SSLMode  string `mapstructure:"sslmode"`
 }
 
 type FirebaseConfig struct {
-	ProjectID       string
-	CredentialsFile string
+	ProjectID       string `mapstructure:"project_id"`
+	CredentialsFile string `mapstructure:"credentials_file"`
+}
+
+type AuthConfig struct {
+	FirebaseProjectID string `mapstructure:"firebase_project_id"`
 }
 
 // Load reads configuration from environment variables and config files
@@ -40,6 +46,19 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 
 	viper.AutomaticEnv()
+
+	// Map environment variables
+	viper.SetEnvPrefix("")
+	viper.BindEnv("database.host", "DB_HOST")
+	viper.BindEnv("database.port", "DB_PORT")
+	viper.BindEnv("database.user", "DB_USER")
+	viper.BindEnv("database.password", "DB_PASSWORD")
+	viper.BindEnv("database.name", "DB_NAME")
+	viper.BindEnv("database.sslmode", "DB_SSLMODE")
+	viper.BindEnv("server.host", "SERVER_HOST")
+	viper.BindEnv("server.port", "SERVER_PORT")
+	viper.BindEnv("firebase.project_id", "FIREBASE_PROJECT_ID")
+	viper.BindEnv("firebase.credentials_file", "FIREBASE_CREDENTIALS_FILE")
 
 	// Default values
 	viper.SetDefault("server.port", 8080)
@@ -57,6 +76,23 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
+	// Validate required fields
+	if config.Database.Host == "" {
+		return nil, fmt.Errorf("database host is required")
+	}
+	if config.Database.User == "" {
+		return nil, fmt.Errorf("database user is required")
+	}
+	if config.Database.Name == "" {
+		return nil, fmt.Errorf("database name is required")
+	}
+	if config.Firebase.ProjectID == "" {
+		return nil, fmt.Errorf("firebase project ID is required")
+	}
+	if config.Firebase.CredentialsFile == "" {
+		return nil, fmt.Errorf("firebase credentials file is required")
+	}
+
 	// Override with environment variables if present
 	if port := os.Getenv("PORT"); port != "" {
 		config.Server.Port = viper.GetInt("PORT")
@@ -72,13 +108,9 @@ func Load() (*Config, error) {
 		config.Firebase.CredentialsFile = credsFile
 	}
 
-	return &config, nil
-}
+	// Construct database URL
+	config.Database.URL = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		config.Database.User, config.Database.Password, config.Database.Host, config.Database.Port, config.Database.Name)
 
-// GetDSN returns the PostgreSQL connection string
-func (c *DatabaseConfig) GetDSN() string {
-	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.Name, c.SSLMode,
-	)
+	return &config, nil
 }

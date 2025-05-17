@@ -90,6 +90,7 @@ func TestConfigLoading(t *testing.T) {
 				os.Setenv("DB_SSLMODE", "disable")
 				os.Setenv("SERVER_HOST", "localhost")
 				os.Setenv("SERVER_PORT", "8080")
+				os.Setenv("FIREBASE_PROJECT_ID", "test-project")
 				os.Setenv("FIREBASE_CREDENTIALS_FILE", "test.json")
 			},
 			expectError: false,
@@ -266,7 +267,7 @@ func TestHandlerRegistration(t *testing.T) {
 	foundUserRoute := false
 	foundTribeRoute := false
 	for _, route := range routes {
-		if route.Path == "/api/users" {
+		if route.Path == "/api/users/auth" {
 			foundUserRoute = true
 		}
 		if route.Path == "/api/tribes" {

@@ -111,10 +111,11 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 		fmt.Printf("DEBUG: Column: %s (%s)\n", colName, dataType)
 	}
 
+	// Insert tribe with explicit type casting
 	_, err = db.Exec(`
-		INSERT INTO tribes (id, name, type, visibility)
-		VALUES ($1, $2, $3, $4)
-	`, tribe.ID, tribe.Name, models.TribeTypeCouple, models.VisibilityPrivate)
+		INSERT INTO tribes (id, name, type, visibility, metadata, version)
+		VALUES ($1, $2, $3::tribe_type, $4::visibility_type, $5, $6)
+	`, tribe.ID, tribe.Name, string(models.TribeTypeCouple), string(models.VisibilityPrivate), "{}", 1)
 
 	if err != nil {
 		fmt.Printf("DEBUG: Error creating test tribe: %v\n", err)
@@ -124,9 +125,9 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 	for _, member := range members {
 		fmt.Printf("DEBUG: Adding member to tribe: %+v\n", member)
 		_, err := db.Exec(`
-			INSERT INTO tribe_members (id, tribe_id, user_id, membership_type, display_name)
-			VALUES ($1, $2, $3, $4, $5)
-		`, uuid.New(), tribe.ID, member.ID, models.MembershipFull, member.Name)
+			INSERT INTO tribe_members (id, tribe_id, user_id, membership_type, display_name, metadata, version)
+			VALUES ($1, $2, $3, $4::membership_type, $5, $6, $7)
+		`, uuid.New(), tribe.ID, member.ID, string(models.MembershipFull), member.Name, "{}", 1)
 
 		if err != nil {
 			fmt.Printf("DEBUG: Error adding member to tribe: %v\n", err)
@@ -151,12 +152,13 @@ func CreateTestList(t *testing.T, db *sql.DB, tribeID uuid.UUID) TestList {
 	_, err := db.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility, owner_id, owner_type,
-			sync_status, sync_source, sync_id, default_weight
+			sync_status, sync_source, sync_id, default_weight, metadata, version
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, list.ID, list.Type, list.Name, "Test list", models.VisibilityPrivate,
-		list.TribeID, "tribe", // Use string literal for owner_type
-		models.ListSyncStatusNone, models.SyncSourceNone, "", 1.0)
+		VALUES ($1, $2, $3, $4, $5::visibility_type, $6, $7::owner_type, 
+			$8::sync_status_type, $9, $10, $11, $12, $13)
+	`, list.ID, list.Type, list.Name, "Test list", string(models.VisibilityPrivate),
+		list.TribeID, string(models.OwnerTypeTribe),
+		string(models.ListSyncStatusNone), string(models.SyncSourceNone), "", 1.0, "{}", 1)
 
 	if err != nil {
 		t.Fatalf("Error creating test list: %v", err)

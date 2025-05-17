@@ -48,27 +48,19 @@ Ensure test coverage remains above 90% for all new code.
 
 ## Known Issues
 
-1. Type System and Model Issues:
-   
-   a. Type Consistency Problems:
+1. Database Constraint Violations:
    - [x] JSONMap implementation complete (Scan and Value methods implemented)
    - [x] Metadata type standardized to use JSONMap
    - [x] Database constraints for nullable fields added
    - [x] Default values for boolean and numeric fields added
    - [x] Type mismatches between models and database layer (UUID and OwnerType)
    - [x] Type mismatch between ListConflict and SyncConflict in service and repository layers
-   
-   b. Validation Layer Issues:
-   - [x] Cross-field validations added (location data, seasonal dates, guest membership)
-   - [x] Consistent validation between service and repository layers
-   - [x] Incomplete validation for sync-related fields
-   - [x] Type assertion needed for Metadata in activity handlers
-   - [x] Invalid operation on JSONMap in activity_photos_test.go
-   - [x] UUID array type mismatch in list_test.go
-   - [x] OwnerType string to pointer conversion in list_test.go
-   - [x] Activity validation added for required fields (user_id, visibility, etc.)
-   - [x] Tribe metadata handling added for tribe creation
-   - [x] List owner foreign key validation added
+   - [ ] `user_id` NOT NULL constraint violation in activities table
+   - [ ] `owner_id` NOT NULL constraint violation in lists table
+   - [ ] `metadata` NOT NULL constraint violation in tribes table
+   - [ ] Foreign key constraint violation in lists table for owner_id
+   - [ ] Missing `list_owners` table
+   - [ ] Invalid enum values being passed for visibility_type and tribe_type
 
 2. Test Coverage Issues:
    - [x] Low coverage in cmd/api package (added comprehensive tests for configuration, database, auth, and server initialization)
@@ -77,16 +69,17 @@ Ensure test coverage remains above 90% for all new code.
    - [ ] Low coverage in internal/testutil package (6.8%)
    - [x] Improve coverage in internal/models package (activity validation tests added)
    - [x] Improve coverage in internal/middleware package (added tests for repository errors, middleware chaining, and Firebase auth initialization)
+   - [ ] Overall low coverage in postgres repository package (20.8%)
 
-3. API Server Issues:
-   - [ ] No graceful shutdown handling
-   - [ ] Missing health check endpoints
-   - [ ] No metrics or monitoring endpoints
-   - [ ] No rate limiting implementation
-   - [ ] No request logging middleware
-   - [ ] No panic recovery middleware
-   - [ ] No request ID tracking
-   - [ ] No API versioning strategy
+3. Transaction Management Issues:
+   - [ ] Role "user" does not exist for transaction tests
+   - [ ] Deadlock retry mechanism not properly tested
+   - [ ] Lock timeout retry mechanism not properly tested
+
+4. Test Infrastructure Issues:
+   - [ ] Test data generation failing due to foreign key constraints
+   - [ ] Inconsistent test database cleanup
+   - [ ] Missing test setup for required database roles
 
 ## Future Work
 
@@ -95,6 +88,10 @@ Ensure test coverage remains above 90% for all new code.
    - [ ] Add proper indexes for performance optimization
    - [ ] Add foreign key constraints for data integrity
    - [ ] Add proper cascading deletes
+   - [ ] Add proper default values for required fields
+   - [ ] Add proper enum type constraints
+   - [ ] Create missing tables (list_owners)
+   - [ ] Review and fix all NOT NULL constraints
 
 2. Test Improvements:
    - [ ] Add integration tests for sync functionality
@@ -107,6 +104,9 @@ Ensure test coverage remains above 90% for all new code.
    - [ ] Add database connection retry tests
    - [ ] Add server shutdown tests
    - [ ] Add middleware error handling tests
+   - [ ] Fix transaction management tests
+   - [ ] Improve test data generation
+   - [ ] Add proper test database role setup
 
 3. Code Quality:
    - [ ] Improve error handling consistency

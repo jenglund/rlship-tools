@@ -1,87 +1,63 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/spf13/viper"
+	"github.com/jenglund/rlship-tools/internal/config"
 )
-
-func init() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Println("No config file found, using defaults and environment variables")
-		} else {
-			log.Fatalf("Error reading config file: %s", err)
-		}
-	}
-}
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("Command required: up or down")
+		log.Fatal("Command required: up, down, or force")
 	}
 
-	command := os.Args[1]
-
-	dbHost := viper.GetString("database.host")
-	dbPort := viper.GetString("database.port")
-	dbName := viper.GetString("database.name")
-	dbUser := viper.GetString("database.user")
-	dbPass := viper.GetString("database.password")
-
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		dbUser, dbPass, dbHost, dbPort, dbName)
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
+	}
 
 	m, err := migrate.New(
 		"file://migrations",
-		dbURL,
+		cfg.Database.URL,
 	)
 	if err != nil {
-		log.Fatal("Error creating migrate instance:", err)
+		log.Fatalf("Error creating migrate instance: %v", err)
 	}
-	defer m.Close()
 
-	// Get current version before migration
 	version, dirty, err := m.Version()
 	if err != nil && err != migrate.ErrNilVersion {
-		log.Fatal("Error getting current version:", err)
+		log.Fatalf("Error getting version: %v", err)
 	}
 	log.Printf("Current migration version: %d, Dirty: %v", version, dirty)
 
+	command := os.Args[1]
 	switch command {
 	case "up":
 		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			log.Fatal("Error running migrations:", err)
+			log.Fatalf("Error running migrations: %v", err)
 		}
-		newVersion, _, _ := m.Version()
-		if newVersion > version {
-			log.Printf("Successfully migrated from version %d to %d", version, newVersion)
-		} else {
-			log.Println("No new migrations to apply")
-		}
-
 	case "down":
 		if err := m.Down(); err != nil && err != migrate.ErrNoChange {
-			log.Fatal("Error rolling back migrations:", err)
+			log.Fatalf("Error running migrations: %v", err)
 		}
-		newVersion, _, _ := m.Version()
-		if newVersion < version {
-			log.Printf("Successfully rolled back from version %d to %d", version, newVersion)
-		} else {
-			log.Println("No migrations to roll back")
+	case "force":
+		if len(os.Args) != 3 {
+			log.Fatal("Version number required for force command")
 		}
-
+		version, err := strconv.ParseUint(os.Args[2], 10, 64)
+		if err != nil {
+			log.Fatalf("Invalid version number: %v", err)
+		}
+		if err := m.Force(int(version)); err != nil {
+			log.Fatalf("Error forcing version: %v", err)
+		}
+		log.Printf("Successfully forced version to %d", version)
 	default:
-		log.Fatal("Invalid command. Use 'up' or 'down'")
+		log.Fatalf("Invalid command. Use 'up', 'down', or 'force'")
 	}
 }
