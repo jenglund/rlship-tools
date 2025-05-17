@@ -469,7 +469,7 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -626,7 +626,7 @@ func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		ExpiresAt *time.Time `json:"expires_at"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil && decodeErr != io.EOF {
 		response.Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

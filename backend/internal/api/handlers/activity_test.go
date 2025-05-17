@@ -907,7 +907,6 @@ func TestListSharedActivities(t *testing.T) {
 					// Simulate error for all GetSharedActivities calls
 					fmt.Printf("Simulating error for all GetSharedActivities calls for %d tribes\n", len(tribes))
 					response.GinSuccess(c, []*models.Activity{})
-					return
 				})
 
 				return r

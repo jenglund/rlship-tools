@@ -4,11 +4,23 @@ import (
 	"context"
 
 	"firebase.google.com/go/v4/auth"
+	"github.com/stretchr/testify/mock"
 )
 
 // MockFirebaseAuth implements the Firebase auth.Client interface for testing
 type MockFirebaseAuth struct {
+	mock.Mock
 	VerifyIDTokenFunc func(ctx context.Context, idToken string) (*auth.Token, error)
+}
+
+// On exposes the mock's On method for setting expectations
+func (m *MockFirebaseAuth) On(methodName string, args ...interface{}) *mock.Call {
+	return m.Mock.On(methodName, args...)
+}
+
+// Called exposes the mock's Called method for asserting expectations
+func (m *MockFirebaseAuth) Called(args ...interface{}) mock.Arguments {
+	return m.Mock.Called(args...)
 }
 
 // VerifyIDToken mocks the verification of a Firebase ID token

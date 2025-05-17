@@ -1767,59 +1767,6 @@ func (r *listRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 	return lists, nil
 }
 
-// AddConflict creates a new list conflict
-func (r *listRepository) AddConflict(conflict *models.SyncConflict) error {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-
-	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// Validate conflict
-		if err := conflict.Validate(); err != nil {
-			return err
-		}
-
-		// Generate ID if not provided
-		if conflict.ID == uuid.Nil {
-			conflict.ID = uuid.New()
-		}
-
-		// Marshal JSON data
-		localData, err := json.Marshal(conflict.LocalData)
-		if err != nil {
-			return fmt.Errorf("error marshaling local data: %w", err)
-		}
-
-		remoteData, err := json.Marshal(conflict.RemoteData)
-		if err != nil {
-			return fmt.Errorf("error marshaling remote data: %w", err)
-		}
-
-		query := `
-			INSERT INTO list_conflicts (
-				id, list_id, type,
-				local_data, remote_data,
-				created_at, updated_at
-			) VALUES (
-				$1, $2, $3,
-				$4, $5,
-				NOW(), NOW()
-			)`
-
-		_, err = tx.Exec(query,
-			conflict.ID,
-			conflict.ListID,
-			conflict.Type,
-			localData,
-			remoteData,
-		)
-		if err != nil {
-			return fmt.Errorf("error creating conflict: %w", err)
-		}
-
-		return nil
-	})
-}
-
 // GetListsByOwner retrieves all lists owned by a specific owner
 func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.OwnerType) ([]*models.List, error) {
 	ctx := context.Background()

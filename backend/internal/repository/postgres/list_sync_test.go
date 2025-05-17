@@ -575,7 +575,7 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 	})
 }
 
-func TestListRepository_AddConflict(t *testing.T) {
+func TestListRepository_CreateConflict_Extra(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
@@ -636,8 +636,8 @@ func TestListRepository_AddConflict(t *testing.T) {
 			UpdatedAt:  time.Now(), // Set update time
 		}
 
-		// Create conflict using AddConflict
-		err = repo.AddConflict(conflict)
+		// Create conflict using CreateConflict
+		err = repo.CreateConflict(conflict)
 		require.NoError(t, err)
 
 		// Verify conflict created successfully
@@ -673,7 +673,7 @@ func TestListRepository_AddConflict(t *testing.T) {
 			UpdatedAt: time.Now(), // Set update time
 		}
 
-		err = repo.AddConflict(conflict)
+		err = repo.CreateConflict(conflict)
 		assert.Error(t, err)
 	})
 }

@@ -346,5 +346,4 @@ type ListRepository interface {
 	CreateConflict(conflict *SyncConflict) error
 	ResolveConflict(conflictID uuid.UUID) error
 	GetListsBySource(source string) ([]*List, error)
-	AddConflict(conflict *SyncConflict) error
 }

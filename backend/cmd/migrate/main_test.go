@@ -11,19 +11,34 @@ import (
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/jenglund/rlship-tools/internal/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 // mockSource implements source.Driver
+// It is kept for reference even though currently unused
+//
+//nolint:unused
 type mockSource struct {
 	version uint
 	err     error
 }
 
+//nolint:unused
 func (m *mockSource) Open(url string) (source.Driver, error) { return m, nil }
-func (m *mockSource) Close() error                           { return nil }
-func (m *mockSource) First() (uint, error)                   { return m.version, m.err }
-func (m *mockSource) Prev(version uint) (uint, error)        { return version - 1, m.err }
-func (m *mockSource) Next(version uint) (uint, error)        { return version + 1, m.err }
+
+//nolint:unused
+func (m *mockSource) Close() error { return nil }
+
+//nolint:unused
+func (m *mockSource) First() (uint, error) { return m.version, m.err }
+
+//nolint:unused
+func (m *mockSource) Prev(version uint) (uint, error) { return version - 1, m.err }
+
+//nolint:unused
+func (m *mockSource) Next(version uint) (uint, error) { return version + 1, m.err }
+
+//nolint:unused
 func (m *mockSource) ReadUp(version uint) (io.ReadCloser, string, error) {
 	if m.err != nil {
 		return nil, "", m.err
@@ -31,6 +46,8 @@ func (m *mockSource) ReadUp(version uint) (io.ReadCloser, string, error) {
 	// Return a string reader with some mock SQL content
 	return io.NopCloser(strings.NewReader("CREATE TABLE mock (id int);")), "mock.sql", nil
 }
+
+//nolint:unused
 func (m *mockSource) ReadDown(version uint) (io.ReadCloser, string, error) {
 	if m.err != nil {
 		return nil, "", m.err
@@ -40,24 +57,43 @@ func (m *mockSource) ReadDown(version uint) (io.ReadCloser, string, error) {
 }
 
 // mockDB implements database.Driver
+// It is kept for reference even though currently unused
+//
+//nolint:unused
 type mockDB struct {
+	mock.Mock
 	version int
 	dirty   bool
 	err     error
 }
 
+//nolint:unused
 func (m *mockDB) Open(url string) (database.Driver, error) { return m, nil }
-func (m *mockDB) Close() error                             { return nil }
-func (m *mockDB) Lock() error                              { return m.err }
-func (m *mockDB) Unlock() error                            { return m.err }
-func (m *mockDB) Run(migration io.Reader) error            { return m.err }
+
+//nolint:unused
+func (m *mockDB) Close() error { return nil }
+
+//nolint:unused
+func (m *mockDB) Lock() error { return m.err }
+
+//nolint:unused
+func (m *mockDB) Unlock() error { return m.err }
+
+//nolint:unused
+func (m *mockDB) Run(migration io.Reader) error { return m.err }
+
+//nolint:unused
 func (m *mockDB) SetVersion(version int, dirty bool) error {
 	m.version = version
 	m.dirty = dirty
 	return m.err
 }
+
+//nolint:unused
 func (m *mockDB) Version() (int, bool, error) { return m.version, m.dirty, m.err }
-func (m *mockDB) Drop() error                 { return m.err }
+
+//nolint:unused
+func (m *mockDB) Drop() error { return m.err }
 
 // mockMigrator implements the Migrator interface for testing
 type mockMigrator struct {

@@ -323,7 +323,7 @@ func (h *ActivityHandler) ShareActivity(c *gin.Context) {
 	}
 
 	var req ShareActivityRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
 		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
@@ -403,9 +403,9 @@ func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 	// Get shared activities for each tribe
 	for _, tribe := range tribes {
 		fmt.Printf("Getting shared activities for tribe %s\n", tribe.ID)
-		activities, err := h.repos.Activities.GetSharedActivities(tribe.ID)
-		if err != nil {
-			fmt.Printf("Error getting shared activities for tribe %s: %v\n", tribe.ID, err)
+		activities, sharedActivitiesErr := h.repos.Activities.GetSharedActivities(tribe.ID)
+		if sharedActivitiesErr != nil {
+			fmt.Printf("Error getting shared activities for tribe %s: %v\n", tribe.ID, sharedActivitiesErr)
 			// Continue instead of returning an error
 			continue
 		}

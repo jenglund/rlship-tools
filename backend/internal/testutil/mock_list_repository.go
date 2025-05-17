@@ -200,9 +200,3 @@ func (m *MockListRepository) GetListsBySource(source string) ([]*models.List, er
 	}
 	return args.Get(0).([]*models.List), args.Error(1)
 }
-
-// AddConflict adds a new sync conflict
-func (m *MockListRepository) AddConflict(conflict *models.SyncConflict) error {
-	args := m.Called(conflict)
-	return args.Error(0)
-}

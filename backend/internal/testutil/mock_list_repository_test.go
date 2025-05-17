@@ -304,14 +304,6 @@ func TestMockListRepository_SyncOperations(t *testing.T) {
 		repo.AssertExpectations(t)
 	})
 
-	t.Run("AddConflict", func(t *testing.T) {
-		repo := &MockListRepository{}
-		repo.On("AddConflict", testConflict).Return(nil)
-		err := repo.AddConflict(testConflict)
-		assert.NoError(t, err)
-		repo.AssertExpectations(t)
-	})
-
 	// Test error cases
 	t.Run("UpdateSyncStatus error", func(t *testing.T) {
 		repo := &MockListRepository{}
@@ -363,16 +355,6 @@ func TestMockListRepository_SyncOperations(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, expectedErr, err)
 		assert.Nil(t, result)
-		repo.AssertExpectations(t)
-	})
-
-	t.Run("AddConflict error", func(t *testing.T) {
-		repo := &MockListRepository{}
-		expectedErr := fmt.Errorf("failed to add conflict")
-		repo.On("AddConflict", testConflict).Return(expectedErr)
-		err := repo.AddConflict(testConflict)
-		assert.Error(t, err)
-		assert.Equal(t, expectedErr, err)
 		repo.AssertExpectations(t)
 	})
 }

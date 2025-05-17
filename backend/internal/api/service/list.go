@@ -314,6 +314,8 @@ func (s *listService) GetListConflicts(listID uuid.UUID) ([]*models.SyncConflict
 
 // ResolveListConflict resolves a sync conflict
 func (s *listService) ResolveListConflict(listID, conflictID uuid.UUID, resolution string) error {
+	// The resolution parameter might need to be used to determine how to resolve the conflict
+	// For now, we're just passing conflictID to the repository method
 	return s.repo.ResolveConflict(conflictID)
 }
 
