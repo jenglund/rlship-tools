@@ -864,7 +864,6 @@ func TestListSharedActivities(t *testing.T) {
 					fmt.Printf("Simulating error for GetUserTribes for user %s\n", uid)
 					// Return the error directly to test the error path
 					response.GinInternalError(c, fmt.Errorf("simulated error getting user tribes"))
-					return
 				})
 
 				return r

@@ -162,13 +162,13 @@ func mockConfigLoaderWithError() ConfigLoader {
 func TestMigrateCommand_NoArgs(t *testing.T) {
 	args := []string{"migrate"}
 	err := runMigrations(args, nil, mockConfigLoader())
-	assert.EqualError(t, err, "Command required: up, down, or force")
+	assert.EqualError(t, err, "command required: up, down, or force")
 }
 
 func TestMigrateCommand_InvalidCommand(t *testing.T) {
 	args := []string{"migrate", "invalid"}
 	err := runMigrations(args, nil, mockConfigLoader())
-	assert.EqualError(t, err, "Invalid command. Use 'up', 'down', or 'force'")
+	assert.EqualError(t, err, "invalid command; use 'up', 'down', or 'force'")
 }
 
 func TestMigrateCommand_Up(t *testing.T) {
@@ -180,13 +180,13 @@ func TestMigrateCommand_Up(t *testing.T) {
 func TestMigrateCommand_Up_SourceError(t *testing.T) {
 	args := []string{"migrate", "up"}
 	err := runMigrations(args, mockFactory(fmt.Errorf("source error"), nil), mockConfigLoader())
-	assert.EqualError(t, err, "Error creating migrate instance: source error")
+	assert.EqualError(t, err, "error creating migrate instance: source error")
 }
 
 func TestMigrateCommand_Up_DBError(t *testing.T) {
 	args := []string{"migrate", "up"}
 	err := runMigrations(args, mockFactory(nil, fmt.Errorf("db error")), mockConfigLoader())
-	assert.EqualError(t, err, "Error creating migrate instance: db error")
+	assert.EqualError(t, err, "error creating migrate instance: db error")
 }
 
 func TestMigrateCommand_Up_MigrationError(t *testing.T) {
@@ -199,7 +199,7 @@ func TestMigrateCommand_Up_MigrationError(t *testing.T) {
 		}, nil
 	}
 	err := runMigrations(args, factory, mockConfigLoader())
-	assert.EqualError(t, err, "Error running migrations: migration error")
+	assert.EqualError(t, err, "error running migrations: migration error")
 }
 
 func TestMigrateCommand_Up_NoChange(t *testing.T) {
@@ -224,13 +224,13 @@ func TestMigrateCommand_Down(t *testing.T) {
 func TestMigrateCommand_Down_SourceError(t *testing.T) {
 	args := []string{"migrate", "down"}
 	err := runMigrations(args, mockFactory(fmt.Errorf("source error"), nil), mockConfigLoader())
-	assert.EqualError(t, err, "Error creating migrate instance: source error")
+	assert.EqualError(t, err, "error creating migrate instance: source error")
 }
 
 func TestMigrateCommand_Down_DBError(t *testing.T) {
 	args := []string{"migrate", "down"}
 	err := runMigrations(args, mockFactory(nil, fmt.Errorf("db error")), mockConfigLoader())
-	assert.EqualError(t, err, "Error creating migrate instance: db error")
+	assert.EqualError(t, err, "error creating migrate instance: db error")
 }
 
 func TestMigrateCommand_Down_MigrationError(t *testing.T) {
@@ -243,7 +243,7 @@ func TestMigrateCommand_Down_MigrationError(t *testing.T) {
 		}, nil
 	}
 	err := runMigrations(args, factory, mockConfigLoader())
-	assert.EqualError(t, err, "Error running migrations: migration error")
+	assert.EqualError(t, err, "error running migrations: migration error")
 }
 
 func TestMigrateCommand_Down_NoChange(t *testing.T) {
@@ -268,25 +268,25 @@ func TestMigrateCommand_Force(t *testing.T) {
 func TestMigrateCommand_Force_InvalidVersion(t *testing.T) {
 	args := []string{"migrate", "force", "invalid"}
 	err := runMigrations(args, nil, mockConfigLoader())
-	assert.Contains(t, err.Error(), "Invalid version number")
+	assert.Contains(t, err.Error(), "invalid version number")
 }
 
 func TestMigrateCommand_Force_MissingVersion(t *testing.T) {
 	args := []string{"migrate", "force"}
 	err := runMigrations(args, nil, mockConfigLoader())
-	assert.EqualError(t, err, "Version number required for force command")
+	assert.EqualError(t, err, "version number required for force command")
 }
 
 func TestMigrateCommand_Force_SourceError(t *testing.T) {
 	args := []string{"migrate", "force", "2"}
 	err := runMigrations(args, mockFactory(fmt.Errorf("source error"), nil), mockConfigLoader())
-	assert.EqualError(t, err, "Error creating migrate instance: source error")
+	assert.EqualError(t, err, "error creating migrate instance: source error")
 }
 
 func TestMigrateCommand_Force_DBError(t *testing.T) {
 	args := []string{"migrate", "force", "2"}
 	err := runMigrations(args, mockFactory(nil, fmt.Errorf("db error")), mockConfigLoader())
-	assert.EqualError(t, err, "Error creating migrate instance: db error")
+	assert.EqualError(t, err, "error creating migrate instance: db error")
 }
 
 func TestMigrateCommand_Force_MigrationError(t *testing.T) {
@@ -299,13 +299,13 @@ func TestMigrateCommand_Force_MigrationError(t *testing.T) {
 		}, nil
 	}
 	err := runMigrations(args, factory, mockConfigLoader())
-	assert.EqualError(t, err, "Error forcing version: migration error")
+	assert.EqualError(t, err, "error forcing version: migration error")
 }
 
 func TestMigrateCommand_ConfigError(t *testing.T) {
 	args := []string{"migrate", "up"}
 	err := runMigrations(args, mockFactory(nil, nil), mockConfigLoaderWithError())
-	assert.EqualError(t, err, "Error loading config: config error")
+	assert.EqualError(t, err, "error loading config: config error")
 }
 
 func TestMigrateCommand_VersionError(t *testing.T) {
@@ -318,7 +318,7 @@ func TestMigrateCommand_VersionError(t *testing.T) {
 		}, nil
 	}
 	err := runMigrations(args, factory, mockConfigLoader())
-	assert.EqualError(t, err, "Error getting version: version error")
+	assert.EqualError(t, err, "error getting version: version error")
 }
 
 func TestMigrateCommand_NilVersion(t *testing.T) {

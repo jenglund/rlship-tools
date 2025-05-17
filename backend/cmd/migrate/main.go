@@ -48,7 +48,7 @@ func defaultConfigLoader() (*config.Config, error) {
 // runMigrations handles the migration logic
 func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoader) error {
 	if len(args) < 2 {
-		return fmt.Errorf("Command required: up, down, or force")
+		return fmt.Errorf("command required: up, down, or force")
 	}
 
 	command := args[1]
@@ -58,13 +58,13 @@ func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoa
 		// Valid commands, continue
 	case "force":
 		if len(args) != 3 {
-			return fmt.Errorf("Version number required for force command")
+			return fmt.Errorf("version number required for force command")
 		}
 		if _, err := strconv.ParseUint(args[2], 10, 64); err != nil {
-			return fmt.Errorf("Invalid version number: %v", err)
+			return fmt.Errorf("invalid version number: %v", err)
 		}
 	default:
-		return fmt.Errorf("Invalid command. Use 'up', 'down', or 'force'")
+		return fmt.Errorf("invalid command; use 'up', 'down', or 'force'")
 	}
 
 	if configLoader == nil {
@@ -73,7 +73,7 @@ func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoa
 
 	cfg, err := configLoader()
 	if err != nil {
-		return fmt.Errorf("Error loading config: %v", err)
+		return fmt.Errorf("error loading config: %v", err)
 	}
 
 	if factory == nil {
@@ -82,28 +82,28 @@ func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoa
 
 	m, err := factory("file://migrations", cfg.Database.URL)
 	if err != nil {
-		return fmt.Errorf("Error creating migrate instance: %v", err)
+		return fmt.Errorf("error creating migrate instance: %v", err)
 	}
 
 	version, dirty, err := m.Version()
 	if err != nil && err != migrate.ErrNilVersion {
-		return fmt.Errorf("Error getting version: %v", err)
+		return fmt.Errorf("error getting version: %v", err)
 	}
 	log.Printf("Current migration version: %d, Dirty: %v", version, dirty)
 
 	switch command {
 	case "up":
 		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			return fmt.Errorf("Error running migrations: %v", err)
+			return fmt.Errorf("error running migrations: %v", err)
 		}
 	case "down":
 		if err := m.Down(); err != nil && err != migrate.ErrNoChange {
-			return fmt.Errorf("Error running migrations: %v", err)
+			return fmt.Errorf("error running migrations: %v", err)
 		}
 	case "force":
 		version, _ := strconv.ParseUint(args[2], 10, 64) // Already validated above
 		if err := m.Force(int(version)); err != nil {
-			return fmt.Errorf("Error forcing version: %v", err)
+			return fmt.Errorf("error forcing version: %v", err)
 		}
 		log.Printf("Successfully forced version to %d", version)
 	}

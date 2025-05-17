@@ -26,7 +26,11 @@ type APIError struct {
 func JSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		// Log the error, but we can't really recover at this point
+		// since headers have already been sent
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
 }
 
 // Error sends a JSON error response using standard http.ResponseWriter

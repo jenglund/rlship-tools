@@ -49,16 +49,36 @@ func Load() (*Config, error) {
 
 	// Map environment variables
 	viper.SetEnvPrefix("")
-	viper.BindEnv("database.host", "DB_HOST")
-	viper.BindEnv("database.port", "DB_PORT")
-	viper.BindEnv("database.user", "DB_USER")
-	viper.BindEnv("database.password", "DB_PASSWORD")
-	viper.BindEnv("database.name", "DB_NAME")
-	viper.BindEnv("database.sslmode", "DB_SSLMODE")
-	viper.BindEnv("server.host", "SERVER_HOST")
-	viper.BindEnv("server.port", "SERVER_PORT")
-	viper.BindEnv("firebase.project_id", "FIREBASE_PROJECT_ID")
-	viper.BindEnv("firebase.credentials_file", "FIREBASE_CREDENTIALS_FILE")
+	if err := viper.BindEnv("database.host", "DB_HOST"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("database.port", "DB_PORT"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("database.user", "DB_USER"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("database.password", "DB_PASSWORD"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("database.name", "DB_NAME"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("database.sslmode", "DB_SSLMODE"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("server.host", "SERVER_HOST"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("server.port", "SERVER_PORT"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("firebase.project_id", "FIREBASE_PROJECT_ID"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
+	if err := viper.BindEnv("firebase.credentials_file", "FIREBASE_CREDENTIALS_FILE"); err != nil {
+		return nil, fmt.Errorf("error binding environment variable: %w", err)
+	}
 
 	// Default values
 	viper.SetDefault("server.port", 8080)
@@ -99,7 +119,8 @@ func Load() (*Config, error) {
 	}
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		// Parse DATABASE_URL if present
-		// TODO: Implement DATABASE_URL parsing
+		// For now, just log that we don't support this yet
+		fmt.Println("WARNING: DATABASE_URL environment variable found but not implemented")
 	}
 	if projectID := os.Getenv("FIREBASE_PROJECT_ID"); projectID != "" {
 		config.Firebase.ProjectID = projectID

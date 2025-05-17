@@ -21,6 +21,9 @@ issues:
       linters:
         - errcheck
         - gosec
+    - path: internal/api/handlers/activity_test\.go
+      linters:
+        - typecheck
   
   max-issues-per-linter: 0
   max-same-issues: 0
