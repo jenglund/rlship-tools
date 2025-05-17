@@ -821,3 +821,687 @@ func TestListHandler_UnshareListWithTribe(t *testing.T) {
 		})
 	}
 }
+
+func TestListHandler_UpdateList(t *testing.T) {
+	tests := []struct {
+		name           string
+		listID         string
+		requestBody    []byte
+		setupMocks     func(*MockListService)
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "success",
+			listID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"Updated List","type":"general","visibility":"private","default_weight":1.5}`),
+			expectedStatus: http.StatusOK,
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("UpdateList", mock.AnythingOfType("*models.List")).Return(nil)
+			},
+		},
+		{
+			name:           "invalid list ID",
+			listID:         "invalid-id",
+			requestBody:    []byte(`{"name":"Updated List","type":"general","visibility":"private","default_weight":1.5}`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid list ID",
+		},
+		{
+			name:           "invalid request body",
+			listID:         uuid.New().String(),
+			requestBody:    []byte(`invalid json`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid request body",
+		},
+		{
+			name:           "list not found",
+			listID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"Updated List","type":"general","visibility":"private","default_weight":1.5}`),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("UpdateList", mock.AnythingOfType("*models.List")).Return(models.ErrNotFound)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("listID", tt.listID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("PUT", "/", bytes.NewReader(tt.requestBody))
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockService)
+			}
+
+			handler.UpdateList(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestListHandler_DeleteList(t *testing.T) {
+	tests := []struct {
+		name           string
+		listID         string
+		setupMocks     func(*MockListService, uuid.UUID)
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "success",
+			listID:         uuid.New().String(),
+			expectedStatus: http.StatusNoContent,
+			setupMocks: func(mockService *MockListService, listID uuid.UUID) {
+				mockService.On("DeleteList", listID).Return(nil)
+			},
+		},
+		{
+			name:           "invalid list ID",
+			listID:         "invalid-id",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid list ID",
+		},
+		{
+			name:           "list not found",
+			listID:         uuid.New().String(),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService, listID uuid.UUID) {
+				mockService.On("DeleteList", listID).Return(models.ErrNotFound)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("listID", tt.listID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("DELETE", "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				listID, _ := uuid.Parse(tt.listID)
+				tt.setupMocks(mockService, listID)
+			}
+
+			handler.DeleteList(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestListHandler_AddListItem(t *testing.T) {
+	tests := []struct {
+		name           string
+		listID         string
+		requestBody    []byte
+		setupMocks     func(*MockListService)
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "success",
+			listID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"New Item","description":"Description","weight":1.0,"available":true}`),
+			expectedStatus: http.StatusCreated,
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("AddListItem", mock.AnythingOfType("*models.ListItem")).Return(nil)
+			},
+		},
+		{
+			name:           "invalid list ID",
+			listID:         "invalid-id",
+			requestBody:    []byte(`{"name":"New Item","description":"Description","weight":1.0,"available":true}`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid list ID",
+		},
+		{
+			name:           "invalid request body",
+			listID:         uuid.New().String(),
+			requestBody:    []byte(`invalid json`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid request body",
+		},
+		{
+			name:           "list not found",
+			listID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"New Item","description":"Description","weight":1.0,"available":true}`),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("AddListItem", mock.AnythingOfType("*models.ListItem")).Return(models.ErrNotFound)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("listID", tt.listID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("POST", "/", bytes.NewReader(tt.requestBody))
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockService)
+			}
+
+			handler.AddListItem(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestListHandler_GetListItems(t *testing.T) {
+	now := time.Now()
+	listID := uuid.New()
+
+	tests := []struct {
+		name           string
+		listID         string
+		setupMocks     func(*MockListService, uuid.UUID)
+		expectedStatus int
+		expectedError  string
+		expectedItems  []*models.ListItem
+	}{
+		{
+			name:           "success",
+			listID:         listID.String(),
+			expectedStatus: http.StatusOK,
+			setupMocks: func(mockService *MockListService, listID uuid.UUID) {
+				items := []*models.ListItem{
+					{
+						ID:          uuid.New(),
+						ListID:      listID,
+						Name:        "Item 1",
+						Description: "Description 1",
+						Weight:      1.0,
+						Available:   true,
+						CreatedAt:   now,
+						UpdatedAt:   now,
+					},
+					{
+						ID:          uuid.New(),
+						ListID:      listID,
+						Name:        "Item 2",
+						Description: "Description 2",
+						Weight:      2.0,
+						Available:   true,
+						CreatedAt:   now,
+						UpdatedAt:   now,
+					},
+				}
+				mockService.On("GetListItems", listID).Return(items, nil)
+			},
+			expectedItems: []*models.ListItem{
+				{
+					ListID:      listID,
+					Name:        "Item 1",
+					Description: "Description 1",
+					Weight:      1.0,
+					Available:   true,
+				},
+				{
+					ListID:      listID,
+					Name:        "Item 2",
+					Description: "Description 2",
+					Weight:      2.0,
+					Available:   true,
+				},
+			},
+		},
+		{
+			name:           "invalid list ID",
+			listID:         "invalid-id",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid list ID",
+		},
+		{
+			name:           "list not found",
+			listID:         uuid.New().String(),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService, listID uuid.UUID) {
+				mockService.On("GetListItems", listID).Return([]*models.ListItem{}, models.ErrNotFound)
+			},
+		},
+		{
+			name:           "empty list",
+			listID:         uuid.New().String(),
+			expectedStatus: http.StatusOK,
+			setupMocks: func(mockService *MockListService, listID uuid.UUID) {
+				mockService.On("GetListItems", listID).Return([]*models.ListItem{}, nil)
+			},
+			expectedItems: []*models.ListItem{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("listID", tt.listID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				listID, _ := uuid.Parse(tt.listID)
+				tt.setupMocks(mockService, listID)
+			}
+
+			handler.GetListItems(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			} else if tt.expectedItems != nil {
+				var items []*models.ListItem
+				err := json.NewDecoder(w.Body).Decode(&items)
+				require.NoError(t, err)
+				assert.Len(t, items, len(tt.expectedItems))
+
+				// We only check the name, description, weight, and available fields
+				// as the IDs will be different in the response
+				for i, expectedItem := range tt.expectedItems {
+					assert.Equal(t, expectedItem.Name, items[i].Name)
+					assert.Equal(t, expectedItem.Description, items[i].Description)
+					assert.Equal(t, expectedItem.Weight, items[i].Weight)
+					assert.Equal(t, expectedItem.Available, items[i].Available)
+				}
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestListHandler_UpdateListItem(t *testing.T) {
+	tests := []struct {
+		name           string
+		listID         string
+		itemID         string
+		requestBody    []byte
+		setupMocks     func(*MockListService)
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "success",
+			listID:         uuid.New().String(),
+			itemID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"Updated Item","description":"New Description","weight":2.0,"available":false}`),
+			expectedStatus: http.StatusOK,
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("UpdateListItem", mock.AnythingOfType("*models.ListItem")).Return(nil)
+			},
+		},
+		{
+			name:           "invalid list ID",
+			listID:         "invalid-id",
+			itemID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"Updated Item","description":"New Description","weight":2.0,"available":false}`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid list ID",
+		},
+		{
+			name:           "invalid item ID",
+			listID:         uuid.New().String(),
+			itemID:         "invalid-id",
+			requestBody:    []byte(`{"name":"Updated Item","description":"New Description","weight":2.0,"available":false}`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid item ID",
+		},
+		{
+			name:           "invalid request body",
+			listID:         uuid.New().String(),
+			itemID:         uuid.New().String(),
+			requestBody:    []byte(`invalid json`),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid request body",
+		},
+		{
+			name:           "item not found",
+			listID:         uuid.New().String(),
+			itemID:         uuid.New().String(),
+			requestBody:    []byte(`{"name":"Updated Item","description":"New Description","weight":2.0,"available":false}`),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("UpdateListItem", mock.AnythingOfType("*models.ListItem")).Return(models.ErrNotFound)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("listID", tt.listID)
+			rctx.URLParams.Add("itemID", tt.itemID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("PUT", "/", bytes.NewReader(tt.requestBody))
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockService)
+			}
+
+			handler.UpdateListItem(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestListHandler_RemoveListItem(t *testing.T) {
+	tests := []struct {
+		name           string
+		listID         string
+		itemID         string
+		setupMocks     func(*MockListService, uuid.UUID, uuid.UUID)
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name:           "success",
+			listID:         uuid.New().String(),
+			itemID:         uuid.New().String(),
+			expectedStatus: http.StatusNoContent,
+			setupMocks: func(mockService *MockListService, listID, itemID uuid.UUID) {
+				mockService.On("RemoveListItem", listID, itemID).Return(nil)
+			},
+		},
+		{
+			name:           "invalid list ID",
+			listID:         "invalid-id",
+			itemID:         uuid.New().String(),
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid list ID",
+		},
+		{
+			name:           "invalid item ID",
+			listID:         uuid.New().String(),
+			itemID:         "invalid-id",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid item ID",
+		},
+		{
+			name:           "item not found",
+			listID:         uuid.New().String(),
+			itemID:         uuid.New().String(),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService, listID, itemID uuid.UUID) {
+				mockService.On("RemoveListItem", listID, itemID).Return(models.ErrNotFound)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("listID", tt.listID)
+			rctx.URLParams.Add("itemID", tt.itemID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("DELETE", "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				listID, _ := uuid.Parse(tt.listID)
+				itemID, _ := uuid.Parse(tt.itemID)
+				tt.setupMocks(mockService, listID, itemID)
+			}
+
+			handler.RemoveListItem(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestListHandler_GetSharedLists(t *testing.T) {
+	tests := []struct {
+		name           string
+		tribeID        string
+		setupMocks     func(*MockListService, uuid.UUID)
+		expectedStatus int
+		expectedLists  []*models.List
+		expectedError  string
+	}{
+		{
+			name:           "success",
+			tribeID:        uuid.New().String(),
+			expectedStatus: http.StatusOK,
+			setupMocks: func(mockService *MockListService, tribeID uuid.UUID) {
+				lists := []*models.List{
+					{
+						ID:            uuid.New(),
+						Type:          models.ListTypeLocation,
+						Name:          "Shared List 1",
+						Description:   "Shared list description 1",
+						DefaultWeight: 1.0,
+						Visibility:    models.VisibilityShared,
+					},
+					{
+						ID:            uuid.New(),
+						Type:          models.ListTypeActivity,
+						Name:          "Shared List 2",
+						Description:   "Shared list description 2",
+						DefaultWeight: 1.5,
+						Visibility:    models.VisibilityShared,
+					},
+				}
+				mockService.On("GetSharedLists", tribeID).Return(lists, nil)
+			},
+			expectedLists: []*models.List{
+				{
+					Name:        "Shared List 1",
+					Description: "Shared list description 1",
+					Type:        models.ListTypeLocation,
+					Visibility:  models.VisibilityShared,
+				},
+				{
+					Name:        "Shared List 2",
+					Description: "Shared list description 2",
+					Type:        models.ListTypeActivity,
+					Visibility:  models.VisibilityShared,
+				},
+			},
+		},
+		{
+			name:           "empty list",
+			tribeID:        uuid.New().String(),
+			expectedStatus: http.StatusOK,
+			setupMocks: func(mockService *MockListService, tribeID uuid.UUID) {
+				mockService.On("GetSharedLists", tribeID).Return([]*models.List{}, nil)
+			},
+			expectedLists: []*models.List{},
+		},
+		{
+			name:           "invalid tribe ID",
+			tribeID:        "invalid-id",
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "Invalid tribe ID",
+		},
+		{
+			name:           "tribe not found",
+			tribeID:        uuid.New().String(),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService, tribeID uuid.UUID) {
+				mockService.On("GetSharedLists", tribeID).Return([]*models.List(nil), models.ErrNotFound)
+			},
+			expectedError: "not found",
+		},
+		{
+			name:           "service error",
+			tribeID:        uuid.New().String(),
+			expectedStatus: http.StatusInternalServerError,
+			setupMocks: func(mockService *MockListService, tribeID uuid.UUID) {
+				mockService.On("GetSharedLists", tribeID).Return([]*models.List(nil), fmt.Errorf("database error"))
+			},
+			expectedError: "database error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(MockListService)
+			handler := NewListHandler(mockService)
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("tribeID", tt.tribeID)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+			if tt.setupMocks != nil {
+				tribeID, _ := uuid.Parse(tt.tribeID)
+				tt.setupMocks(mockService, tribeID)
+			}
+
+			handler.GetSharedLists(w, r)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			if tt.expectedError != "" {
+				var response struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
+				require.NoError(t, err)
+				assert.False(t, response.Success)
+				assert.Contains(t, response.Error.Message, tt.expectedError)
+			} else if tt.expectedLists != nil {
+				var lists []*models.List
+				err := json.NewDecoder(w.Body).Decode(&lists)
+				require.NoError(t, err)
+				assert.Len(t, lists, len(tt.expectedLists))
+
+				// Check only specific fields (we don't care about UUIDs here)
+				for i, expectedList := range tt.expectedLists {
+					assert.Equal(t, expectedList.Name, lists[i].Name)
+					assert.Equal(t, expectedList.Description, lists[i].Description)
+					assert.Equal(t, expectedList.Type, lists[i].Type)
+					assert.Equal(t, expectedList.Visibility, lists[i].Visibility)
+				}
+			}
+
+			mockService.AssertExpectations(t)
+		})
+	}
+}
