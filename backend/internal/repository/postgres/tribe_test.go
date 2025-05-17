@@ -762,7 +762,7 @@ func TestTribeRepository(t *testing.T) {
 		}
 		err = repo.Create(appleTribe)
 		require.NoError(t, err)
-		tribes = append(tribes, appleTribe)
+		tribes = append(tribes, appleTribe) //nolint:staticcheck // Needed for test setup
 
 		// Tribe with "banana" in name
 		bananaTribe := &models.Tribe{
@@ -779,7 +779,7 @@ func TestTribeRepository(t *testing.T) {
 		}
 		err = repo.Create(bananaTribe)
 		require.NoError(t, err)
-		tribes = append(tribes, bananaTribe)
+		tribes = append(tribes, bananaTribe) //nolint:staticcheck // Needed for test setup
 
 		// Tribe with "cherry" in description
 		cherryTribe := &models.Tribe{
@@ -796,7 +796,7 @@ func TestTribeRepository(t *testing.T) {
 		}
 		err = repo.Create(cherryTribe)
 		require.NoError(t, err)
-		tribes = append(tribes, cherryTribe)
+		tribes = append(tribes, cherryTribe) //nolint:staticcheck // Needed for test setup
 
 		// Create more tribes for pagination testing
 		for i := 0; i < 5; i++ {
@@ -814,7 +814,7 @@ func TestTribeRepository(t *testing.T) {
 			}
 			err = repo.Create(testTribe)
 			require.NoError(t, err)
-			tribes = append(tribes, testTribe)
+			tribes = append(tribes, testTribe) //nolint:staticcheck // Needed for test setup
 		}
 
 		// Add members to a tribe

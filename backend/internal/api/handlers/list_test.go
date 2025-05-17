@@ -851,20 +851,10 @@ func TestListHandler_UnshareList(t *testing.T) {
 				}
 			}
 
-			// For missing_user_id case, we expect a panic that we'll recover
-			if tt.name == "missing user ID in context" {
-				defer func() {
-					r := recover()
-					assert.NotNil(t, r, "Expected a panic but none occurred")
-					// Test passed if we get here because we caught the panic
-				}()
-			}
-
+			// The UnshareList handler doesn't panic for missing user ID, it returns 401 Unauthorized
 			handler.UnshareList(w, r)
 
-			if tt.name != "missing user ID in context" {
-				assert.Equal(t, tt.expectedStatus, w.Code)
-			}
+			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if tt.expectedError != "" {
 				var response struct {

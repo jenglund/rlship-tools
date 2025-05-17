@@ -1958,7 +1958,7 @@ func TestListMembers(t *testing.T) {
 		newUser := testutil.CreateTestUser(t, repos.DB())
 		err = repos.Tribes.AddMember(tribe.ID, newUser.ID, models.MembershipFull, nil, nil)
 		require.NoError(t, err)
-		userIDs = append(userIDs, newUser.ID)
+		userIDs = append(userIDs, newUser.ID) //nolint:staticcheck // Needed for test setup
 	}
 
 	// Create an empty tribe for testing
@@ -2362,7 +2362,7 @@ func TestListMyTribes(t *testing.T) {
 		require.NoError(t, err)
 		err = repos.Tribes.AddMember(tribe.ID, testUser.ID, models.MembershipFull, nil, nil)
 		require.NoError(t, err)
-		tribesInOrder = append(tribesInOrder, tribe)
+		tribesInOrder = append(tribesInOrder, tribe) //nolint:staticcheck // Needed for test setup
 
 		// Add a small sleep to ensure different creation times
 		// which affects the order when retrieving

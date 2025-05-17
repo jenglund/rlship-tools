@@ -99,7 +99,7 @@ func TestSetupTest(t *testing.T) {
 	// Test that the mock auth client is properly configured
 	t.Run("test mock auth configuration", func(t *testing.T) {
 		// Test default implementation
-		token, err := setup.Auth.VerifyIDToken(nil, "test-token")
+		token, err := setup.Auth.VerifyIDToken(context.TODO(), "test-token")
 		assert.NoError(t, err)
 		assert.NotNil(t, token)
 		assert.Equal(t, "test-uid", token.UID)
@@ -119,7 +119,7 @@ func TestSetupTest(t *testing.T) {
 			return customToken, nil
 		}
 
-		token, err = setup.Auth.VerifyIDToken(nil, "custom-token")
+		token, err = setup.Auth.VerifyIDToken(context.TODO(), "custom-token")
 		assert.NoError(t, err)
 		assert.Equal(t, customToken, token)
 	})
