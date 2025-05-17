@@ -285,6 +285,52 @@ The primary focus now is on improving test coverage and implementing remaining c
    - Skipped some advanced test cases (update existing shares, version handling) that require further investigation
    - Added transaction-based approach to ensure database consistency during share operations
 
+## Service Layer Improvement Action Plan
+
+To address the current gaps in our service layer and improve our infrastructure, we'll focus on the following key areas:
+
+### 1. Improve UpdateSyncStatus Test Coverage
+
+Our current 58.1% coverage for UpdateSyncStatus is insufficient. We will implement comprehensive tests to cover:
+- State transitions between different sync statuses
+- Error handling for invalid transitions
+- Concurrent modification scenarios with retry logic verification
+- Integration with external services
+- Edge cases with different sync states
+
+### 2. Implement Transaction Boundaries
+
+Many operations that affect multiple database entities lack proper transaction boundaries, which could lead to inconsistent states. We'll add transaction support to:
+- List sharing with tribes
+- Activity sharing
+- Multi-table CRUD operations
+- Delete operations that affect related records
+
+### 3. Standardize Error Handling
+
+We need a consistent error handling pattern across all service methods that:
+- Maps domain-specific errors to appropriate HTTP status codes
+- Provides detailed, contextual error messages
+- Handles both expected and unexpected errors appropriately
+- Enables better debugging and client communication
+
+### 4. Model Validation Tests
+
+We'll implement tests for all model validation methods with zero coverage:
+- Sync-related models (currently 0% coverage)
+- ActivityPhoto validation (currently 0% coverage)
+- Create test suites that verify all validation constraints
+
+### 5. Database Schema Improvements
+
+We'll address missing database constraints and indices:
+- Add unique constraint for tribe names (already in schema but needs testing)
+- Add additional performance indices for common query patterns
+- Implement comprehensive validation at the database level
+- Ensure all references are properly constrained
+
+By implementing this action plan, we'll strengthen our foundational infrastructure, ensure data consistency, and improve test coverage above our 80% target across all packages.
+
 ## Test Coverage Action Plan
 
 To systematically improve test coverage, we'll follow this action plan:

@@ -74,15 +74,19 @@ jobs:
       uses: actions/setup-node@v3
       with:
         node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: apps/mobile/package-lock.json
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.21'
-    - name: Install frontend dependencies
-      run: cd apps/mobile && npm ci
-    - name: Lint frontend
-      run: cd apps/mobile && npm run lint
+    - name: Frontend Lint
+      working-directory: apps/mobile
+      run: |
+        npm ci
+        npm run lint
     - name: Install golangci-lint
       run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
-    - name: Lint backend
-      run: cd backend && golangci-lint run --timeout=5m 
+    - name: Backend Lint
+      working-directory: backend
+      run: golangci-lint run --timeout=5m 
