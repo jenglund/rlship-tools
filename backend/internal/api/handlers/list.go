@@ -15,6 +15,14 @@ import (
 	"github.com/jenglund/rlship-tools/internal/models"
 )
 
+// Define a custom key type to avoid string key collisions
+type contextKey string
+
+const (
+	// userIDKey is the context key for the user ID
+	userIDKey contextKey = "user_id"
+)
+
 type ListHandler struct {
 	service service.ListService
 }
@@ -475,30 +483,41 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the user ID from the authenticated context
-	userID := r.Context().Value("user_id").(uuid.UUID)
-
-	// Check if the user has permission to share the list
-	owners, err := h.service.GetListOwners(listID)
-	if err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+	userIDValue := r.Context().Value(userIDKey)
+	if userIDValue == nil {
+		response.Error(w, http.StatusUnauthorized, "user not authenticated")
 		return
 	}
 
-	hasPermission := false
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
+		return
+	}
+
+	// Check if the user is an owner of the list
+	owners, err := h.service.GetListOwners(listID)
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	isOwner := false
 	for _, owner := range owners {
 		if owner.OwnerID == userID && owner.OwnerType == "user" {
-			hasPermission = true
+			isOwner = true
 			break
 		}
 	}
 
-	if !hasPermission {
-		response.Error(w, http.StatusForbidden, "You do not have permission to share this list")
+	if !isOwner {
+		response.Error(w, http.StatusForbidden, "you do not have permission to share this list")
 		return
 	}
 
-	if err := h.service.ShareListWithTribe(listID, req.TribeID, userID, req.ExpiresAt); err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+	err = h.service.ShareListWithTribe(listID, req.TribeID, userID, req.ExpiresAt)
+	if err != nil {
+		h.handleError(w, err)
 		return
 	}
 
@@ -509,21 +528,31 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 func (h *ListHandler) UnshareList(w http.ResponseWriter, r *http.Request) {
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		response.Error(w, http.StatusBadRequest, "invalid list ID")
 		return
 	}
 
 	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
+		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
 		return
 	}
 
 	// Get the user ID from the authenticated context
-	userID := r.Context().Value("user_id").(uuid.UUID)
+	userIDValue := r.Context().Value(userIDKey)
+	if userIDValue == nil {
+		response.Error(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
+		return
+	}
 
 	if err := h.service.UnshareListWithTribe(listID, tribeID, userID); err != nil {
-		response.Error(w, http.StatusInternalServerError, err.Error())
+		h.handleError(w, err)
 		return
 	}
 
@@ -556,7 +585,17 @@ func (h *ListHandler) GetListShares(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the user ID from the authenticated context
-	userID := r.Context().Value("user_id").(uuid.UUID)
+	userIDValue := r.Context().Value(userIDKey)
+	if userIDValue == nil {
+		response.Error(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
+		return
+	}
 
 	// Check if the user has permission to view the list shares
 	owners, err := h.service.GetListOwners(listID)
@@ -617,9 +656,15 @@ func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
+	userIDValue := r.Context().Value(userIDKey)
+	if userIDValue == nil {
 		response.Error(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
 		return
 	}
 
@@ -654,9 +699,15 @@ func (h *ListHandler) UnshareListWithTribe(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, ok := r.Context().Value("user_id").(uuid.UUID)
-	if !ok {
+	userIDValue := r.Context().Value(userIDKey)
+	if userIDValue == nil {
 		response.Error(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	userID, ok := userIDValue.(uuid.UUID)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
 		return
 	}
 
