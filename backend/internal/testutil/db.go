@@ -3,6 +3,7 @@ package testutil
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,6 +26,49 @@ var (
 // Track current test database name
 var currentTestDBName string
 
+// getPostgresConnection returns the connection string for the Postgres database
+func getPostgresConnection(dbName string) string {
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "postgres"
+	}
+
+	password := os.Getenv("POSTGRES_PASSWORD")
+	sslMode := "disable"
+
+	if dbName == "" {
+		// Connect to default database
+		defaultDB := os.Getenv("POSTGRES_DB")
+		if defaultDB == "" {
+			defaultDB = "postgres"
+		}
+		if password == "" {
+			return fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s",
+				host, port, user, defaultDB, sslMode)
+		}
+		return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			host, port, user, password, defaultDB, sslMode)
+	}
+
+	// Connect to specific database
+	if password == "" {
+		return fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s",
+			host, port, user, dbName, sslMode)
+	}
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbName, sslMode)
+}
+
 // cleanupDatabase ensures the test database is dropped even if setup fails
 func cleanupDatabase(dbName string) {
 	if dbName == "" {
@@ -32,7 +76,7 @@ func cleanupDatabase(dbName string) {
 	}
 
 	// Connect to default postgres database
-	db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+	db, err := sql.Open("postgres", getPostgresConnection(""))
 	if err != nil {
 		fmt.Printf("DEBUG: Error connecting to postgres for cleanup: %v\n", err)
 		return // Can't clean up if we can't connect
@@ -91,7 +135,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Connect to postgres to create test database
-	db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+	db, err := sql.Open("postgres", getPostgresConnection(""))
 	if err != nil {
 		cleanupDatabase(dbName)
 		panic(fmt.Sprintf("Error connecting to postgres: %v", err))
@@ -112,7 +156,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Connect to test database
-	testDB, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", dbName))
+	testDB, err := sql.Open("postgres", getPostgresConnection(dbName))
 	if err != nil {
 		cleanupDatabase(dbName)
 		panic(fmt.Sprintf("Error connecting to test database: %v", err))
@@ -138,9 +182,34 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	migrationsPath := filepath.Join(filepath.Dir(filename), "..", "..", "migrations")
 	fmt.Printf("DEBUG: Migrations path: %s\n", migrationsPath)
 
+	// Build postgres connection URL for migrations
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "postgres"
+	}
+
+	password := os.Getenv("POSTGRES_PASSWORD")
+	passwordPart := ""
+	if password != "" {
+		passwordPart = ":" + password
+	}
+
+	postgresURL := fmt.Sprintf("postgres://%s%s@%s:%s/%s?sslmode=disable",
+		user, passwordPart, host, port, dbName)
+
 	m, err := migrate.New(
 		fmt.Sprintf("file://%s", migrationsPath),
-		fmt.Sprintf("postgres://postgres@localhost:5432/%s?sslmode=disable", dbName),
+		postgresURL,
 	)
 	if err != nil {
 		panic(fmt.Sprintf("Error creating migrate instance: %v", err))
