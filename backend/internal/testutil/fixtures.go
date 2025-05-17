@@ -38,6 +38,19 @@ type TestList struct {
 func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 	t.Helper()
 
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Error starting transaction: %v", err)
+	}
+	defer func() {
+		if err != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				t.Logf("Error rolling back transaction: %v", rbErr)
+			}
+		}
+	}()
+
 	user := TestUser{
 		ID:          uuid.New(),
 		FirebaseUID: fmt.Sprintf("test-firebase-%s", uuid.New().String()[:8]),
@@ -48,7 +61,7 @@ func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 	}
 
 	fmt.Printf("DEBUG: Creating test user: %+v\n", user)
-	_, err := db.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO users (id, firebase_uid, provider, email, name, avatar_url)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, user.ID, user.FirebaseUID, user.Provider, user.Email, user.Name, user.AvatarURL)
@@ -58,6 +71,11 @@ func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 		t.Fatalf("Error creating test user: %v", err)
 	}
 
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		t.Fatalf("Error committing transaction: %v", err)
+	}
+
 	return user
 }
 
@@ -65,103 +83,98 @@ func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 	t.Helper()
 
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Failed to start transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Set constraints to deferred
+	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
+	if err != nil {
+		t.Fatalf("Failed to defer constraints: %v", err)
+	}
+
 	tribe := TestTribe{
 		ID:      uuid.New(),
-		Name:    fmt.Sprintf("Test Tribe %s", uuid.New().String()[:8]),
+		Name:    fmt.Sprintf("Test Tribe %s", uuid.New().String()),
 		Members: members,
 	}
 
-	fmt.Printf("DEBUG: Creating test tribe: %+v\n", tribe)
-
-	// Check if tribes table exists
-	var exists bool
-	err := db.QueryRow(`
-		SELECT EXISTS (
-			SELECT FROM information_schema.tables 
-			WHERE table_schema = 'public' 
-			AND table_name = 'tribes'
-		)
-	`).Scan(&exists)
+	// Insert the tribe
+	_, err = tx.Exec(`
+		INSERT INTO tribes (id, name)
+		VALUES ($1, $2)
+	`, tribe.ID, tribe.Name)
 	if err != nil {
-		fmt.Printf("DEBUG: Error checking if tribes table exists: %v\n", err)
-		t.Fatalf("Error checking if tribes table exists: %v", err)
-	}
-	fmt.Printf("DEBUG: Tribes table exists: %v\n", exists)
-
-	// Check tribes table schema
-	rows, err := db.Query(`
-		SELECT column_name, data_type 
-		FROM information_schema.columns 
-		WHERE table_schema = 'public' 
-		AND table_name = 'tribes'
-	`)
-	if err != nil {
-		fmt.Printf("DEBUG: Error checking tribes table schema: %v\n", err)
-		t.Fatalf("Error checking tribes table schema: %v", err)
-	}
-	defer rows.Close()
-
-	fmt.Printf("DEBUG: Tribes table columns:\n")
-	for rows.Next() {
-		var colName, dataType string
-		if err := rows.Scan(&colName, &dataType); err != nil {
-			fmt.Printf("DEBUG: Error scanning column info: %v\n", err)
-			t.Fatalf("Error scanning column info: %v", err)
-		}
-		fmt.Printf("DEBUG: Column: %s (%s)\n", colName, dataType)
+		t.Fatalf("Failed to create test tribe: %v", err)
 	}
 
-	// Insert tribe with explicit type casting
-	_, err = db.Exec(`
-		INSERT INTO tribes (id, name, type, visibility, metadata, version)
-		VALUES ($1, $2, $3::tribe_type, $4::visibility_type, $5, $6)
-	`, tribe.ID, tribe.Name, string(models.TribeTypeCouple), string(models.VisibilityPrivate), "{}", 1)
-
-	if err != nil {
-		fmt.Printf("DEBUG: Error creating test tribe: %v\n", err)
-		t.Fatalf("Error creating test tribe: %v", err)
-	}
-
+	// Add members to the tribe
 	for _, member := range members {
-		fmt.Printf("DEBUG: Adding member to tribe: %+v\n", member)
-		_, err := db.Exec(`
-			INSERT INTO tribe_members (id, tribe_id, user_id, membership_type, display_name, metadata, version)
-			VALUES ($1, $2, $3, $4::membership_type, $5, $6, $7)
-		`, uuid.New(), tribe.ID, member.ID, string(models.MembershipFull), member.Name, "{}", 1)
-
+		_, err = tx.Exec(`
+			INSERT INTO tribe_members (tribe_id, user_id)
+			VALUES ($1, $2)
+		`, tribe.ID, member.ID)
 		if err != nil {
-			fmt.Printf("DEBUG: Error adding member to tribe: %v\n", err)
-			t.Fatalf("Error adding member to test tribe: %v", err)
+			t.Fatalf("Failed to add member to tribe: %v", err)
 		}
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
 	}
 
 	return tribe
 }
 
 // CreateTestList creates a test list in the database
-func CreateTestList(t *testing.T, db *sql.DB, tribeID uuid.UUID) TestList {
+func CreateTestList(t *testing.T, db *sql.DB, tribe TestTribe) TestList {
 	t.Helper()
+
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Failed to start transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Set constraints to deferred
+	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
+	if err != nil {
+		t.Fatalf("Failed to defer constraints: %v", err)
+	}
 
 	list := TestList{
 		ID:      uuid.New(),
-		TribeID: tribeID,
-		Name:    fmt.Sprintf("Test List %s", uuid.New().String()[:8]),
-		Type:    models.ListTypeGeneral,
+		TribeID: tribe.ID,
+		Name:    fmt.Sprintf("Test List %s", uuid.New().String()),
+		Type:    "wishlist",
 	}
 
-	_, err := db.Exec(`
-		INSERT INTO lists (
-			id, type, name, description, visibility, owner_id, owner_type,
-			sync_status, sync_source, sync_id, default_weight, metadata, version
-		)
-		VALUES ($1, $2, $3, $4, $5::visibility_type, $6, $7::owner_type, 
-			$8::sync_status_type, $9, $10, $11, $12, $13)
-	`, list.ID, list.Type, list.Name, "Test list", string(models.VisibilityPrivate),
-		list.TribeID, string(models.OwnerTypeTribe),
-		string(models.ListSyncStatusNone), string(models.SyncSourceNone), "", 1.0, "{}", 1)
-
+	// Insert the list
+	_, err = tx.Exec(`
+		INSERT INTO lists (id, name, type)
+		VALUES ($1, $2, $3)
+	`, list.ID, list.Name, list.Type)
 	if err != nil {
-		t.Fatalf("Error creating test list: %v", err)
+		t.Fatalf("Failed to create test list: %v", err)
+	}
+
+	// Create the list owner relationship
+	_, err = tx.Exec(`
+		INSERT INTO list_owners (list_id, owner_id, owner_type)
+		VALUES ($1, $2, $3)
+	`, list.ID, tribe.ID, "tribe")
+	if err != nil {
+		t.Fatalf("Failed to create list owner relationship: %v", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
 	}
 
 	return list
@@ -171,10 +184,29 @@ func CreateTestList(t *testing.T, db *sql.DB, tribeID uuid.UUID) TestList {
 func CleanupTestData(t *testing.T, db *sql.DB) {
 	t.Helper()
 
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Error starting transaction: %v", err)
+	}
+	defer func() {
+		if err != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				t.Logf("Error rolling back transaction: %v", rbErr)
+			}
+		}
+	}()
+
+	// Set constraints to deferred for this transaction
+	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
+	if err != nil {
+		t.Fatalf("Error deferring constraints: %v", err)
+	}
+
 	tables := []string{
-		"list_sharing",
-		"list_conflicts",
+		"list_shares",
 		"list_items",
+		"list_owners",
 		"lists",
 		"tribe_members",
 		"tribes",
@@ -182,9 +214,14 @@ func CleanupTestData(t *testing.T, db *sql.DB) {
 	}
 
 	for _, table := range tables {
-		_, err := db.Exec(fmt.Sprintf("DELETE FROM %s", table))
+		_, err = tx.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
 			t.Fatalf("Error cleaning up %s table: %v", table, err)
 		}
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		t.Fatalf("Error committing transaction: %v", err)
 	}
 }

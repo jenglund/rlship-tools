@@ -23,7 +23,7 @@ func TestTestingInfrastructure(t *testing.T) {
 		tribe := CreateTestTribe(t, db, []TestUser{user1, user2})
 
 		// Create test list
-		_ = CreateTestList(t, db, tribe.ID)
+		_ = CreateTestList(t, db, tribe)
 
 		// Verify data was created
 		var count int

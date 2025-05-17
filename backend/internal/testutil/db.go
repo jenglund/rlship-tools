@@ -25,6 +25,55 @@ var (
 // Track current test database name
 var currentTestDBName string
 
+// cleanupDatabase ensures the test database is dropped even if setup fails
+func cleanupDatabase(dbName string) {
+	if dbName == "" {
+		return
+	}
+
+	// Connect to default postgres database
+	db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+	if err != nil {
+		fmt.Printf("DEBUG: Error connecting to postgres for cleanup: %v\n", err)
+		return // Can't clean up if we can't connect
+	}
+	defer db.Close()
+
+	// Terminate any remaining connections with retries
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		_, err = db.Exec(fmt.Sprintf(`
+			SELECT pg_terminate_backend(pid)
+			FROM pg_stat_activity
+			WHERE datname = %s AND pid != pg_backend_pid()
+		`, pq.QuoteLiteral(dbName)))
+
+		if err == nil {
+			break
+		}
+
+		if i < maxRetries-1 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	// Drop the test database with retries
+	for i := 0; i < maxRetries; i++ {
+		_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(dbName)))
+		if err == nil {
+			fmt.Printf("DEBUG: Successfully dropped database %s\n", dbName)
+			break
+		}
+
+		if i < maxRetries-1 {
+			time.Sleep(100 * time.Millisecond)
+			fmt.Printf("DEBUG: Retrying database drop for %s, attempt %d\n", dbName, i+2)
+		} else {
+			fmt.Printf("DEBUG: Failed to drop database %s after %d attempts: %v\n", dbName, maxRetries, err)
+		}
+	}
+}
+
 // SetupTestDB creates a test database and runs migrations
 func SetupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -32,30 +81,51 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	fmt.Printf("DEBUG: Setting up test database\n")
 
 	// Create a unique test database name
-	currentTestDBName = fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
-	fmt.Printf("DEBUG: Test database name: %s\n", currentTestDBName)
+	dbName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+	fmt.Printf("DEBUG: Test database name: %s\n", dbName)
+
+	// Validate database name
+	if strings.Contains(dbName, "/") || strings.Contains(dbName, "\\") || strings.Contains(currentTestDBName, "/") || strings.Contains(currentTestDBName, "\\") {
+		cleanupDatabase(dbName)
+		panic(fmt.Sprintf("Invalid database name: %s", dbName))
+	}
 
 	// Connect to postgres to create test database
 	db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
 	if err != nil {
-		fmt.Printf("DEBUG: Error connecting to postgres: %v\n", err)
-		t.Fatalf("Error connecting to postgres: %v", err)
+		cleanupDatabase(dbName)
+		panic(fmt.Sprintf("Error connecting to postgres: %v", err))
 	}
+	defer db.Close()
 
 	// Create test database
-	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(currentTestDBName)))
+	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(dbName)))
 	if err != nil {
-		fmt.Printf("DEBUG: Error creating test database: %v\n", err)
-		t.Fatalf("Error creating test database: %v", err)
+		cleanupDatabase(dbName)
+		panic(fmt.Sprintf("Error dropping existing database: %v", err))
 	}
-	db.Close()
+
+	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(dbName)))
+	if err != nil {
+		cleanupDatabase(dbName)
+		panic(fmt.Sprintf("Error creating test database: %v", err))
+	}
 
 	// Connect to test database
-	testDB, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", currentTestDBName))
+	testDB, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", dbName))
 	if err != nil {
-		fmt.Printf("DEBUG: Error connecting to test database: %v\n", err)
-		t.Fatalf("Error connecting to test database: %v", err)
+		cleanupDatabase(dbName)
+		panic(fmt.Sprintf("Error connecting to test database: %v", err))
 	}
+
+	// Ensure we clean up if something goes wrong
+	setupSuccess := false
+	defer func() {
+		if !setupSuccess {
+			testDB.Close()
+			cleanupDatabase(dbName)
+		}
+	}()
 
 	// Run migrations
 	fmt.Printf("DEBUG: Running migrations\n")
@@ -63,43 +133,54 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	// Get the absolute path to the migrations directory
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Fatal("Could not get current file path")
+		panic("Could not get current file path")
 	}
 	migrationsPath := filepath.Join(filepath.Dir(filename), "..", "..", "migrations")
 	fmt.Printf("DEBUG: Migrations path: %s\n", migrationsPath)
 
 	m, err := migrate.New(
 		fmt.Sprintf("file://%s", migrationsPath),
-		fmt.Sprintf("postgres://postgres@localhost:5432/%s?sslmode=disable", currentTestDBName),
+		fmt.Sprintf("postgres://postgres@localhost:5432/%s?sslmode=disable", dbName),
 	)
 	if err != nil {
-		fmt.Printf("DEBUG: Error creating migrator: %v\n", err)
-		t.Fatalf("Error creating migrator: %v", err)
+		panic(fmt.Sprintf("Error creating migrate instance: %v", err))
 	}
+	defer m.Close()
 
-	// Print current migration version before running migrations
+	// Check for dirty state before running migrations
 	version, dirty, err := m.Version()
 	if err != nil && err != migrate.ErrNilVersion {
-		fmt.Printf("DEBUG: Error getting migration version: %v\n", err)
-		t.Fatalf("Error getting migration version: %v", err)
+		panic(fmt.Sprintf("Error checking migration version: %v", err))
 	}
-	fmt.Printf("DEBUG: Current migration version: %d, dirty: %v\n", version, dirty)
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		fmt.Printf("DEBUG: Error running migrations: %v\n", err)
-		t.Fatalf("Error running migrations: %v", err)
+	if dirty {
+		panic(fmt.Sprintf("Database is in a dirty state before migrations (version %d)", version))
 	}
 
-	// Print final migration version
+	// Run migrations
+	err = m.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		panic(fmt.Sprintf("Error running migrations: %v", err))
+	}
+
+	// Verify final migration state
 	version, dirty, err = m.Version()
 	if err != nil {
-		fmt.Printf("DEBUG: Error getting final migration version: %v\n", err)
-		t.Fatalf("Error getting final migration version: %v", err)
+		panic(fmt.Sprintf("Error getting final migration version: %v", err))
 	}
+	if dirty {
+		panic(fmt.Sprintf("Database is in a dirty state after migrations (version %d)", version))
+	}
+
 	fmt.Printf("DEBUG: Final migration version: %d, dirty: %v\n", version, dirty)
 
+	// Mark setup as successful
+	setupSuccess = true
+
+	// Set current test database name only after successful setup
+	currentTestDBName = dbName
+
 	// Add test database to cleanup list
-	testDBs = append(testDBs, currentTestDBName)
+	testDBs = append(testDBs, dbName)
 
 	return testDB
 }
@@ -117,29 +198,7 @@ func TeardownTestDB(t *testing.T, db *sql.DB) {
 		// Wait a bit to ensure all connections are closed
 		time.Sleep(100 * time.Millisecond)
 
-		// Connect to default postgres database
-		defaultDB, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
-		if err != nil {
-			t.Errorf("Error connecting to default database: %v", err)
-			return
-		}
-		defer defaultDB.Close()
-
-		// Terminate any remaining connections
-		_, err = defaultDB.Exec(fmt.Sprintf(`
-			SELECT pg_terminate_backend(pid)
-			FROM pg_stat_activity
-			WHERE datname = %s AND pid != pg_backend_pid()
-		`, pq.QuoteLiteral(currentTestDBName)))
-		if err != nil {
-			t.Errorf("Error terminating connections: %v", err)
-		}
-
-		// Drop the test database
-		_, err = defaultDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(currentTestDBName)))
-		if err != nil {
-			t.Errorf("Error dropping test database: %v", err)
-		}
+		cleanupDatabase(currentTestDBName)
 
 		// Clear the current test database name
 		currentTestDBName = ""

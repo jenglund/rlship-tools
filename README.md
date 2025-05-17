@@ -24,6 +24,46 @@ Tribe is a social activity planning application designed to help groups of peopl
 - `shared/`: Shared types and utilities
 - `docs/`: Project documentation
 
+## Cursor Development Guidance
+
+### Error Handling
+1. **Always Prefer Graceful Handling**: Never use panics for error handling. All failure modes should be gracefully handled with proper error returns and cleanup.
+2. **Comprehensive Error States**: Design functions to handle all possible error states gracefully, including:
+   - Database connection failures
+   - Migration state issues
+   - Constraint violations
+   - Concurrent access conflicts
+   - Resource cleanup failures
+
+### Test-Driven Development
+1. **Coverage Requirements**: Maintain at least 90% test coverage, ideally 95% or more.
+2. **Parallel Problem Resolution**: Address test failures and issues using a breadth-first approach rather than depth-first:
+   - Identify all related issues before starting fixes
+   - Fix common root causes that affect multiple tests
+   - Avoid getting stuck in fix-verify loops for individual tests
+3. **Debugging Practices**:
+   - Add console logs to surface problems
+   - Print data structures to verify properties/fields/columns
+   - Use descriptive logging statements for error tracking
+4. **Test Design**:
+   - Tests should verify graceful error handling, not expect panics
+   - Focus on behavior verification rather than implementation details
+   - Include positive and negative test cases
+   - Test cleanup and resource management
+
+### Code Quality
+1. **Consistency**: Ensure changes propagate throughout the codebase for correctness and consistency
+2. **Documentation**: Maintain README files in each directory explaining:
+   - Directory purpose
+   - Usage instructions
+   - Testing procedures
+   - Development guidelines
+   - Deployment procedures
+3. **Issue Tracking**: Keep the README's Known Issues and Future Work sections updated with:
+   - Currently identified problems
+   - Planned improvements
+   - Recent changes and their implications
+
 ## Development Setup
 
 1. Clone the repository

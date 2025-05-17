@@ -74,11 +74,13 @@ func (m *MockListRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[s
 	return args.Get(0).([]*models.ListItem), args.Error(1)
 }
 
+// UpdateItemStats updates the stats for a list item
 func (m *MockListRepository) UpdateItemStats(itemID uuid.UUID, chosen bool) error {
 	args := m.Called(itemID, chosen)
 	return args.Error(0)
 }
 
+// MarkItemChosen marks a list item as chosen
 func (m *MockListRepository) MarkItemChosen(itemID uuid.UUID) error {
 	args := m.Called(itemID)
 	return args.Error(0)
@@ -163,11 +165,13 @@ func (m *MockListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShar
 }
 
 // Sync management
+// UpdateSyncStatus updates the sync status of a list
 func (m *MockListRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSyncStatus) error {
 	args := m.Called(listID, status)
 	return args.Error(0)
 }
 
+// GetConflicts returns all sync conflicts for a list
 func (m *MockListRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
 	args := m.Called(listID)
 	if args.Get(0) == nil {
@@ -176,16 +180,19 @@ func (m *MockListRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConfl
 	return args.Get(0).([]*models.SyncConflict), args.Error(1)
 }
 
+// CreateConflict creates a new sync conflict
 func (m *MockListRepository) CreateConflict(conflict *models.SyncConflict) error {
 	args := m.Called(conflict)
 	return args.Error(0)
 }
 
+// ResolveConflict marks a sync conflict as resolved
 func (m *MockListRepository) ResolveConflict(conflictID uuid.UUID) error {
 	args := m.Called(conflictID)
 	return args.Error(0)
 }
 
+// GetListsBySource returns all lists from a specific sync source
 func (m *MockListRepository) GetListsBySource(source string) ([]*models.List, error) {
 	args := m.Called(source)
 	if args.Get(0) == nil {
@@ -194,6 +201,7 @@ func (m *MockListRepository) GetListsBySource(source string) ([]*models.List, er
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
+// AddConflict adds a new sync conflict
 func (m *MockListRepository) AddConflict(conflict *models.SyncConflict) error {
 	args := m.Called(conflict)
 	return args.Error(0)
