@@ -19,7 +19,6 @@ import (
 )
 
 var (
-	testDB  *sql.DB
 	testDBs []string
 )
 

@@ -189,28 +189,6 @@ func (r *listRepository) validateAndSetOwners(list *models.List) error {
 	return nil
 }
 
-// insertOwner inserts a single owner into the database
-func (r *listRepository) insertOwner(tx *sql.Tx, owner *models.ListOwner) error {
-	query := `
-		INSERT INTO list_owners (
-			list_id, owner_id, owner_type,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5)`
-
-	_, err := tx.Exec(query,
-		owner.ListID,
-		owner.OwnerID,
-		owner.OwnerType,
-		owner.CreatedAt,
-		owner.UpdatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("error adding list owner: %w", err)
-	}
-
-	return nil
-}
-
 // loadListData loads all related data for a list
 func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	// Load items

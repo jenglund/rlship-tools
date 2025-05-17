@@ -169,18 +169,6 @@ func (m *MockListService) CreateListConflict(conflict *models.SyncConflict) erro
 	return args.Error(0)
 }
 
-func timeMatch(expected *time.Time) interface{} {
-	return mock.MatchedBy(func(actual *time.Time) bool {
-		if expected == nil {
-			return actual == nil
-		}
-		if actual == nil {
-			return false
-		}
-		return expected.Equal(*actual)
-	})
-}
-
 func TestListHandler(t *testing.T) {
 	mockService := new(MockListService)
 	handler := NewListHandler(mockService)

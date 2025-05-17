@@ -88,15 +88,6 @@ func (r *MockRepositories) GetUserRepository() models.UserRepository {
 	return r.Users
 }
 
-// Create a mock auth.Client interface
-type mockAuthClient struct {
-	verifyIDTokenFunc func(context.Context, string) (*auth.Token, error)
-}
-
-func (m *mockAuthClient) VerifyIDToken(ctx context.Context, idToken string) (*auth.Token, error) {
-	return m.verifyIDTokenFunc(ctx, idToken)
-}
-
 func TestExtractToken(t *testing.T) {
 	tests := []struct {
 		name          string
