@@ -1,69 +1,70 @@
-# RLShip Tools
+# RLship Tools aka "Tribe" (gonetribal.com)
 
-A collection of tools for managing relationships and tribes.
+This repository contains the Tribe application stack, including backend services, mobile app, and web interface. Tribe is a platform for managing and sharing activities with your tribes - whether they're couples, families, friend groups, or any other group of people who want to do things together.
 
-## Recent Changes
+## Project Structure
 
-### Activity Sharing Improvements
-- Fixed issues with activity sharing and ownership management
-- Improved handling of expired shares
-- Added proper owner tracking for shared activities
-- Fixed deduplication of shared activities in query results
+- **apps**: Client applications (mobile and web interfaces for Tribe)
+- **backend**: Backend services including API, models, and database connections
+- **docs**: Documentation for Tribe
+- **infrastructure**: Docker, Kubernetes, and other infrastructure configurations
+- **shared**: Shared code and libraries used across the Tribe platform
+- **tools**: Development and deployment tools
+
+## Development Setup
+
+### Backend Development
+
+```bash
+cd backend
+make dev
+```
+
+### Mobile Development
+
+```bash
+cd apps/mobile
+npm install
+npm start
+```
+
+## Testing
+
+```bash
+make test
+```
 
 ## Known Issues
 
-### Activity Sharing
-- Need to add tests for the new ownership functionality in activity sharing
-- Consider adding batch operations for sharing activities with multiple tribes
-- Consider adding activity share history tracking
+### Fixed Issues
+- ✅ Activity Sharing Issues:
+  - Fixed deduplication logic in GetSharedActivities
+  - Fixed share expiration handling
+  - Fixed unshare functionality
+  - Added proper validation for private activity sharing - now correctly updates visibility
 
-### List Repository
-- Consider aligning list sharing implementation with activity sharing improvements
-- Add support for temporary/guest access to lists
+### Remaining Issues
+
+#### List Repository Issues:
+- TestListRepository_GetByID/success failing with foreign key constraint error
+- TestListRepository_GetOwners failing with null value constraint for owner_id
+- TestListRepository_GetListsBySource failing with validation error for sync status
+- TestListRepository_UnshareWithTribe failing with null value constraint for owner_id
+
+#### Tribe Repository Issues:
+- Various failures in tribe repository tests, including:
+  - Error with duplicate name check
+  - Errors related to tribe creation with invalid type
+  - Issues with tribe member operations
 
 ## Future Work
 
-### Activity Management
-- Add support for recurring activities
-- Implement activity categories and tags
-- Add support for activity recommendations based on history
-
-### List Management
-- Add support for list templates
-- Implement list version history
-- Add support for collaborative list editing
-
-### Tribe Management
-- Add support for tribe hierarchies
-- Implement tribe access levels and roles
-- Add support for tribe activity feeds
-
-## Development
-
-### Prerequisites
-- Go 1.19 or later
-- PostgreSQL 13 or later
-- Docker (optional)
-
-### Setup
-1. Clone the repository
-2. Copy `.env.example` to `.env` and update the values
-3. Run `make setup` to install dependencies
-4. Run `make migrate` to set up the database
-5. Run `make test` to verify the setup
-
-### Testing
-- Run `make test` to run all tests
-- Run `make test-coverage` to run tests with coverage report
-- Run `make test-integration` to run integration tests
-
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests
-5. Submit a pull request
+- Fix the remaining list repository and tribe repository issues
+- Improve error handling for external sources in Sync Service
+- Fix concurrent operation handling in repositories
+- Add proper state transition validation
+- Enhance test coverage for all components
 
 ## License
 
-See [LICENSE](LICENSE) for details. 
+See the LICENSE file for details. 

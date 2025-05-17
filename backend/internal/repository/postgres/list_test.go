@@ -33,7 +33,7 @@ func TestListRepository(t *testing.T) {
 		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test Create List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -71,7 +71,7 @@ func TestListRepository(t *testing.T) {
 		// Create test list
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test GetByID List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -135,7 +135,7 @@ func TestListRepository(t *testing.T) {
 		// Create test list
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test Update List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -144,6 +144,12 @@ func TestListRepository(t *testing.T) {
 			SyncStatus:    models.ListSyncStatusNone,
 			SyncSource:    models.SyncSourceNone,
 			SyncID:        "",
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -151,7 +157,7 @@ func TestListRepository(t *testing.T) {
 		// Update list
 		updatedMaxItems := 200
 		updatedCooldownDays := 14
-		list.Name = "Updated List"
+		list.Name = "Updated List " + uuid.New().String()[:8]
 		list.Description = "Updated Description"
 		list.Visibility = models.VisibilityPublic
 		list.DefaultWeight = 2.0
@@ -186,7 +192,7 @@ func TestListRepository(t *testing.T) {
 		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test Delete List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -242,11 +248,19 @@ func TestListRepository(t *testing.T) {
 	})
 
 	t.Run("GetListsByOwner", func(t *testing.T) {
+		// First, clean up any existing lists for this test user to ensure clean test environment
+		_, err := db.Exec(`
+			UPDATE lists
+			SET deleted_at = NOW()
+			WHERE owner_id = $1 AND owner_type = $2`,
+			testUser.ID, models.OwnerTypeUser)
+		require.NoError(t, err)
+
 		// Create multiple lists for the test user
 		ownerType := models.OwnerTypeUser
 		list1 := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List 1",
+			Name:          "Test ListsByOwner 1 " + uuid.New().String()[:8],
 			Description:   "Test Description 1",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -264,14 +278,14 @@ func TestListRepository(t *testing.T) {
 				},
 			},
 		}
-		err := repo.Create(list1)
+		err = repo.Create(list1)
 		require.NoError(t, err)
 
 		updatedMaxItems := 200
 		updatedCooldownDays := 14
 		list2 := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List 2",
+			Name:          "Test ListsByOwner 2 " + uuid.New().String()[:8],
 			Description:   "Test Description 2",
 			Visibility:    models.VisibilityPublic,
 			DefaultWeight: 2.0,
@@ -295,7 +309,7 @@ func TestListRepository(t *testing.T) {
 		// Get lists by owner
 		lists, err := repo.GetListsByOwner(testUser.ID, models.OwnerTypeUser)
 		assert.NoError(t, err)
-		assert.Len(t, lists, 2)
+		assert.Len(t, lists, 2, "Expected exactly 2 lists for owner, but got %d", len(lists))
 
 		// Verify lists are ordered by created_at DESC
 		assert.Equal(t, list2.ID, lists[0].ID)
@@ -309,9 +323,10 @@ func TestListRepository(t *testing.T) {
 
 	t.Run("AddItem", func(t *testing.T) {
 		// Create test list
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test AddItem List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -320,6 +335,14 @@ func TestListRepository(t *testing.T) {
 			SyncStatus:    models.ListSyncStatusNone,
 			SyncSource:    models.SyncSourceNone,
 			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -364,9 +387,10 @@ func TestListRepository(t *testing.T) {
 
 	t.Run("UpdateItem", func(t *testing.T) {
 		// Create test list and item
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test UpdateItem List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -375,6 +399,14 @@ func TestListRepository(t *testing.T) {
 			SyncStatus:    models.ListSyncStatusNone,
 			SyncSource:    models.SyncSourceNone,
 			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
@@ -431,9 +463,10 @@ func TestListRepository(t *testing.T) {
 
 	t.Run("UpdateItemStats", func(t *testing.T) {
 		// Create test list and item
+		ownerType := models.OwnerTypeUser
 		list := &models.List{
 			Type:          models.ListTypeActivity,
-			Name:          "Test List",
+			Name:          "Test UpdateItemStats List " + uuid.New().String()[:8],
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
@@ -442,6 +475,14 @@ func TestListRepository(t *testing.T) {
 			SyncStatus:    models.ListSyncStatusNone,
 			SyncSource:    models.SyncSourceNone,
 			SyncID:        "",
+			OwnerID:       &testUser.ID,
+			OwnerType:     &ownerType,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)

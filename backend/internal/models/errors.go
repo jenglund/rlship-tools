@@ -8,6 +8,7 @@ var (
 	ErrInvalidInput = errors.New("invalid input")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrForbidden    = errors.New("forbidden")
+	ErrDuplicate    = errors.New("duplicate")
 )
 
 // Sync-specific errors

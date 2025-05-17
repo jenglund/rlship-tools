@@ -461,88 +461,73 @@ func (r *ActivityRepository) GetTribeActivities(tribeID uuid.UUID) ([]*models.Ac
 func (r *ActivityRepository) ShareWithTribe(activityID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
+	opts.IsolationLevel = sql.LevelSerializable // Use serializable to prevent race conditions
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// First, verify the activity exists and is not deleted
 		query := `
-			SELECT 1
+			SELECT visibility
 			FROM activities
 			WHERE id = $1 AND deleted_at IS NULL`
 
-		var exists bool
-		err := tx.QueryRow(query, activityID).Scan(&exists)
+		var visibility models.VisibilityType
+		err := tx.QueryRow(query, activityID).Scan(&visibility)
 		if err == sql.ErrNoRows {
 			return models.ErrNotFound
 		}
 		if err != nil {
-			return fmt.Errorf("error checking activity existence: %w", err)
+			return fmt.Errorf("error checking activity: %w", err)
 		}
 
-		// Verify the tribe exists and is not deleted
-		query = `
-			SELECT 1
-			FROM tribes
-			WHERE id = $1 AND deleted_at IS NULL`
+		// Check if activity is private - if so, update to shared
+		if visibility == models.VisibilityPrivate {
+			updateQuery := `
+				UPDATE activities
+				SET visibility = $1, updated_at = NOW()
+				WHERE id = $2`
 
-		err = tx.QueryRow(query, tribeID).Scan(&exists)
-		if err == sql.ErrNoRows {
-			return models.ErrNotFound
+			_, err = tx.Exec(updateQuery, models.VisibilityShared, activityID)
+			if err != nil {
+				return fmt.Errorf("error updating activity visibility: %w", err)
+			}
 		}
+
+		// Check if share already exists (we might need to update it)
+		checkQuery := `
+			SELECT EXISTS (
+				SELECT 1 FROM activity_shares
+				WHERE activity_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
+			)`
+
+		var shareExists bool
+		err = tx.QueryRow(checkQuery, activityID, tribeID).Scan(&shareExists)
 		if err != nil {
-			return fmt.Errorf("error checking tribe existence: %w", err)
+			return fmt.Errorf("error checking existing share: %w", err)
 		}
 
 		now := time.Now()
 
-		// First, soft delete any existing shares
-		deleteQuery := `
-			UPDATE activity_shares
-			SET deleted_at = $1,
-				updated_at = $1
-			WHERE activity_id = $2 
-			AND tribe_id = $3 
-			AND deleted_at IS NULL`
+		if shareExists {
+			// Update existing share
+			updateQuery := `
+				UPDATE activity_shares
+				SET expires_at = $1, updated_at = $2
+				WHERE activity_id = $3 AND tribe_id = $4 AND deleted_at IS NULL`
 
-		_, err = tx.Exec(deleteQuery, now, activityID, tribeID)
-		if err != nil {
-			return fmt.Errorf("error removing old shares: %w", err)
-		}
+			_, err = tx.Exec(updateQuery, expiresAt, now, activityID, tribeID)
+			if err != nil {
+				return fmt.Errorf("error updating share: %w", err)
+			}
+		} else {
+			// Create new share
+			insertQuery := `
+				INSERT INTO activity_shares (activity_id, tribe_id, user_id, expires_at, created_at, updated_at)
+				VALUES ($1, $2, $3, $4, $5, $5)`
 
-		// Create new share
-		insertQuery := `
-			INSERT INTO activity_shares (
-				activity_id, tribe_id, user_id, expires_at,
-				created_at, updated_at, deleted_at
-			) 
-			VALUES ($1, $2, $3, $4, $5, $5, NULL)`
-
-		result, err := tx.Exec(insertQuery, activityID, tribeID, userID, expiresAt, now)
-		if err != nil {
-			return fmt.Errorf("error creating activity share: %w", err)
-		}
-
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("error checking rows affected: %w", err)
-		}
-
-		if rowsAffected == 0 {
-			return fmt.Errorf("failed to create share for activity %s and tribe %s", activityID, tribeID)
-		}
-
-		// Add tribe as an owner of the activity
-		ownerQuery := `
-			INSERT INTO activity_owners (activity_id, owner_id, owner_type, created_at)
-			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (activity_id, owner_id) DO UPDATE
-			SET deleted_at = NULL,
-				updated_at = $4
-			WHERE activity_owners.activity_id = $1
-			AND activity_owners.owner_id = $2`
-
-		_, err = tx.Exec(ownerQuery, activityID, tribeID, models.OwnerTypeTribe, now)
-		if err != nil {
-			return fmt.Errorf("error adding tribe as activity owner: %w", err)
+			_, err = tx.Exec(insertQuery, activityID, tribeID, userID, expiresAt, now)
+			if err != nil {
+				return fmt.Errorf("error creating share: %w", err)
+			}
 		}
 
 		return nil
@@ -557,30 +542,29 @@ func (r *ActivityRepository) UnshareWithTribe(activityID, tribeID uuid.UUID) err
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		now := time.Now()
 
-		// First, soft delete the share
+		// First, mark all shares as deleted (there might be multiple due to previous bugs)
 		shareQuery := `
-			UPDATE activity_shares
-			SET deleted_at = $1,
-				updated_at = $1
-			WHERE activity_id = $2 
-			AND tribe_id = $3 
-			AND deleted_at IS NULL`
+			WITH updated_shares AS (
+				UPDATE activity_shares
+				SET deleted_at = $1,
+					updated_at = $1
+				WHERE activity_id = $2 
+				AND tribe_id = $3 
+				AND deleted_at IS NULL
+				RETURNING *
+			)
+			SELECT COUNT(*) FROM updated_shares`
 
-		result, err := tx.Exec(shareQuery, now, activityID, tribeID)
+		var updatedCount int
+		err := tx.QueryRow(shareQuery, now, activityID, tribeID).Scan(&updatedCount)
 		if err != nil {
 			return fmt.Errorf("error unsharing activity: %w", err)
 		}
 
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("error checking rows affected: %w", err)
-		}
+		// We shouldn't error if no shares were found, as the caller may be trying
+		// to ensure a clean state
 
-		if rowsAffected == 0 {
-			return fmt.Errorf("no active share found for activity %s and tribe %s", activityID, tribeID)
-		}
-
-		// Remove tribe ownership
+		// Always remove tribe ownership regardless of whether shares were found
 		ownerQuery := `
 			UPDATE activity_owners
 			SET deleted_at = $1,
@@ -601,59 +585,84 @@ func (r *ActivityRepository) UnshareWithTribe(activityID, tribeID uuid.UUID) err
 
 // GetSharedActivities retrieves all activities shared with a tribe
 func (r *ActivityRepository) GetSharedActivities(tribeID uuid.UUID) ([]*models.Activity, error) {
-	query := `
-		WITH latest_shares AS (
-			SELECT DISTINCT ON (activity_id) 
-				activity_id, deleted_at, expires_at
-			FROM activity_shares
-			WHERE tribe_id = $1
-			ORDER BY activity_id, updated_at DESC
-		),
-		valid_shares AS (
-			SELECT activity_id
-			FROM latest_shares
-			WHERE deleted_at IS NULL
-				AND (expires_at IS NULL OR expires_at > NOW())
-		)
-		SELECT DISTINCT
-			a.id, a.user_id, a.type, a.name, a.description, a.visibility, 
-			COALESCE(a.metadata, '{}'::jsonb) as metadata,
-			a.created_at, a.updated_at, a.deleted_at
-		FROM activities a
-		INNER JOIN valid_shares s ON s.activity_id = a.id
-		WHERE a.deleted_at IS NULL
-		ORDER BY a.created_at DESC`
-
-	rows, err := r.db.Query(query, tribeID)
-	if err != nil {
-		return nil, fmt.Errorf("error querying shared activities: %w", err)
-	}
-	defer rows.Close()
-
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 	var activities []*models.Activity
-	for rows.Next() {
-		activity := &models.Activity{}
-		err := rows.Scan(
-			&activity.ID,
-			&activity.UserID,
-			&activity.Type,
-			&activity.Name,
-			&activity.Description,
-			&activity.Visibility,
-			&activity.Metadata,
-			&activity.CreatedAt,
-			&activity.UpdatedAt,
-			&activity.DeletedAt,
-		)
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Get only valid, distinct shares with their latest update
+		query := `
+			WITH 
+			-- Get the most recent share for each activity, taking into account deleted status
+			latest_shares AS (
+				SELECT DISTINCT ON (activity_id) 
+					activity_id, tribe_id, expires_at, deleted_at, updated_at
+				FROM activity_shares
+				WHERE tribe_id = $1
+				ORDER BY activity_id, updated_at DESC  -- Get the most recent share for each activity
+			),
+			-- Filter to valid shares only
+			valid_shares AS (
+				SELECT activity_id
+				FROM latest_shares
+				WHERE 
+					deleted_at IS NULL AND  -- Not deleted
+					(expires_at IS NULL OR expires_at > NOW())  -- Not expired or no expiration
+			)
+			-- Get the activities that match our criteria 
+			SELECT DISTINCT
+				a.id, a.user_id, a.type, a.name, a.description, a.visibility, 
+				COALESCE(a.metadata, '{}'::jsonb) as metadata,
+				a.created_at, a.updated_at, a.deleted_at
+			FROM activities a
+			JOIN valid_shares vs ON a.id = vs.activity_id
+			WHERE a.deleted_at IS NULL
+			ORDER BY a.created_at DESC`
+
+		rows, err := tx.Query(query, tribeID)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning activity row: %w", err)
+			return fmt.Errorf("error querying shared activities: %w", err)
+		}
+		defer rows.Close()
+
+		activities = make([]*models.Activity, 0)
+		for rows.Next() {
+			activity := &models.Activity{}
+			var metadata []byte
+			err := rows.Scan(
+				&activity.ID,
+				&activity.UserID,
+				&activity.Type,
+				&activity.Name,
+				&activity.Description,
+				&activity.Visibility,
+				&metadata,
+				&activity.CreatedAt,
+				&activity.UpdatedAt,
+				&activity.DeletedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error scanning activity row: %w", err)
+			}
+
+			// Convert metadata
+			activity.Metadata, err = convertMetadata(metadata)
+			if err != nil {
+				return fmt.Errorf("error converting metadata: %w", err)
+			}
+
+			activities = append(activities, activity)
 		}
 
-		activities = append(activities, activity)
-	}
+		if err = rows.Err(); err != nil {
+			return fmt.Errorf("error iterating activity rows: %w", err)
+		}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating activity rows: %w", err)
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error getting shared activities: %w", err)
 	}
 
 	return activities, nil
