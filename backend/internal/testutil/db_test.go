@@ -75,7 +75,7 @@ func TestTeardownTestDB(t *testing.T) {
 		TeardownTestDB(t, db)
 
 		// Verify database no longer exists by connecting to postgres and checking
-		pgdb, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+		pgdb, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer pgdb.Close()
 
@@ -96,11 +96,11 @@ func TestTeardownTestDB(t *testing.T) {
 		require.NotNil(t, db)
 
 		// Create additional connections
-		db2, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", currentTestDBName))
+		db2, err := sql.Open("postgres", getPostgresConnection(currentTestDBName))
 		require.NoError(t, err)
 		defer db2.Close()
 
-		db3, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", currentTestDBName))
+		db3, err := sql.Open("postgres", getPostgresConnection(currentTestDBName))
 		require.NoError(t, err)
 		defer db3.Close()
 
@@ -271,7 +271,7 @@ func TestDatabaseErrors(t *testing.T) {
 		})
 
 		// Verify database was cleaned up
-		db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+		db, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -288,7 +288,7 @@ func TestDatabaseErrors(t *testing.T) {
 		testDBName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 
 		// Connect to postgres to create test database
-		db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+		db, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -300,7 +300,7 @@ func TestDatabaseErrors(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create an invalid migration state
-		testDB, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", testDBName))
+		testDB, err := sql.Open("postgres", getPostgresConnection(testDBName))
 		require.NoError(t, err)
 		defer testDB.Close()
 
@@ -360,7 +360,7 @@ func TestDatabaseErrors(t *testing.T) {
 		testDBName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 
 		// Connect to postgres to create test database
-		db, err := sql.Open("postgres", "host=localhost port=5432 user=postgres sslmode=disable")
+		db, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -372,7 +372,7 @@ func TestDatabaseErrors(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create an invalid table to cause migration failure
-		testDB, err := sql.Open("postgres", fmt.Sprintf("host=localhost port=5432 user=postgres dbname=%s sslmode=disable", testDBName))
+		testDB, err := sql.Open("postgres", getPostgresConnection(testDBName))
 		require.NoError(t, err)
 		defer testDB.Close()
 
