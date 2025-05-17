@@ -49,7 +49,7 @@ type CreateActivityRequest struct {
 	Type        models.ActivityType   `json:"type" binding:"required"`
 	Name        string                `json:"name" binding:"required"`
 	Description string                `json:"description"`
-	Visibility  models.VisibilityType `json:"visibility"`
+	Visibility  models.VisibilityType `json:"visibility" binding:"required"`
 	Metadata    interface{}           `json:"metadata,omitempty"`
 }
 
@@ -95,16 +95,23 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 		}
 	}
 
+	now := time.Now()
 	activity := &models.Activity{
 		ID:          uuid.New(),
 		UserID:      user.ID,
+		Type:        req.Type,
 		Name:        req.Name,
 		Description: req.Description,
-		Type:        req.Type,
 		Visibility:  req.Visibility,
 		Metadata:    metadata,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	// Validate the activity
+	if err := activity.Validate(); err != nil {
+		response.GinBadRequest(c, err.Error())
+		return
 	}
 
 	if err := h.repos.Activities.Create(activity); err != nil {

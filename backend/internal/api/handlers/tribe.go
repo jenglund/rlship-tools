@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -41,7 +42,11 @@ func (h *TribeHandler) RegisterRoutes(r *gin.RouterGroup) {
 
 // CreateTribeRequest represents the create tribe request body
 type CreateTribeRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name        string                `json:"name" binding:"required"`
+	Type        models.TribeType      `json:"type" binding:"required"`
+	Description string                `json:"description"`
+	Visibility  models.VisibilityType `json:"visibility" binding:"required"`
+	Metadata    interface{}           `json:"metadata,omitempty"`
 }
 
 // CreateTribe creates a new tribe
@@ -53,8 +58,44 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 		return
 	}
 
+	// Convert metadata to JSONMap if provided
+	var metadata models.JSONMap
+	if req.Metadata != nil {
+		switch m := req.Metadata.(type) {
+		case map[string]interface{}:
+			metadata = models.JSONMap(m)
+		case models.JSONMap:
+			metadata = m
+		default:
+			response.GinBadRequest(c, "Metadata must be a valid JSON object")
+			return
+		}
+
+		// Validate metadata
+		if err := metadata.Validate(); err != nil {
+			response.GinBadRequest(c, err.Error())
+			return
+		}
+	}
+
+	now := time.Now()
 	tribe := &models.Tribe{
-		Name: req.Name,
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Name:        req.Name,
+		Type:        req.Type,
+		Description: req.Description,
+		Visibility:  req.Visibility,
+		Metadata:    metadata,
+	}
+
+	// Validate the tribe
+	if err := tribe.Validate(); err != nil {
+		response.GinBadRequest(c, err.Error())
+		return
 	}
 
 	if err := h.repos.Tribes.Create(tribe); err != nil {

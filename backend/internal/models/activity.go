@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -73,4 +74,30 @@ type ActivityRepository interface {
 	// Cleanup
 	MarkForDeletion(activityID uuid.UUID) error
 	CleanupOrphanedActivities() error
+}
+
+// Validate ensures the activity data is valid
+func (a *Activity) Validate() error {
+	if a.ID == uuid.Nil {
+		return fmt.Errorf("%w: activity ID is required", ErrInvalidInput)
+	}
+	if a.UserID == uuid.Nil {
+		return fmt.Errorf("%w: user ID is required", ErrInvalidInput)
+	}
+	if a.Name == "" {
+		return fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	if err := a.Visibility.Validate(); err != nil {
+		return err
+	}
+	if a.CreatedAt.IsZero() {
+		return fmt.Errorf("%w: created_at is required", ErrInvalidInput)
+	}
+	if a.UpdatedAt.IsZero() {
+		return fmt.Errorf("%w: updated_at is required", ErrInvalidInput)
+	}
+	if a.DeletedAt != nil && a.DeletedAt.Before(a.CreatedAt) {
+		return fmt.Errorf("%w: deleted_at cannot be before created_at", ErrInvalidInput)
+	}
+	return nil
 }

@@ -66,6 +66,9 @@ Ensure test coverage remains above 90% for all new code.
    - [x] Invalid operation on JSONMap in activity_photos_test.go
    - [x] UUID array type mismatch in list_test.go
    - [x] OwnerType string to pointer conversion in list_test.go
+   - [x] Activity validation added for required fields (user_id, visibility, etc.)
+   - [x] Tribe metadata handling added for tribe creation
+   - [x] List owner foreign key validation added
    
    c. Database Migration Issues:
    - [ ] Migration failure: metadata column does not exist
@@ -78,7 +81,7 @@ Ensure test coverage remains above 90% for all new code.
    - [ ] Low coverage in cmd/migrate package (0.0%)
    - [ ] Low coverage in internal/config package (0.0%)
    - [ ] Low coverage in internal/testutil package (6.8%)
-   - [ ] Improve coverage in internal/models package (74.4%)
+   - [x] Improve coverage in internal/models package (activity validation tests added)
    - [ ] Improve coverage in internal/middleware package (78.6%)
 
 ## Future Work
@@ -94,18 +97,24 @@ Ensure test coverage remains above 90% for all new code.
    - [ ] Add performance tests for database operations
    - [ ] Add stress tests for concurrent operations
    - [ ] Add end-to-end tests for critical user flows
+   - [ ] Add more model validation tests
+   - [ ] Add handler validation tests
 
 3. Code Quality:
    - [ ] Improve error handling consistency
    - [ ] Add logging for better debugging
    - [ ] Add metrics for monitoring
    - [ ] Add tracing for request flows
+   - [ ] Add validation for all models
+   - [ ] Add consistent error types and messages
 
 4. Documentation:
    - [ ] Add API documentation
    - [ ] Add deployment guide
    - [ ] Add development setup guide
    - [ ] Add troubleshooting guide
+   - [ ] Add model validation documentation
+   - [ ] Add handler validation documentation
 
 ## Contributing
 

@@ -41,6 +41,29 @@ func (r *listRepository) Create(list *models.List) error {
 			list.ID = uuid.New()
 		}
 
+		// Validate owner exists if provided
+		if list.OwnerID != nil && list.OwnerType != nil {
+			var exists bool
+			var query string
+
+			switch *list.OwnerType {
+			case models.OwnerTypeUser:
+				query = `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL)`
+			case models.OwnerTypeTribe:
+				query = `SELECT EXISTS(SELECT 1 FROM tribes WHERE id = $1 AND deleted_at IS NULL)`
+			default:
+				return fmt.Errorf("%w: invalid owner type", models.ErrInvalidInput)
+			}
+
+			err := tx.QueryRow(query, *list.OwnerID).Scan(&exists)
+			if err != nil {
+				return fmt.Errorf("error checking owner existence: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("%w: owner does not exist", models.ErrInvalidInput)
+			}
+		}
+
 		// Insert list
 		query := `
 			INSERT INTO lists (
