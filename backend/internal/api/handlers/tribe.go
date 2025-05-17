@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -52,9 +54,34 @@ type CreateTribeRequest struct {
 // CreateTribe creates a new tribe
 func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	var req CreateTribeRequest
+
+	// Validate request body
 	if err := c.ShouldBindJSON(&req); err != nil {
 		fmt.Printf("DEBUG: Failed to bind JSON: %v\n", err)
-		response.GinBadRequest(c, "Invalid request body")
+		response.GinBadRequest(c, fmt.Sprintf("Invalid request body: %v", err))
+		return
+	}
+
+	// Validate name
+	if req.Name == "" {
+		response.GinBadRequest(c, "Tribe name is required")
+		return
+	}
+
+	if len(req.Name) > 100 {
+		response.GinBadRequest(c, "Tribe name cannot be longer than 100 characters")
+		return
+	}
+
+	// Validate tribe type
+	if err := req.Type.Validate(); err != nil {
+		response.GinBadRequest(c, fmt.Sprintf("Invalid tribe type: %v", err))
+		return
+	}
+
+	// Validate visibility
+	if err := req.Visibility.Validate(); err != nil {
+		response.GinBadRequest(c, fmt.Sprintf("Invalid visibility type: %v", err))
 		return
 	}
 
@@ -76,9 +103,26 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 			response.GinBadRequest(c, err.Error())
 			return
 		}
+	} else {
+		// Initialize empty metadata if nil was provided
+		metadata = models.JSONMap{}
 	}
 
+	// Get user ID from context
+	userID, err := getUserIDFromContext(c)
+	if err != nil {
+		response.GinUnauthorized(c, "Authentication required")
+		return
+	}
+
+	// Create the tribe object
 	now := time.Now()
+
+	// Make sure metadata is never nil - initialize to empty map if needed
+	if metadata == nil {
+		metadata = models.JSONMap{}
+	}
+
 	tribe := &models.Tribe{
 		BaseModel: models.BaseModel{
 			ID:        uuid.New(),
@@ -99,52 +143,35 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 		return
 	}
 
+	// Create tribe and add member in a transaction
 	if err := h.repos.Tribes.Create(tribe); err != nil {
+		// Check for duplicate tribe name error
+		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") &&
+			strings.Contains(err.Error(), "idx_unique_tribe_name") {
+			response.GinBadRequest(c, "A tribe with this name already exists")
+			return
+		}
 		fmt.Printf("DEBUG: Failed to create tribe: %v\n", err)
-		response.GinInternalError(c, err)
+		response.GinBadRequest(c, fmt.Sprintf("Failed to create tribe: %v", err))
 		return
 	}
 
 	// Add the creator as the first member
-	var userID uuid.UUID
-
-	// Try to get user ID directly first
-	if userIDVal, exists := c.Get("user_id"); exists {
-		switch id := userIDVal.(type) {
-		case uuid.UUID:
-			userID = id
-		case string:
-			var err error
-			userID, err = uuid.Parse(id)
-			if err != nil {
-				fmt.Printf("DEBUG: Failed to parse user ID string: %v\n", err)
-			}
-		}
-	}
-
-	// If user ID is not set directly, get it from Firebase UID
-	if userID == uuid.Nil {
-		creatorID := middleware.GetFirebaseUID(c)
-		fmt.Printf("DEBUG: Creator Firebase UID: %v\n", creatorID)
-
-		user, err := h.repos.Users.GetByFirebaseUID(creatorID)
-		if err != nil {
-			fmt.Printf("DEBUG: Failed to get user by Firebase UID: %v\n", err)
-			response.GinInternalError(c, err)
-			return
-		}
-		fmt.Printf("DEBUG: Found user: %+v\n", user)
-		userID = user.ID
-	}
-
 	if err := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, nil); err != nil {
 		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", err)
+
+		// Try to clean up the tribe if we couldn't add the member
+		deleteErr := h.repos.Tribes.Delete(tribe.ID)
+		if deleteErr != nil {
+			fmt.Printf("DEBUG: Failed to clean up tribe after error: %v\n", deleteErr)
+		}
+
 		response.GinInternalError(c, err)
 		return
 	}
 
 	// Get the updated tribe with members
-	tribe, err := h.repos.Tribes.GetByID(tribe.ID)
+	tribe, err = h.repos.Tribes.GetByID(tribe.ID)
 	if err != nil {
 		fmt.Printf("DEBUG: Failed to get updated tribe: %v\n", err)
 		response.GinInternalError(c, err)
@@ -154,15 +181,94 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	response.GinCreated(c, tribe)
 }
 
+// Helper function to get user ID from context
+func getUserIDFromContext(c *gin.Context) (uuid.UUID, error) {
+	// Try to get user ID directly first
+	if userIDVal, exists := c.Get("user_id"); exists && userIDVal != nil {
+		switch id := userIDVal.(type) {
+		case uuid.UUID:
+			return id, nil
+		case string:
+			return uuid.Parse(id)
+		}
+	}
+
+	// If we couldn't get a valid user ID, return an error
+	return uuid.Nil, fmt.Errorf("user ID not found in context")
+}
+
 // ListTribes returns a paginated list of all tribes
 func (h *TribeHandler) ListTribes(c *gin.Context) {
-	offset := 0
-	limit := 20
+	// Parse pagination parameters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
 
-	tribes, err := h.repos.Tribes.List(offset, limit)
-	if err != nil {
-		response.GinInternalError(c, err)
+	// Validate pagination parameters
+	if page < 1 {
+		response.GinBadRequest(c, "Page number must be greater than 0")
 		return
+	}
+
+	if limit < 1 {
+		response.GinBadRequest(c, "Limit must be greater than 0")
+		return
+	}
+
+	// Calculate offset
+	offset := (page - 1) * limit
+
+	// Parse filter parameters
+	tribeType := c.Query("type")
+
+	// Validate tribe type if provided
+	if tribeType != "" {
+		valid := false
+		validTypes := []models.TribeType{
+			models.TribeTypeCouple,
+			models.TribeTypePolyCule,
+			models.TribeTypeFriends,
+			models.TribeTypeFamily,
+			models.TribeTypeRoommates,
+			models.TribeTypeCoworkers,
+			models.TribeTypeCustom,
+		}
+
+		// Convert type to lowercase for case-insensitive matching
+		typeToCheck := strings.ToLower(tribeType)
+
+		for _, validType := range validTypes {
+			if models.TribeType(typeToCheck) == validType {
+				valid = true
+				tribeType = string(validType) // Use canonical version
+				break
+			}
+		}
+
+		if !valid {
+			response.GinBadRequest(c, "Invalid tribe type")
+			return
+		}
+	}
+
+	var tribes []*models.Tribe
+	var err error
+
+	// Fetch tribes based on filter
+	if tribeType != "" {
+		fmt.Printf("DEBUG: Filtering tribes by type: %s\n", tribeType)
+		tribes, err = h.repos.Tribes.GetByType(models.TribeType(tribeType), offset, limit)
+		if err != nil {
+			fmt.Printf("DEBUG: Error getting tribes by type: %v\n", err)
+			response.GinInternalError(c, err)
+			return
+		}
+	} else {
+		tribes, err = h.repos.Tribes.List(offset, limit)
+		if err != nil {
+			fmt.Printf("DEBUG: Error listing tribes: %v\n", err)
+			response.GinInternalError(c, err)
+			return
+		}
 	}
 
 	response.GinSuccess(c, tribes)
@@ -170,6 +276,54 @@ func (h *TribeHandler) ListTribes(c *gin.Context) {
 
 // ListMyTribes returns all tribes that the current user is a member of
 func (h *TribeHandler) ListMyTribes(c *gin.Context) {
+	// Parse pagination parameters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	// Validate pagination parameters
+	if page < 1 {
+		response.GinBadRequest(c, "Page number must be greater than 0")
+		return
+	}
+
+	if limit < 1 {
+		response.GinBadRequest(c, "Limit must be greater than 0")
+		return
+	}
+
+	// Parse filter parameters
+	tribeType := c.Query("type")
+
+	// Validate tribe type if provided
+	if tribeType != "" {
+		valid := false
+		validTypes := []models.TribeType{
+			models.TribeTypeCouple,
+			models.TribeTypePolyCule,
+			models.TribeTypeFriends,
+			models.TribeTypeFamily,
+			models.TribeTypeRoommates,
+			models.TribeTypeCoworkers,
+			models.TribeTypeCustom,
+		}
+
+		// Convert type to lowercase for case-insensitive matching
+		typeToCheck := strings.ToLower(tribeType)
+
+		for _, validType := range validTypes {
+			if models.TribeType(typeToCheck) == validType {
+				valid = true
+				tribeType = string(validType) // Use canonical version
+				break
+			}
+		}
+
+		if !valid {
+			response.GinBadRequest(c, "Invalid tribe type")
+			return
+		}
+	}
+
 	firebaseUID := middleware.GetFirebaseUID(c)
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
@@ -177,10 +331,40 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 		return
 	}
 
+	// Calculate offset
+	offset := (page - 1) * limit
+
+	// Get user tribes, filtering by type if specified
 	tribes, err := h.repos.Tribes.GetUserTribes(user.ID)
 	if err != nil {
 		response.GinInternalError(c, err)
 		return
+	}
+
+	// If type filter is specified, filter the results
+	if tribeType != "" {
+		filteredTribes := make([]*models.Tribe, 0)
+		for _, tribe := range tribes {
+			if tribe.Type == models.TribeType(tribeType) {
+				filteredTribes = append(filteredTribes, tribe)
+			}
+		}
+		tribes = filteredTribes
+	}
+
+	// Apply pagination to the results (since GetUserTribes doesn't support pagination directly)
+	start := offset
+	end := offset + limit
+
+	if start >= len(tribes) {
+		// Return empty slice if start is beyond the available results
+		tribes = []*models.Tribe{}
+	} else if end > len(tribes) {
+		// Adjust end if it's beyond the available results
+		tribes = tribes[start:]
+	} else {
+		// Apply pagination
+		tribes = tribes[start:end]
 	}
 
 	response.GinSuccess(c, tribes)
@@ -205,7 +389,12 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 
 // UpdateTribeRequest represents the update tribe request body
 type UpdateTribeRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name        string                `json:"name" binding:"required"`
+	Type        models.TribeType      `json:"type"`
+	Description string                `json:"description"`
+	Visibility  models.VisibilityType `json:"visibility"`
+	Metadata    interface{}           `json:"metadata,omitempty"`
+	Version     int                   `json:"version" binding:"required"`
 }
 
 // UpdateTribe updates a tribe's details
@@ -222,13 +411,109 @@ func (h *TribeHandler) UpdateTribe(c *gin.Context) {
 		return
 	}
 
+	// Get the existing tribe
 	tribe, err := h.repos.Tribes.GetByID(id)
 	if err != nil {
 		response.GinNotFound(c, "Tribe not found")
 		return
 	}
 
+	// Get current user ID
+	var userID uuid.UUID
+
+	// Try to get user ID directly first
+	if userIDVal, exists := c.Get("user_id"); exists {
+		switch id := userIDVal.(type) {
+		case uuid.UUID:
+			userID = id
+		case string:
+			userID, err = uuid.Parse(id)
+			if err != nil {
+				fmt.Printf("DEBUG: Failed to parse user ID string: %v\n", err)
+				response.GinInternalError(c, fmt.Errorf("failed to parse user ID"))
+				return
+			}
+		}
+	}
+
+	// If user ID is not set directly, get it from Firebase UID
+	if userID == uuid.Nil {
+		firebaseUID := middleware.GetFirebaseUID(c)
+		user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
+		if err != nil {
+			response.GinNotFound(c, "User not found")
+			return
+		}
+		userID = user.ID
+	}
+
+	// Check if user is a member of the tribe
+	isMember := false
+	for _, member := range tribe.Members {
+		if member.UserID == userID {
+			isMember = true
+			// Only full members can update the tribe
+			if member.MembershipType != models.MembershipFull {
+				response.GinForbidden(c, "Only full members can update tribe details")
+				return
+			}
+			break
+		}
+	}
+
+	if !isMember {
+		response.GinForbidden(c, "You must be a member of the tribe to update it")
+		return
+	}
+
+	// Check version for optimistic concurrency control
+	if tribe.Version != req.Version {
+		response.GinConflict(c, "Tribe has been modified since you last retrieved it")
+		return
+	}
+
+	// Update fields
 	tribe.Name = req.Name
+
+	// Only update optional fields if they're provided
+	if req.Type != "" {
+		tribe.Type = req.Type
+	}
+
+	tribe.Description = req.Description
+
+	if req.Visibility != "" {
+		tribe.Visibility = req.Visibility
+	}
+
+	// Handle metadata if provided
+	if req.Metadata != nil {
+		var metadata models.JSONMap
+		switch m := req.Metadata.(type) {
+		case map[string]interface{}:
+			metadata = models.JSONMap(m)
+		case models.JSONMap:
+			metadata = m
+		default:
+			response.GinBadRequest(c, "Metadata must be a valid JSON object")
+			return
+		}
+
+		// Validate metadata
+		if err := metadata.Validate(); err != nil {
+			response.GinBadRequest(c, err.Error())
+			return
+		}
+
+		tribe.Metadata = metadata
+	}
+
+	// Validate the updated tribe
+	if err := tribe.Validate(); err != nil {
+		response.GinBadRequest(c, err.Error())
+		return
+	}
+
 	if err := h.repos.Tribes.Update(tribe); err != nil {
 		response.GinInternalError(c, err)
 		return

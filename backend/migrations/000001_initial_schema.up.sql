@@ -53,6 +53,9 @@ CREATE TABLE tribes (
     deleted_at TIMESTAMP WITH TIME ZONE
 );
 
+-- Create partial unique index for tribe names (only where not deleted)
+CREATE UNIQUE INDEX idx_unique_tribe_name ON tribes (name) WHERE deleted_at IS NULL;
+
 -- Create tribe_members table
 CREATE TABLE tribe_members (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -192,6 +192,25 @@ func TestGinNotFound(t *testing.T) {
 	assert.Equal(t, message, response.Error.Message)
 }
 
+func TestGinConflict(t *testing.T) {
+	c, w := setupTest()
+
+	message := "Resource has been modified"
+	GinConflict(c, message)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+
+	var response Response
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.False(t, response.Success)
+	assert.Nil(t, response.Data)
+	assert.NotNil(t, response.Error)
+	assert.Equal(t, "CONFLICT", response.Error.Code)
+	assert.Equal(t, message, response.Error.Message)
+}
+
 func TestGinInternalError(t *testing.T) {
 	c, w := setupTest()
 

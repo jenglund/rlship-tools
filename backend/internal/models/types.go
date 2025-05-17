@@ -130,7 +130,7 @@ type JSONMap map[string]interface{}
 // Scan implements the sql.Scanner interface
 func (m *JSONMap) Scan(value interface{}) error {
 	if value == nil {
-		*m = make(JSONMap)
+		*m = make(JSONMap) // Always initialize to empty map, never nil
 		return nil
 	}
 

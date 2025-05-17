@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -67,12 +68,49 @@ func (t *Tribe) Validate() error {
 	if t.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
+	if len(t.Name) > 100 {
+		return fmt.Errorf("%w: name cannot be longer than 100 characters", ErrInvalidInput)
+	}
 	if err := t.Type.Validate(); err != nil {
 		return err
 	}
 	if err := t.Visibility.Validate(); err != nil {
 		return err
 	}
+
+	// Ensure metadata is never nil
+	if t.Metadata == nil {
+		t.Metadata = JSONMap{}
+	}
+
+	return nil
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for Tribe to ensure Metadata is never nil
+func (t *Tribe) UnmarshalJSON(data []byte) error {
+	// Define an alias type to avoid infinite recursion
+	type AliasType Tribe
+
+	// Use a temporary structure with the same fields
+	aux := struct {
+		*AliasType
+		Metadata *JSONMap `json:"metadata,omitempty"`
+	}{
+		AliasType: (*AliasType)(t),
+	}
+
+	// Unmarshal JSON into the temporary structure
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Initialize empty metadata if it's nil
+	if aux.Metadata == nil {
+		t.Metadata = JSONMap{}
+	} else {
+		t.Metadata = *aux.Metadata
+	}
+
 	return nil
 }
 

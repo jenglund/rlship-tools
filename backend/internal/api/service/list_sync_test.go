@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 // TestSyncList tests the SyncList function with various scenarios
@@ -472,4 +474,214 @@ func TestSyncEdgeCases(t *testing.T) {
 	})
 
 	// Add additional edge cases as needed
+}
+
+func TestCreateListConflict(t *testing.T) {
+	// Create a mock repository
+	mockRepo := new(testutil.MockListRepository)
+
+	// Create a list service with the mock repository
+	service := NewListService(mockRepo)
+
+	// Set up test data
+	listID := uuid.New()
+	conflictID := uuid.New()
+
+	testCases := []struct {
+		name      string
+		conflict  *models.SyncConflict
+		mockSetup func()
+		expectErr bool
+		errCheck  func(error) bool
+	}{
+		{
+			name: "valid conflict",
+			conflict: &models.SyncConflict{
+				ID:         conflictID,
+				ListID:     listID,
+				Type:       "item_update",
+				LocalData:  map[string]interface{}{"name": "Local Name"},
+				RemoteData: map[string]interface{}{"name": "Remote Name"},
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+			mockSetup: func() {
+				mockRepo.On("CreateConflict", mock.MatchedBy(func(c *models.SyncConflict) bool {
+					return c.ID == conflictID && c.ListID == listID
+				})).Return(nil).Once()
+			},
+			expectErr: false,
+		},
+		{
+			name: "repository error",
+			conflict: &models.SyncConflict{
+				ID:         conflictID,
+				ListID:     listID,
+				Type:       "item_update",
+				LocalData:  map[string]interface{}{"name": "Local Name"},
+				RemoteData: map[string]interface{}{"name": "Remote Name"},
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+			mockSetup: func() {
+				mockRepo.On("CreateConflict", mock.Anything).Return(errors.New("database error")).Once()
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && err.Error() == "database error"
+			},
+		},
+		{
+			name:     "nil conflict",
+			conflict: nil,
+			mockSetup: func() {
+				// The implementation now validates nil conflicts
+				// No repository call expected
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "conflict cannot be nil")
+			},
+		},
+		{
+			name: "invalid conflict - missing ID",
+			conflict: &models.SyncConflict{
+				// Missing ID
+				ListID:     listID,
+				Type:       "item_update",
+				LocalData:  map[string]interface{}{"name": "Local Name"},
+				RemoteData: map[string]interface{}{"name": "Remote Name"},
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+			mockSetup: func() {
+				// The service passes all validation to the repository
+				mockRepo.On("CreateConflict", mock.MatchedBy(func(c *models.SyncConflict) bool {
+					return c.ID == uuid.Nil && c.ListID == listID
+				})).Return(errors.New("invalid conflict: ID is required")).Once()
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "invalid conflict: ID is required")
+			},
+		},
+		{
+			name: "invalid conflict - missing ListID",
+			conflict: &models.SyncConflict{
+				ID: conflictID,
+				// Missing ListID
+				Type:       "item_update",
+				LocalData:  map[string]interface{}{"name": "Local Name"},
+				RemoteData: map[string]interface{}{"name": "Remote Name"},
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+			mockSetup: func() {
+				// The service passes all validation to the repository
+				mockRepo.On("CreateConflict", mock.MatchedBy(func(c *models.SyncConflict) bool {
+					return c.ID == conflictID && c.ListID == uuid.Nil
+				})).Return(errors.New("invalid conflict: list ID is required")).Once()
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "invalid conflict: list ID is required")
+			},
+		},
+		{
+			name: "invalid conflict - missing Type",
+			conflict: &models.SyncConflict{
+				ID:     conflictID,
+				ListID: listID,
+				// Missing Type
+				LocalData:  map[string]interface{}{"name": "Local Name"},
+				RemoteData: map[string]interface{}{"name": "Remote Name"},
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+			mockSetup: func() {
+				// The service passes all validation to the repository
+				mockRepo.On("CreateConflict", mock.MatchedBy(func(c *models.SyncConflict) bool {
+					return c.ID == conflictID && c.ListID == listID && c.Type == ""
+				})).Return(errors.New("invalid conflict: conflict type is required")).Once()
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "invalid conflict: conflict type is required")
+			},
+		},
+		{
+			name: "invalid conflict - missing LocalData",
+			conflict: &models.SyncConflict{
+				ID:     conflictID,
+				ListID: listID,
+				Type:   "item_update",
+				// Missing LocalData
+				RemoteData: map[string]interface{}{"name": "Remote Name"},
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
+			mockSetup: func() {
+				// The service passes all validation to the repository
+				mockRepo.On("CreateConflict", mock.MatchedBy(func(c *models.SyncConflict) bool {
+					return c.ID == conflictID && c.ListID == listID && c.LocalData == nil
+				})).Return(errors.New("invalid conflict: local data is required")).Once()
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "invalid conflict: local data is required")
+			},
+		},
+		{
+			name: "invalid conflict - missing RemoteData",
+			conflict: &models.SyncConflict{
+				ID:        conflictID,
+				ListID:    listID,
+				Type:      "item_update",
+				LocalData: map[string]interface{}{"name": "Local Name"},
+				// Missing RemoteData
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			mockSetup: func() {
+				// The service passes all validation to the repository
+				mockRepo.On("CreateConflict", mock.MatchedBy(func(c *models.SyncConflict) bool {
+					return c.ID == conflictID && c.ListID == listID && c.RemoteData == nil
+				})).Return(errors.New("invalid conflict: remote data is required")).Once()
+			},
+			expectErr: true,
+			errCheck: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "invalid conflict: remote data is required")
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set up mock expectations
+			if tc.mockSetup != nil {
+				tc.mockSetup()
+			}
+
+			// Call the service function
+			var err error
+			if tc.conflict != nil {
+				err = service.CreateListConflict(tc.conflict)
+			} else {
+				err = service.CreateListConflict(nil)
+			}
+
+			// Verify expectations
+			if tc.expectErr {
+				assert.Error(t, err)
+				if tc.errCheck != nil {
+					assert.True(t, tc.errCheck(err), "Error did not match the expected error condition: %v", err)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			// Verify mock was called as expected
+			mockRepo.AssertExpectations(t)
+		})
+	}
 }

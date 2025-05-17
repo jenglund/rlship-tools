@@ -105,6 +105,11 @@ func GinNotFound(c *gin.Context, message string) {
 	GinError(c, http.StatusNotFound, "NOT_FOUND", message)
 }
 
+// GinConflict sends a 409 Conflict response using Gin
+func GinConflict(c *gin.Context, message string) {
+	GinError(c, http.StatusConflict, "CONFLICT", message)
+}
+
 // GinInternalError sends a 500 Internal Server Error response using Gin
 func GinInternalError(c *gin.Context, err error) {
 	GinError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred")

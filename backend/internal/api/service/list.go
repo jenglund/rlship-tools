@@ -31,6 +31,7 @@ type ListService interface {
 	SyncList(listID uuid.UUID) error
 	GetListConflicts(listID uuid.UUID) ([]*models.SyncConflict, error)
 	ResolveListConflict(listID, conflictID uuid.UUID, resolution string) error
+	CreateListConflict(conflict *models.SyncConflict) error
 
 	// Owner management
 	AddListOwner(listID, ownerID uuid.UUID, ownerType string) error
@@ -318,6 +319,12 @@ func (s *listService) ResolveListConflict(listID, conflictID uuid.UUID, resoluti
 
 // CreateListConflict creates a new sync conflict
 func (s *listService) CreateListConflict(conflict *models.SyncConflict) error {
+	// Add basic validation to handle nil conflicts
+	if conflict == nil {
+		return fmt.Errorf("%w: conflict cannot be nil", models.ErrInvalidInput)
+	}
+
+	// Delegate to the repository for detailed validation and creation
 	return s.repo.CreateConflict(conflict)
 }
 

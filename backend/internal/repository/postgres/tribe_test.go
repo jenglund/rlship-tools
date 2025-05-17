@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -602,4 +603,345 @@ func TestTribeRepository(t *testing.T) {
 			assert.Equal(t, tribe.ID, expired[0].TribeID)
 		})
 	})
+
+	t.Run("GetByType", func(t *testing.T) {
+		// Clean up any existing tribes
+		_, err := db.Exec("DELETE FROM tribe_members")
+		require.NoError(t, err)
+		_, err = db.Exec("DELETE FROM tribes")
+		require.NoError(t, err)
+
+		// Create tribes of different types
+		coupleTribes := createTestTribesByType(t, repo, models.TribeTypeCouple, 3)
+		familyTribes := createTestTribesByType(t, repo, models.TribeTypeFamily, 2)
+		friendsTribes := createTestTribesByType(t, repo, models.TribeTypeFriends, 2)
+
+		t.Run("filter by couple type", func(t *testing.T) {
+			tribes, err := repo.GetByType(models.TribeTypeCouple, 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, tribes, len(coupleTribes))
+
+			// Verify all couple tribes are found
+			foundIDs := make(map[uuid.UUID]bool)
+			for _, tribe := range tribes {
+				foundIDs[tribe.ID] = true
+				assert.Equal(t, models.TribeTypeCouple, tribe.Type)
+			}
+			for _, tribe := range coupleTribes {
+				assert.True(t, foundIDs[tribe.ID])
+			}
+		})
+
+		t.Run("filter by family type", func(t *testing.T) {
+			tribes, err := repo.GetByType(models.TribeTypeFamily, 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, tribes, len(familyTribes))
+
+			// Verify all family tribes are found
+			foundIDs := make(map[uuid.UUID]bool)
+			for _, tribe := range tribes {
+				foundIDs[tribe.ID] = true
+				assert.Equal(t, models.TribeTypeFamily, tribe.Type)
+			}
+			for _, tribe := range familyTribes {
+				assert.True(t, foundIDs[tribe.ID])
+			}
+		})
+
+		t.Run("filter by friends type", func(t *testing.T) {
+			tribes, err := repo.GetByType(models.TribeTypeFriends, 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, tribes, len(friendsTribes))
+
+			// Verify all friends tribes are found
+			foundIDs := make(map[uuid.UUID]bool)
+			for _, tribe := range tribes {
+				foundIDs[tribe.ID] = true
+				assert.Equal(t, models.TribeTypeFriends, tribe.Type)
+			}
+			for _, tribe := range friendsTribes {
+				assert.True(t, foundIDs[tribe.ID])
+			}
+		})
+
+		t.Run("pagination", func(t *testing.T) {
+			// Create more couple tribes for pagination testing
+			createTestTribesByType(t, repo, models.TribeTypeCouple, 5)
+
+			// Test with limit
+			tribes, err := repo.GetByType(models.TribeTypeCouple, 0, 3)
+			require.NoError(t, err)
+			assert.Len(t, tribes, 3)
+
+			// Test with offset
+			tribes, err = repo.GetByType(models.TribeTypeCouple, 3, 3)
+			require.NoError(t, err)
+			assert.Len(t, tribes, 3)
+
+			// Test with offset beyond available results
+			tribes, err = repo.GetByType(models.TribeTypeCouple, 20, 10)
+			require.NoError(t, err)
+			assert.Len(t, tribes, 0)
+
+			// Test with zero limit - in SQL LIMIT 0 means return no results
+			tribes, err = repo.GetByType(models.TribeTypeCouple, 0, 0)
+			require.NoError(t, err)
+			assert.Len(t, tribes, 0)
+		})
+
+		t.Run("non-existent type", func(t *testing.T) {
+			// Using a valid but unused type (assuming no roommates tribes were created)
+			tribes, err := repo.GetByType(models.TribeTypeRoommates, 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, tribes, 0)
+		})
+
+		t.Run("with members", func(t *testing.T) {
+			// Add members to a tribe
+			tribe := coupleTribes[0]
+			err := repo.AddMember(tribe.ID, user1.ID, models.MembershipFull, nil, nil)
+			require.NoError(t, err)
+			err = repo.AddMember(tribe.ID, user2.ID, models.MembershipGuest, nil, nil)
+			require.NoError(t, err)
+
+			// Get tribes by type
+			tribes, err := repo.GetByType(models.TribeTypeCouple, 0, 10)
+			require.NoError(t, err)
+
+			// Find the tribe we added members to
+			var foundTribe *models.Tribe
+			for _, t := range tribes {
+				if t.ID == tribe.ID {
+					foundTribe = t
+					break
+				}
+			}
+			require.NotNil(t, foundTribe)
+
+			// Verify members are loaded
+			assert.Len(t, foundTribe.Members, 2)
+
+			// Verify member details
+			memberIDs := make(map[uuid.UUID]bool)
+			for _, member := range foundTribe.Members {
+				memberIDs[member.UserID] = true
+				if member.UserID == user1.ID {
+					assert.Equal(t, models.MembershipFull, member.MembershipType)
+				} else if member.UserID == user2.ID {
+					assert.Equal(t, models.MembershipGuest, member.MembershipType)
+				}
+			}
+			assert.True(t, memberIDs[user1.ID])
+			assert.True(t, memberIDs[user2.ID])
+		})
+	})
+
+	t.Run("Search", func(t *testing.T) {
+		// Clean up any existing tribes
+		_, err := db.Exec("DELETE FROM tribe_members")
+		require.NoError(t, err)
+		_, err = db.Exec("DELETE FROM tribes")
+		require.NoError(t, err)
+
+		// Create tribes with specific keywords in names and descriptions
+		tribes := make([]*models.Tribe, 0)
+
+		// Tribe with "apple" in name
+		appleTribe := &models.Tribe{
+			BaseModel: models.BaseModel{
+				ID:        uuid.New(),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			Name:        "Apple Team " + uuid.New().String()[:8],
+			Type:        models.TribeTypeCouple,
+			Description: "A normal description",
+			Visibility:  models.VisibilityPrivate,
+			Metadata:    models.JSONMap{},
+		}
+		err = repo.Create(appleTribe)
+		require.NoError(t, err)
+		tribes = append(tribes, appleTribe)
+
+		// Tribe with "banana" in name
+		bananaTribe := &models.Tribe{
+			BaseModel: models.BaseModel{
+				ID:        uuid.New(),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			Name:        "Banana Group " + uuid.New().String()[:8],
+			Type:        models.TribeTypeFamily,
+			Description: "A normal description",
+			Visibility:  models.VisibilityPrivate,
+			Metadata:    models.JSONMap{},
+		}
+		err = repo.Create(bananaTribe)
+		require.NoError(t, err)
+		tribes = append(tribes, bananaTribe)
+
+		// Tribe with "cherry" in description
+		cherryTribe := &models.Tribe{
+			BaseModel: models.BaseModel{
+				ID:        uuid.New(),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			Name:        "Normal Tribe " + uuid.New().String()[:8],
+			Type:        models.TribeTypeFriends,
+			Description: "A description about cherry trees",
+			Visibility:  models.VisibilityPrivate,
+			Metadata:    models.JSONMap{},
+		}
+		err = repo.Create(cherryTribe)
+		require.NoError(t, err)
+		tribes = append(tribes, cherryTribe)
+
+		// Create more tribes for pagination testing
+		for i := 0; i < 5; i++ {
+			testTribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				},
+				Name:        fmt.Sprintf("Test Tribe %d %s", i, uuid.New().String()[:8]),
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
+			}
+			err = repo.Create(testTribe)
+			require.NoError(t, err)
+			tribes = append(tribes, testTribe)
+		}
+
+		// Add members to a tribe
+		err = repo.AddMember(appleTribe.ID, user1.ID, models.MembershipFull, nil, nil)
+		require.NoError(t, err)
+		err = repo.AddMember(appleTribe.ID, user2.ID, models.MembershipGuest, nil, nil)
+		require.NoError(t, err)
+
+		t.Run("search by name", func(t *testing.T) {
+			results, err := repo.Search("apple", 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, results, 1)
+			assert.Equal(t, appleTribe.ID, results[0].ID)
+			assert.Equal(t, appleTribe.Name, results[0].Name)
+		})
+
+		t.Run("search by description", func(t *testing.T) {
+			results, err := repo.Search("cherry", 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, results, 1)
+			assert.Equal(t, cherryTribe.ID, results[0].ID)
+			assert.Equal(t, cherryTribe.Name, results[0].Name)
+		})
+
+		t.Run("search case insensitivity", func(t *testing.T) {
+			// Test with different case
+			results, err := repo.Search("APPLE", 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, results, 1)
+			assert.Equal(t, appleTribe.ID, results[0].ID)
+		})
+
+		t.Run("search common keyword", func(t *testing.T) {
+			// "Tribe" should match multiple tribes
+			results, err := repo.Search("Tribe", 0, 10)
+			require.NoError(t, err)
+			assert.Greater(t, len(results), 1)
+		})
+
+		t.Run("search with no results", func(t *testing.T) {
+			results, err := repo.Search("nonexistent", 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, results, 0)
+		})
+
+		t.Run("search with pagination", func(t *testing.T) {
+			// Use a common term to get multiple results
+			allResults, err := repo.Search("test", 0, 10)
+			require.NoError(t, err)
+			assert.Greater(t, len(allResults), 2)
+
+			// Test with limit
+			limitedResults, err := repo.Search("test", 0, 2)
+			require.NoError(t, err)
+			assert.Len(t, limitedResults, 2)
+
+			// Test with offset
+			offsetResults, err := repo.Search("test", 2, 2)
+			require.NoError(t, err)
+			assert.Len(t, offsetResults, 2)
+
+			// Verify the offset results are different from the first page
+			offsetIDs := make(map[uuid.UUID]bool)
+			for _, tribe := range offsetResults {
+				offsetIDs[tribe.ID] = true
+			}
+			for _, tribe := range limitedResults {
+				assert.False(t, offsetIDs[tribe.ID])
+			}
+
+			// Test with zero limit (should return no results per SQL LIMIT 0)
+			zeroResults, err := repo.Search("test", 0, 0)
+			require.NoError(t, err)
+			assert.Len(t, zeroResults, 0)
+		})
+
+		t.Run("search with members", func(t *testing.T) {
+			results, err := repo.Search("apple", 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, results, 1)
+
+			// Verify members are loaded
+			tribe := results[0]
+			assert.Len(t, tribe.Members, 2)
+
+			// Verify member details
+			memberIDs := make(map[uuid.UUID]bool)
+			for _, member := range tribe.Members {
+				memberIDs[member.UserID] = true
+				if member.UserID == user1.ID {
+					assert.Equal(t, models.MembershipFull, member.MembershipType)
+				} else if member.UserID == user2.ID {
+					assert.Equal(t, models.MembershipGuest, member.MembershipType)
+				}
+			}
+			assert.True(t, memberIDs[user1.ID])
+			assert.True(t, memberIDs[user2.ID])
+		})
+
+		t.Run("partial text matching", func(t *testing.T) {
+			// Should find "apple" when searching for "app"
+			results, err := repo.Search("app", 0, 10)
+			require.NoError(t, err)
+			assert.Len(t, results, 1)
+			assert.Equal(t, appleTribe.ID, results[0].ID)
+		})
+	})
+}
+
+// Helper function to create test tribes of a specific type
+func createTestTribesByType(t *testing.T, repo *TribeRepository, tribeType models.TribeType, count int) []*models.Tribe {
+	tribes := make([]*models.Tribe, count)
+	for i := range tribes {
+		now := time.Now()
+		tribes[i] = &models.Tribe{
+			BaseModel: models.BaseModel{
+				ID:        uuid.New(),
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+			Name:        fmt.Sprintf("Test %s Tribe %s", tribeType, uuid.New().String()[:8]),
+			Type:        tribeType,
+			Description: fmt.Sprintf("A test %s tribe", tribeType),
+			Visibility:  models.VisibilityPrivate,
+			Metadata:    models.JSONMap{},
+		}
+		err := repo.Create(tribes[i])
+		require.NoError(t, err)
+	}
+	return tribes
 }

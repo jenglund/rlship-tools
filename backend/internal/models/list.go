@@ -238,11 +238,19 @@ func (m Metadata) Validate() error {
 	if m == nil {
 		return nil
 	}
+
 	// Ensure metadata can be marshaled to JSON
-	_, err := json.Marshal(m)
+	bytes, err := json.Marshal(m)
 	if err != nil {
 		return fmt.Errorf("%w: invalid metadata: %v", ErrInvalidInput, err)
 	}
+
+	// Check if the metadata is too large (> 50KB)
+	const maxSize = 50 * 1024 // 50KB
+	if len(bytes) > maxSize {
+		return fmt.Errorf("%w: metadata size exceeds maximum allowed size of 50KB", ErrInvalidInput)
+	}
+
 	return nil
 }
 

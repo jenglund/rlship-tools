@@ -397,8 +397,10 @@ func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 	}
 	fmt.Printf("Found %d tribes for user %s\n", len(tribes), uid)
 
+	// Use a map to deduplicate activities by ID
+	activityMap := make(map[uuid.UUID]*models.Activity)
+
 	// Get shared activities for each tribe
-	var allSharedActivities []*models.Activity
 	for _, tribe := range tribes {
 		fmt.Printf("Getting shared activities for tribe %s\n", tribe.ID)
 		activities, err := h.repos.Activities.GetSharedActivities(tribe.ID)
@@ -408,9 +410,19 @@ func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 			continue
 		}
 		fmt.Printf("Found %d shared activities for tribe %s\n", len(activities), tribe.ID)
-		allSharedActivities = append(allSharedActivities, activities...)
+
+		// Add activities to map to deduplicate
+		for _, activity := range activities {
+			activityMap[activity.ID] = activity
+		}
 	}
 
-	fmt.Printf("Total shared activities found: %d\n", len(allSharedActivities))
-	response.GinSuccess(c, allSharedActivities)
+	// Convert map to slice
+	var deduplicatedActivities []*models.Activity
+	for _, activity := range activityMap {
+		deduplicatedActivities = append(deduplicatedActivities, activity)
+	}
+
+	fmt.Printf("Total unique shared activities found: %d\n", len(deduplicatedActivities))
+	response.GinSuccess(c, deduplicatedActivities)
 }

@@ -19,6 +19,9 @@ DROP TRIGGER IF EXISTS increment_list_shares_version ON list_shares;
 DROP TRIGGER IF EXISTS increment_activities_version ON activities;
 DROP TRIGGER IF EXISTS increment_sync_conflicts_version ON sync_conflicts;
 
+-- Drop constraints
+DROP INDEX IF EXISTS idx_unique_tribe_name;
+
 -- Drop indexes
 DROP INDEX IF EXISTS idx_users_firebase_uid;
 DROP INDEX IF EXISTS idx_users_email;

@@ -74,6 +74,12 @@ func TestListService_BasicCRUD(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, expectedErr, err)
 	})
+
+	t.Run("Delete", func(t *testing.T) {
+		mockRepo.On("Delete", list.ID).Return(nil).Once()
+		err := service.DeleteList(list.ID)
+		assert.NoError(t, err)
+	})
 }
 
 func TestListService_ItemManagement(t *testing.T) {
@@ -178,12 +184,18 @@ func TestListService_Conflicts(t *testing.T) {
 
 	listID := uuid.New()
 	conflictID := uuid.New()
+	itemID := uuid.New()
+	now := time.Now()
+
 	conflict := &models.SyncConflict{
 		ID:         conflictID,
 		ListID:     listID,
+		ItemID:     &itemID,
 		Type:       "name_conflict",
 		LocalData:  "Local Name",
 		RemoteData: "Remote Name",
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 
 	t.Run("Get Conflicts", func(t *testing.T) {
@@ -196,7 +208,7 @@ func TestListService_Conflicts(t *testing.T) {
 
 	t.Run("Resolve Conflict", func(t *testing.T) {
 		mockRepo.On("ResolveConflict", conflictID).Return(nil).Once()
-		err := service.ResolveListConflict(listID, conflictID, "use_local")
+		err := service.ResolveListConflict(listID, conflictID, "accept_local")
 		assert.NoError(t, err)
 	})
 }
@@ -208,6 +220,7 @@ func TestListService_Ownership(t *testing.T) {
 
 	listID := uuid.New()
 	ownerID := uuid.New()
+	tribeID := uuid.New()
 
 	t.Run("Add Owner", func(t *testing.T) {
 		mockRepo.On("AddOwner", mock.MatchedBy(func(owner *models.ListOwner) bool {
@@ -237,6 +250,23 @@ func TestListService_Ownership(t *testing.T) {
 		retrieved, err := service.GetUserLists(ownerID)
 		assert.NoError(t, err)
 		assert.Equal(t, lists, retrieved)
+	})
+
+	t.Run("Get Tribe Lists", func(t *testing.T) {
+		lists := []*models.List{{ID: listID}}
+		mockRepo.On("GetTribeLists", tribeID).Return(lists, nil).Once()
+		retrieved, err := service.GetTribeLists(tribeID)
+		assert.NoError(t, err)
+		assert.Equal(t, lists, retrieved)
+	})
+
+	t.Run("Get Tribe Lists Error", func(t *testing.T) {
+		expectedErr := fmt.Errorf("database error")
+		mockRepo.On("GetTribeLists", tribeID).Return(nil, expectedErr).Once()
+		retrieved, err := service.GetTribeLists(tribeID)
+		assert.Error(t, err)
+		assert.Equal(t, expectedErr, err)
+		assert.Nil(t, retrieved)
 	})
 }
 
@@ -279,4 +309,155 @@ func TestListService_Sharing(t *testing.T) {
 
 func TestCreateList(t *testing.T) {
 	// ... rest of the test cases ...
+}
+
+func TestListService_Delete(t *testing.T) {
+	mockRepo := new(testutil.MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	listID := uuid.New()
+
+	t.Run("Delete Success", func(t *testing.T) {
+		mockRepo.On("Delete", listID).Return(nil).Once()
+		err := service.DeleteList(listID)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Delete Error", func(t *testing.T) {
+		expectedErr := fmt.Errorf("database error")
+		mockRepo.On("Delete", listID).Return(expectedErr).Once()
+		err := service.DeleteList(listID)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "error deleting list")
+		assert.Contains(t, err.Error(), expectedErr.Error())
+	})
+
+	t.Run("Delete With Nil ID", func(t *testing.T) {
+		err := service.DeleteList(uuid.Nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "list ID is required")
+		assert.ErrorIs(t, errors.Unwrap(err), models.ErrInvalidInput)
+	})
+}
+
+func TestListService_List(t *testing.T) {
+	mockRepo := new(testutil.MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	t.Run("List Success", func(t *testing.T) {
+		offset, limit := 0, 10
+		lists := []*models.List{
+			{
+				ID:   uuid.New(),
+				Name: "List 1",
+			},
+			{
+				ID:   uuid.New(),
+				Name: "List 2",
+			},
+		}
+
+		mockRepo.On("List", offset, limit).Return(lists, nil).Once()
+		result, err := service.List(offset, limit)
+		assert.NoError(t, err)
+		assert.Equal(t, lists, result)
+	})
+
+	t.Run("List Error", func(t *testing.T) {
+		offset, limit := 0, 10
+		expectedErr := fmt.Errorf("database error")
+		mockRepo.On("List", offset, limit).Return(nil, expectedErr).Once()
+		result, err := service.List(offset, limit)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "error listing lists")
+		assert.Contains(t, err.Error(), expectedErr.Error())
+	})
+
+	t.Run("List With Negative Offset", func(t *testing.T) {
+		offset, limit := -1, 10
+		result, err := service.List(offset, limit)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "offset cannot be negative")
+		assert.ErrorIs(t, errors.Unwrap(err), models.ErrInvalidInput)
+	})
+
+	t.Run("List With Zero Limit", func(t *testing.T) {
+		offset, limit := 0, 0
+		result, err := service.List(offset, limit)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "limit must be positive")
+		assert.ErrorIs(t, errors.Unwrap(err), models.ErrInvalidInput)
+	})
+
+	t.Run("List With Negative Limit", func(t *testing.T) {
+		offset, limit := 0, -10
+		result, err := service.List(offset, limit)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "limit must be positive")
+		assert.ErrorIs(t, errors.Unwrap(err), models.ErrInvalidInput)
+	})
+}
+
+func TestListService_GetListShares(t *testing.T) {
+	mockRepo := new(testutil.MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	listID := uuid.New()
+	tribeID := uuid.New()
+	userID := uuid.New()
+	now := time.Now()
+	expiry := now.Add(7 * 24 * time.Hour)
+
+	t.Run("Get List Shares Success", func(t *testing.T) {
+		shares := []*models.ListShare{
+			{
+				ListID:    listID,
+				TribeID:   tribeID,
+				UserID:    userID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				ExpiresAt: &expiry,
+			},
+		}
+
+		// First verify list exists
+		mockRepo.On("GetByID", listID).Return(&models.List{ID: listID}, nil).Once()
+		// Then get list shares
+		mockRepo.On("GetListShares", listID).Return(shares, nil).Once()
+
+		result, err := service.GetListShares(listID)
+		assert.NoError(t, err)
+		assert.Equal(t, shares, result)
+	})
+
+	t.Run("List Not Found", func(t *testing.T) {
+		expectedErr := models.ErrNotFound
+		mockRepo.On("GetByID", listID).Return(nil, expectedErr).Once()
+
+		result, err := service.GetListShares(listID)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, expectedErr, err)
+	})
+
+	t.Run("Get Shares Error", func(t *testing.T) {
+		expectedErr := fmt.Errorf("database error")
+
+		// First verify list exists
+		mockRepo.On("GetByID", listID).Return(&models.List{ID: listID}, nil).Once()
+		// Then get list shares with error
+		mockRepo.On("GetListShares", listID).Return(nil, expectedErr).Once()
+
+		result, err := service.GetListShares(listID)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Equal(t, expectedErr, err)
+	})
 }

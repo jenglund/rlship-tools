@@ -757,13 +757,6 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 
 // GetByType retrieves tribes by type
 func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit int) ([]*models.Tribe, error) {
-	// Start transaction for consistent read
-	tx, err := r.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer tx.Rollback()
-
 	query := `
 		SELECT id, name, type, description, visibility,
 			metadata, created_at, updated_at, deleted_at, version
@@ -773,7 +766,7 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3`
 
-	rows, err := tx.Query(query, tribeType, limit, offset)
+	rows, err := r.db.Query(query, tribeType, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribes by type: %w", err)
 	}
@@ -800,60 +793,6 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 			return nil, fmt.Errorf("error scanning tribe by type: %w", err)
 		}
 
-		// Get members in a separate query to avoid the parse error
-		membersQuery := `
-			SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
-			       tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
-			       u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
-			FROM tribe_members tm
-			JOIN users u ON u.id = tm.user_id
-			WHERE tm.tribe_id = $1 AND tm.deleted_at IS NULL
-			ORDER BY tm.created_at ASC`
-
-		memberRows, err := tx.Query(membersQuery, tribe.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error getting tribe members: %w", err)
-		}
-
-		var members []*models.TribeMember
-		for memberRows.Next() {
-			member := &models.TribeMember{
-				User: &models.User{},
-			}
-			err := memberRows.Scan(
-				&member.ID,
-				&member.TribeID,
-				&member.UserID,
-				&member.MembershipType,
-				&member.DisplayName,
-				&member.ExpiresAt,
-				&member.Metadata,
-				&member.CreatedAt,
-				&member.UpdatedAt,
-				&member.DeletedAt,
-				&member.User.FirebaseUID,
-				&member.User.Provider,
-				&member.User.Email,
-				&member.User.Name,
-				&member.User.AvatarURL,
-				&member.User.LastLogin,
-				&member.User.CreatedAt,
-				&member.User.UpdatedAt,
-			)
-			if err != nil {
-				memberRows.Close()
-				return nil, fmt.Errorf("error scanning tribe member row: %w", err)
-			}
-			member.User.ID = member.UserID
-			members = append(members, member)
-		}
-		memberRows.Close()
-
-		if err = memberRows.Err(); err != nil {
-			return nil, fmt.Errorf("error iterating tribe member rows: %w", err)
-		}
-
-		tribe.Members = members
 		tribes = append(tribes, tribe)
 	}
 
@@ -861,9 +800,13 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 		return nil, fmt.Errorf("error iterating tribes by type: %w", err)
 	}
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("error committing transaction: %w", err)
+	// Load members for each tribe separately without using a transaction
+	for _, tribe := range tribes {
+		members, err := r.GetMembers(tribe.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading members for tribe %s: %w", tribe.ID, err)
+		}
+		tribe.Members = members
 	}
 
 	return tribes, nil
@@ -871,13 +814,6 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 
 // Search searches for tribes by name or description
 func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tribe, error) {
-	// Start transaction for consistent read
-	tx, err := r.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer tx.Rollback()
-
 	sqlQuery := `
 		SELECT id, name, type, description, visibility,
 			metadata, created_at, updated_at, deleted_at, version
@@ -888,7 +824,7 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 		LIMIT $2 OFFSET $3`
 
 	searchPattern := "%" + query + "%"
-	rows, err := tx.Query(sqlQuery, searchPattern, limit, offset)
+	rows, err := r.db.Query(sqlQuery, searchPattern, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error searching tribes: %w", err)
 	}
@@ -915,60 +851,6 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 			return nil, fmt.Errorf("error scanning searched tribe: %w", err)
 		}
 
-		// Get members in a separate query to avoid the parse error
-		membersQuery := `
-			SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
-			       tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
-			       u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
-			FROM tribe_members tm
-			JOIN users u ON u.id = tm.user_id
-			WHERE tm.tribe_id = $1 AND tm.deleted_at IS NULL
-			ORDER BY tm.created_at ASC`
-
-		memberRows, err := tx.Query(membersQuery, tribe.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error getting tribe members: %w", err)
-		}
-
-		var members []*models.TribeMember
-		for memberRows.Next() {
-			member := &models.TribeMember{
-				User: &models.User{},
-			}
-			err := memberRows.Scan(
-				&member.ID,
-				&member.TribeID,
-				&member.UserID,
-				&member.MembershipType,
-				&member.DisplayName,
-				&member.ExpiresAt,
-				&member.Metadata,
-				&member.CreatedAt,
-				&member.UpdatedAt,
-				&member.DeletedAt,
-				&member.User.FirebaseUID,
-				&member.User.Provider,
-				&member.User.Email,
-				&member.User.Name,
-				&member.User.AvatarURL,
-				&member.User.LastLogin,
-				&member.User.CreatedAt,
-				&member.User.UpdatedAt,
-			)
-			if err != nil {
-				memberRows.Close()
-				return nil, fmt.Errorf("error scanning tribe member row: %w", err)
-			}
-			member.User.ID = member.UserID
-			members = append(members, member)
-		}
-		memberRows.Close()
-
-		if err = memberRows.Err(); err != nil {
-			return nil, fmt.Errorf("error iterating tribe member rows: %w", err)
-		}
-
-		tribe.Members = members
 		tribes = append(tribes, tribe)
 	}
 
@@ -976,9 +858,13 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 		return nil, fmt.Errorf("error iterating searched tribes: %w", err)
 	}
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("error committing transaction: %w", err)
+	// Load members for each tribe separately without using a transaction
+	for _, tribe := range tribes {
+		members, err := r.GetMembers(tribe.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading members for tribe %s: %w", tribe.ID, err)
+		}
+		tribe.Members = members
 	}
 
 	return tribes, nil
