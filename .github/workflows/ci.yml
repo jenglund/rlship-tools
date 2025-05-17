@@ -83,7 +83,7 @@ jobs:
     - name: Frontend Lint
       working-directory: apps/mobile
       run: |
-        npm ci
+        npm install
         npm run lint
     - name: Install golangci-lint
       run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
