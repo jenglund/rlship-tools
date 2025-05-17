@@ -257,7 +257,7 @@ func CleanupTestData(t *testing.T, db *sql.DB) {
 	}
 
 	tables := []string{
-		"list_shares",
+		"list_sharing",
 		"list_items",
 		"list_owners",
 		"lists",

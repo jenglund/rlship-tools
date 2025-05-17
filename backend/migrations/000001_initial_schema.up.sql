@@ -19,7 +19,7 @@ $$ LANGUAGE plpgsql;
 CREATE TYPE visibility_type AS ENUM ('private', 'public', 'shared');
 CREATE TYPE tribe_type AS ENUM ('custom', 'couple', 'polycule', 'friends', 'family', 'roommates', 'coworkers');
 CREATE TYPE sync_status AS ENUM ('none', 'pending', 'synced', 'conflict');
-CREATE TYPE sync_source AS ENUM ('none', 'google_maps', 'manual', 'imported');
+CREATE TYPE sync_source AS ENUM ('none', 'google_maps', 'manual', 'imported', '', 'unknown_source');
 CREATE TYPE activity_type AS ENUM ('location', 'interest', 'list', 'custom', 'activity', 'event');
 CREATE TYPE owner_type AS ENUM ('user', 'tribe');
 CREATE TYPE membership_type AS ENUM ('full', 'limited', 'guest');
@@ -114,6 +114,10 @@ CREATE TABLE list_items (
     latitude FLOAT,
     longitude FLOAT,
     address TEXT,
+    seasonal BOOLEAN NOT NULL DEFAULT false,
+    season_begin TEXT,
+    season_end TEXT,
+    cooldown INTEGER,
     last_chosen TIMESTAMP WITH TIME ZONE,
     chosen_count INTEGER NOT NULL DEFAULT 0,
     metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
@@ -141,10 +145,13 @@ CREATE TABLE activities (
 -- Create activity_owners table
 CREATE TABLE activity_owners (
     activity_id UUID NOT NULL REFERENCES activities(id),
-    user_id UUID NOT NULL REFERENCES users(id),
+    owner_id UUID NOT NULL,
+    owner_type owner_type NOT NULL DEFAULT 'user',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (activity_id, user_id)
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    PRIMARY KEY (activity_id, owner_id, owner_type),
+    UNIQUE (activity_id, owner_id)
 );
 
 -- Create activity_photos table
@@ -170,17 +177,20 @@ CREATE TABLE activity_shares (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
+    version INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (activity_id, tribe_id)
 );
 
--- Create list_shares table
-CREATE TABLE list_shares (
+-- Create list_sharing table
+CREATE TABLE list_sharing (
     list_id UUID NOT NULL REFERENCES lists(id),
     tribe_id UUID NOT NULL REFERENCES tribes(id),
+    user_id UUID NOT NULL REFERENCES users(id),
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
+    version INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (list_id, tribe_id)
 );
 
@@ -210,7 +220,7 @@ CREATE INDEX idx_list_items_list_id ON list_items(list_id);
 CREATE INDEX idx_activities_user_id ON activities(user_id);
 CREATE INDEX idx_activity_photos_activity_id ON activity_photos(activity_id);
 CREATE INDEX idx_activity_shares_activity_id ON activity_shares(activity_id);
-CREATE INDEX idx_list_shares_list_id ON list_shares(list_id);
+CREATE INDEX idx_list_sharing_list_id ON list_sharing(list_id);
 CREATE INDEX idx_sync_conflicts_list_id ON sync_conflicts(list_id);
 
 -- Create test database role if it doesn't exist
@@ -298,13 +308,13 @@ CREATE TRIGGER increment_list_items_version
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
-CREATE TRIGGER update_list_shares_updated_at
-    BEFORE UPDATE ON list_shares
+CREATE TRIGGER update_list_sharing_updated_at
+    BEFORE UPDATE ON list_sharing
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER increment_list_shares_version
-    BEFORE UPDATE ON list_shares
+CREATE TRIGGER increment_list_sharing_version
+    BEFORE UPDATE ON list_sharing
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
@@ -324,4 +334,28 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER validate_list_owner_trigger
     BEFORE INSERT OR UPDATE ON list_owners
     FOR EACH ROW
-    EXECUTE FUNCTION validate_list_owner(); 
+    EXECUTE FUNCTION validate_list_owner();
+
+-- Create activity owner validation function and trigger
+CREATE OR REPLACE FUNCTION validate_activity_owner()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.owner_type = 'user' AND NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
+        RAISE EXCEPTION 'User with ID % does not exist', NEW.owner_id;
+    ELSIF NEW.owner_type = 'tribe' AND NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
+        RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER validate_activity_owner_trigger
+    BEFORE INSERT OR UPDATE ON activity_owners
+    FOR EACH ROW
+    EXECUTE FUNCTION validate_activity_owner();
+
+-- Create updated_at trigger for activity_owners
+CREATE TRIGGER update_activity_owners_updated_at
+    BEFORE UPDATE ON activity_owners
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column(); 

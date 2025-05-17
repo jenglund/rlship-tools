@@ -238,7 +238,7 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 
 	shareStmt, err := tx.Prepare(`
 		SELECT list_id, tribe_id, expires_at, created_at, updated_at, deleted_at
-		FROM list_shares
+		FROM list_sharing
 		WHERE list_id = $1 AND deleted_at IS NULL`)
 	if err != nil {
 		return fmt.Errorf("error preparing shares statement: %w", err)
@@ -612,7 +612,7 @@ func (r *listRepository) Delete(id uuid.UUID) error {
 
 		// Soft delete list shares
 		_, err = tx.Exec(`
-			UPDATE list_shares
+			UPDATE list_sharing
 			SET deleted_at = $1
 			WHERE list_id = $2 AND deleted_at IS NULL`,
 			now, id)
@@ -1008,10 +1008,12 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 	var lists []*models.List
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// First get the lists basic info
 		query := `
 			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
 				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
 				l.default_weight, l.max_items, l.cooldown_days,
+				l.owner_id, l.owner_type,
 				l.created_at, l.updated_at, l.deleted_at
 			FROM lists l
 			WHERE l.sync_source = $1
@@ -1025,23 +1027,110 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 		defer rows.Close()
 
 		for rows.Next() {
-			list := &models.List{}
+			list := &models.List{
+				Items:  []*models.ListItem{},
+				Owners: []*models.ListOwner{},
+			}
 			err := rows.Scan(
 				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
 				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
 				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
+				&list.OwnerID, &list.OwnerType,
 				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
 			)
 			if err != nil {
 				return fmt.Errorf("error scanning list: %w", err)
 			}
 
-			// Load all related data
-			if err := r.loadListData(tx, list); err != nil {
-				return err
+			lists = append(lists, list)
+		}
+
+		if err = rows.Err(); err != nil {
+			return fmt.Errorf("error iterating lists: %w", err)
+		}
+
+		// Load items and owners separately for each list to avoid parse errors
+		for _, list := range lists {
+			// Get items
+			itemsQuery := `
+				SELECT id, list_id, name, description, weight, 
+					chosen_count, last_chosen, metadata, external_id,
+					latitude, longitude, address, seasonal, 
+					season_begin, season_end, cooldown,
+					created_at, updated_at, deleted_at
+				FROM list_items
+				WHERE list_id = $1 AND deleted_at IS NULL
+				ORDER BY created_at ASC`
+
+			itemRows, err := tx.Query(itemsQuery, list.ID)
+			if err != nil {
+				return fmt.Errorf("error getting list items: %w", err)
+			}
+			defer itemRows.Close()
+
+			for itemRows.Next() {
+				item := &models.ListItem{}
+				var seasonal bool
+				var seasonBegin, seasonEnd sql.NullString
+				var cooldown, latitude, longitude sql.NullFloat64
+				var address sql.NullString
+
+				err := itemRows.Scan(
+					&item.ID, &item.ListID, &item.Name, &item.Description, &item.Weight,
+					&item.ChosenCount, &item.LastChosen, &item.Metadata, &item.ExternalID,
+					&latitude, &longitude, &address, &seasonal,
+					&seasonBegin, &seasonEnd, &cooldown,
+					&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
+				)
+				if err != nil {
+					return fmt.Errorf("error scanning list item: %w", err)
+				}
+
+				// Set nullable fields
+				if latitude.Valid {
+					item.Latitude = &latitude.Float64
+				}
+				if longitude.Valid {
+					item.Longitude = &longitude.Float64
+				}
+				if address.Valid {
+					item.Address = &address.String
+				}
+
+				list.Items = append(list.Items, item)
 			}
 
-			lists = append(lists, list)
+			if err = itemRows.Err(); err != nil {
+				return fmt.Errorf("error iterating list items: %w", err)
+			}
+
+			// Get owners
+			ownersQuery := `
+				SELECT list_id, owner_id, owner_type, created_at, updated_at
+				FROM list_owners
+				WHERE list_id = $1 AND deleted_at IS NULL`
+
+			ownerRows, err := tx.Query(ownersQuery, list.ID)
+			if err != nil {
+				return fmt.Errorf("error getting list owners: %w", err)
+			}
+			defer ownerRows.Close()
+
+			for ownerRows.Next() {
+				owner := &models.ListOwner{}
+				err := ownerRows.Scan(
+					&owner.ListID, &owner.OwnerID, &owner.OwnerType,
+					&owner.CreatedAt, &owner.UpdatedAt,
+				)
+				if err != nil {
+					return fmt.Errorf("error scanning list owner: %w", err)
+				}
+				list.Owners = append(list.Owners, owner)
+			}
+
+			if err = ownerRows.Err(); err != nil {
+				return fmt.Errorf("error iterating list owners: %w", err)
+			}
 		}
 
 		return nil
@@ -1514,22 +1603,34 @@ func (r *listRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
 	opts := DefaultTransactionOptions()
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		query := `
+		// Mark the share record as deleted
+		shareQuery := `
 			UPDATE list_sharing
 			SET deleted_at = NOW()
 			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL`
 
-		result, err := tx.Exec(query, listID, tribeID)
+		shareResult, err := tx.Exec(shareQuery, listID, tribeID)
 		if err != nil {
 			return fmt.Errorf("error unsharing list: %w", err)
 		}
 
-		rows, err := result.RowsAffected()
+		shareRows, err := shareResult.RowsAffected()
 		if err != nil {
 			return fmt.Errorf("error getting rows affected: %w", err)
 		}
-		if rows == 0 {
+		if shareRows == 0 {
 			return models.ErrNotFound
+		}
+
+		// Remove the tribe as an owner
+		ownerQuery := `
+			UPDATE list_owners
+			SET deleted_at = NOW(), updated_at = NOW()
+			WHERE list_id = $1 AND owner_id = $2 AND owner_type = 'tribe' AND deleted_at IS NULL`
+
+		_, err = tx.Exec(ownerQuery, listID, tribeID)
+		if err != nil {
+			return fmt.Errorf("error removing list owner: %w", err)
 		}
 
 		return nil
@@ -1832,7 +1933,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		// Load shares
 		sharesQuery := `
 			SELECT list_id, tribe_id, expires_at, created_at, updated_at, deleted_at
-			FROM list_shares
+			FROM list_sharing
 			WHERE list_id = ANY($1) AND deleted_at IS NULL`
 
 		shareRows, err := tx.Query(sharesQuery, pq.Array(listIDs))
