@@ -119,6 +119,7 @@ func TestList_Validate(t *testing.T) {
 	validID := uuid.New()
 	validMaxItems := 10
 	validCooldown := 7
+	now := time.Now()
 
 	tests := []struct {
 		name    string
@@ -282,6 +283,257 @@ func TestList_Validate(t *testing.T) {
 				CooldownDays:  &validCooldown,
 			},
 			wantErr: false,
+		},
+		// SyncConfig validation tests
+		{
+			name: "valid sync config",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusPending,
+				SyncSource:    SyncSourceGoogleMaps,
+				SyncID:        "ChIJN1t_tDeuEmsRUsoyG83frY4",
+				LastSyncAt:    &now,
+				DefaultWeight: 1.0,
+				SyncConfig: &SyncConfig{
+					Source:     SyncSourceGoogleMaps,
+					ID:         "ChIJN1t_tDeuEmsRUsoyG83frY4",
+					Status:     ListSyncStatusPending,
+					LastSyncAt: &now,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid sync config - status mismatch",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone, // Mismatch
+				SyncSource:    SyncSourceGoogleMaps,
+				SyncID:        "ChIJN1t_tDeuEmsRUsoyG83frY4",
+				LastSyncAt:    &now,
+				DefaultWeight: 1.0,
+				SyncConfig: &SyncConfig{
+					Source:     SyncSourceGoogleMaps,
+					ID:         "ChIJN1t_tDeuEmsRUsoyG83frY4",
+					Status:     ListSyncStatusPending, // Doesn't match list
+					LastSyncAt: &now,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync config - source mismatch",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusPending,
+				SyncSource:    SyncSourceNone, // Mismatch
+				SyncID:        "ChIJN1t_tDeuEmsRUsoyG83frY4",
+				LastSyncAt:    &now,
+				DefaultWeight: 1.0,
+				SyncConfig: &SyncConfig{
+					Source:     SyncSourceGoogleMaps, // Doesn't match list
+					ID:         "ChIJN1t_tDeuEmsRUsoyG83frY4",
+					Status:     ListSyncStatusPending,
+					LastSyncAt: &now,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync config - ID mismatch",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusPending,
+				SyncSource:    SyncSourceGoogleMaps,
+				SyncID:        "different-id", // Mismatch
+				LastSyncAt:    &now,
+				DefaultWeight: 1.0,
+				SyncConfig: &SyncConfig{
+					Source:     SyncSourceGoogleMaps,
+					ID:         "ChIJN1t_tDeuEmsRUsoyG83frY4", // Doesn't match list
+					Status:     ListSyncStatusPending,
+					LastSyncAt: &now,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync config - LastSyncAt mismatch",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusPending,
+				SyncSource:    SyncSourceGoogleMaps,
+				SyncID:        "ChIJN1t_tDeuEmsRUsoyG83frY4",
+				LastSyncAt:    nil, // Mismatch
+				DefaultWeight: 1.0,
+				SyncConfig: &SyncConfig{
+					Source:     SyncSourceGoogleMaps,
+					ID:         "ChIJN1t_tDeuEmsRUsoyG83frY4",
+					Status:     ListSyncStatusPending,
+					LastSyncAt: &now, // Doesn't match list
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync config itself",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusPending,
+				SyncSource:    SyncSourceGoogleMaps,
+				SyncID:        "", // Invalid - Google Maps requires ID
+				LastSyncAt:    &now,
+				DefaultWeight: 1.0,
+				SyncConfig: &SyncConfig{
+					Source:     SyncSourceGoogleMaps,
+					ID:         "", // Invalid - Google Maps requires ID
+					Status:     ListSyncStatusPending,
+					LastSyncAt: &now,
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync fields without config - non-None status",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusPending, // Should be None when no config
+				SyncSource:    SyncSourceNone,
+				SyncID:        "",
+				LastSyncAt:    nil,
+				DefaultWeight: 1.0,
+				SyncConfig:    nil, // No config
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync fields without config - non-None source",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceGoogleMaps, // Should be None when no config
+				SyncID:        "",
+				LastSyncAt:    nil,
+				DefaultWeight: 1.0,
+				SyncConfig:    nil, // No config
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync fields without config - non-empty ID",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceNone,
+				SyncID:        "some-id", // Should be empty when no config
+				LastSyncAt:    nil,
+				DefaultWeight: 1.0,
+				SyncConfig:    nil, // No config
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid sync fields without config - non-nil LastSyncAt",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceNone,
+				SyncID:        "",
+				LastSyncAt:    &now, // Should be nil when no config
+				DefaultWeight: 1.0,
+				SyncConfig:    nil, // No config
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid owner fields",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceNone,
+				DefaultWeight: 1.0,
+				OwnerID:       func() *uuid.UUID { id := uuid.New(); return &id }(),
+				OwnerType:     func() *OwnerType { t := OwnerTypeUser; return &t }(),
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing owner type with owner ID",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceNone,
+				DefaultWeight: 1.0,
+				OwnerID:       func() *uuid.UUID { id := uuid.New(); return &id }(),
+				OwnerType:     nil, // Missing but required when OwnerID is set
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing owner ID with owner type",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceNone,
+				DefaultWeight: 1.0,
+				OwnerID:       nil, // Missing but required when OwnerType is set
+				OwnerType:     func() *OwnerType { t := OwnerTypeUser; return &t }(),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid owner type",
+			list: &List{
+				ID:            validID,
+				Type:          ListTypeGeneral,
+				Name:          "Test List",
+				Visibility:    VisibilityPrivate,
+				SyncStatus:    ListSyncStatusNone,
+				SyncSource:    SyncSourceNone,
+				DefaultWeight: 1.0,
+				OwnerID:       func() *uuid.UUID { id := uuid.New(); return &id }(),
+				OwnerType:     func() *OwnerType { t := OwnerType("invalid"); return &t }(),
+			},
+			wantErr: true,
 		},
 	}
 

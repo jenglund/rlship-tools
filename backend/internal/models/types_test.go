@@ -60,6 +60,7 @@ func TestOwnerType_Validate(t *testing.T) {
 func TestBaseModel_Validate(t *testing.T) {
 	now := time.Now()
 	validID := uuid.New()
+	futureDeletedAt := now.Add(time.Hour)
 
 	tests := []struct {
 		name    string
@@ -72,6 +73,28 @@ func TestBaseModel_Validate(t *testing.T) {
 				ID:        validID,
 				CreatedAt: now,
 				UpdatedAt: now,
+				Version:   1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid model with future deleted_at",
+			model: BaseModel{
+				ID:        validID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				DeletedAt: &futureDeletedAt,
+				Version:   1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid model with deleted_at equal to created_at",
+			model: BaseModel{
+				ID:        validID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				DeletedAt: &now, // Same time as created_at should be valid
 				Version:   1,
 			},
 			wantErr: false,
@@ -109,7 +132,7 @@ func TestBaseModel_Validate(t *testing.T) {
 				ID:        validID,
 				CreatedAt: now,
 				UpdatedAt: now,
-				DeletedAt: &time.Time{},
+				DeletedAt: &time.Time{}, // Unix epoch time, before now
 				Version:   1,
 			},
 			wantErr: true,
@@ -133,6 +156,26 @@ func TestBaseModel_Validate(t *testing.T) {
 				Version:   -1,
 			},
 			wantErr: true,
+		},
+		{
+			name: "minimum valid version (1)",
+			model: BaseModel{
+				ID:        validID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				Version:   1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "high version number",
+			model: BaseModel{
+				ID:        validID,
+				CreatedAt: now,
+				UpdatedAt: now,
+				Version:   9999,
+			},
+			wantErr: false,
 		},
 	}
 

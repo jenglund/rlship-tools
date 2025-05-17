@@ -3,7 +3,7 @@
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-		<title>handlers: Go Coverage Report</title>
+		<title>models: Go Coverage Report</title>
 		<style>
 			body {
 				background: black;
@@ -55,13 +55,19 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/jenglund/rlship-tools/internal/api/handlers/activity.go (16.4%)</option>
+				<option value="file0">github.com/jenglund/rlship-tools/internal/models/activity.go (100.0%)</option>
 				
-				<option value="file1">github.com/jenglund/rlship-tools/internal/api/handlers/list.go (0.0%)</option>
+				<option value="file1">github.com/jenglund/rlship-tools/internal/models/activity_photo.go (100.0%)</option>
 				
-				<option value="file2">github.com/jenglund/rlship-tools/internal/api/handlers/tribe.go (0.0%)</option>
+				<option value="file2">github.com/jenglund/rlship-tools/internal/models/errors.go (100.0%)</option>
 				
-				<option value="file3">github.com/jenglund/rlship-tools/internal/api/handlers/user.go (0.0%)</option>
+				<option value="file3">github.com/jenglund/rlship-tools/internal/models/list.go (99.0%)</option>
+				
+				<option value="file4">github.com/jenglund/rlship-tools/internal/models/sync.go (93.8%)</option>
+				
+				<option value="file5">github.com/jenglund/rlship-tools/internal/models/tribe.go (100.0%)</option>
+				
+				<option value="file6">github.com/jenglund/rlship-tools/internal/models/types.go (94.1%)</option>
 				
 				</select>
 			</div>
@@ -75,1883 +81,1110 @@
 		</div>
 		<div id="content">
 		
-		<pre class="file" id="file0" style="display: none">package handlers
+		<pre class="file" id="file0" style="display: none">package models
 
 import (
         "fmt"
         "time"
 
-        "github.com/gin-gonic/gin"
         "github.com/google/uuid"
-        "github.com/jenglund/rlship-tools/internal/api/response"
-        "github.com/jenglund/rlship-tools/internal/middleware"
-        "github.com/jenglund/rlship-tools/internal/models"
-        "github.com/jenglund/rlship-tools/internal/repository/postgres"
 )
 
-// ActivityHandler handles activity-related requests
-type ActivityHandler struct {
-        repos *postgres.Repositories
+// ActivityType represents the type of activity (location, interest, list, etc.)
+type ActivityType string
+
+const (
+        ActivityTypeLocation ActivityType = "location"
+        ActivityTypeInterest ActivityType = "interest"
+        ActivityTypeList     ActivityType = "list"
+        ActivityTypeActivity ActivityType = "activity"
+        ActivityTypeEvent    ActivityType = "event"
+)
+
+// Activity represents any type of activity, interest, location, or list
+type Activity struct {
+        ID          uuid.UUID      `json:"id" db:"id"`
+        UserID      uuid.UUID      `json:"user_id" db:"user_id"`
+        Type        ActivityType   `json:"type" db:"type"`
+        Name        string         `json:"name" db:"name"`
+        Description string         `json:"description" db:"description"`
+        Visibility  VisibilityType `json:"visibility" db:"visibility"`
+        Metadata    JSONMap        `json:"metadata,omitempty" db:"metadata"`
+        CreatedAt   time.Time      `json:"created_at" db:"created_at"`
+        UpdatedAt   time.Time      `json:"updated_at" db:"updated_at"`
+        DeletedAt   *time.Time     `json:"deleted_at,omitempty" db:"deleted_at"`
 }
 
-// NewActivityHandler creates a new activity handler
-func NewActivityHandler(repos *postgres.Repositories) *ActivityHandler <span class="cov8" title="1">{
-        return &amp;ActivityHandler{repos: repos}
-}</span>
-
-// RegisterRoutes registers the activity routes
-func (h *ActivityHandler) RegisterRoutes(r *gin.RouterGroup) <span class="cov8" title="1">{
-        activities := r.Group("/activities", middleware.RequireAuth())
-        </span><span class="cov8" title="1">{
-                activities.POST("", h.CreateActivity)
-                activities.GET("", h.ListActivities)
-                activities.GET("/:id", h.GetActivity)
-                activities.PUT("/:id", h.UpdateActivity)
-                activities.DELETE("/:id", h.DeleteActivity)
-
-                // Activity ownership
-                activities.POST("/:id/owners", h.AddOwner)
-                activities.DELETE("/:id/owners/:ownerId", h.RemoveOwner)
-                activities.GET("/:id/owners", h.ListOwners)
-
-                // Activity sharing
-                activities.POST("/:id/share", h.ShareActivity)
-                activities.DELETE("/:id/share/:tribeId", h.UnshareActivity)
-                activities.GET("/shared", h.ListSharedActivities)
-        }</span>
+// ActivityOwner represents an owner (user or tribe) of an activity
+type ActivityOwner struct {
+        ActivityID uuid.UUID  `json:"activity_id" db:"activity_id"`
+        OwnerID    uuid.UUID  `json:"owner_id" db:"owner_id"`
+        OwnerType  OwnerType  `json:"owner_type" db:"owner_type"`
+        CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+        DeletedAt  *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 }
 
-// CreateActivityRequest represents the create activity request body
-type CreateActivityRequest struct {
-        Type        models.ActivityType   `json:"type" binding:"required"`
-        Name        string                `json:"name" binding:"required"`
-        Description string                `json:"description"`
-        Visibility  models.VisibilityType `json:"visibility" binding:"required"`
-        Metadata    interface{}           `json:"metadata,omitempty"`
+// ActivityShare represents a shared activity with a tribe
+type ActivityShare struct {
+        ActivityID uuid.UUID  `json:"activity_id" db:"activity_id"`
+        TribeID    uuid.UUID  `json:"tribe_id" db:"tribe_id"`
+        UserID     uuid.UUID  `json:"user_id" db:"user_id"`
+        CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+        ExpiresAt  *time.Time `json:"expires_at,omitempty" db:"expires_at"`
+        DeletedAt  *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
 }
 
-// CreateActivity creates a new activity
-func (h *ActivityHandler) CreateActivity(c *gin.Context) <span class="cov0" title="0">{
-        var req CreateActivityRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, err.Error())
-                return
-        }</span>
+// ActivityRepository defines the interface for activity data operations
+type ActivityRepository interface {
+        Create(activity *Activity) error
+        GetByID(id uuid.UUID) (*Activity, error)
+        Update(activity *Activity) error
+        Delete(id uuid.UUID) error
+        List(offset, limit int) ([]*Activity, error)
 
-        // Get the current user
-        <span class="cov0" title="0">firebaseUID := middleware.GetFirebaseUID(c)
-        if firebaseUID == "" </span><span class="cov0" title="0">{
-                fmt.Printf("Firebase UID not found in context\n")
-                response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
-                return
-        }</span>
+        // Owner management
+        AddOwner(activityID, ownerID uuid.UUID, ownerType OwnerType) error
+        RemoveOwner(activityID, ownerID uuid.UUID) error
+        GetOwners(activityID uuid.UUID) ([]*ActivityOwner, error)
+        GetUserActivities(userID uuid.UUID) ([]*Activity, error)
+        GetTribeActivities(tribeID uuid.UUID) ([]*Activity, error)
 
-        <span class="cov0" title="0">user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
-        if err != nil </span><span class="cov0" title="0">{
-                fmt.Printf("Error getting user by Firebase UID: %v\n", err)
-                response.GinInternalError(c, err)
-                return
-        }</span>
+        // Sharing management
+        ShareWithTribe(activityID, tribeID, userID uuid.UUID, expiresAt *time.Time) error
+        UnshareWithTribe(activityID, tribeID uuid.UUID) error
+        GetSharedActivities(tribeID uuid.UUID) ([]*Activity, error)
 
-        <span class="cov0" title="0">var metadata models.JSONMap
-        if req.Metadata != nil </span><span class="cov0" title="0">{
-                switch m := req.Metadata.(type) </span>{
-                case map[string]interface{}:<span class="cov0" title="0">
-                        metadata = models.JSONMap(m)</span>
-                case models.JSONMap:<span class="cov0" title="0">
-                        metadata = m</span>
-                default:<span class="cov0" title="0">
-                        response.GinBadRequest(c, "Metadata must be a valid JSON object")
-                        return</span>
-                }
-
-                // Validate metadata
-                <span class="cov0" title="0">if err := metadata.Validate(); err != nil </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, err.Error())
-                        return
-                }</span>
-        }
-
-        <span class="cov0" title="0">now := time.Now()
-        activity := &amp;models.Activity{
-                ID:          uuid.New(),
-                UserID:      user.ID,
-                Type:        req.Type,
-                Name:        req.Name,
-                Description: req.Description,
-                Visibility:  req.Visibility,
-                Metadata:    metadata,
-                CreatedAt:   now,
-                UpdatedAt:   now,
-        }
-
-        // Validate the activity
-        if err := activity.Validate(); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Activities.Create(activity); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        // Add the current user as an owner
-        <span class="cov0" title="0">if err := h.repos.Activities.AddOwner(activity.ID, user.ID, "user"); err != nil </span><span class="cov0" title="0">{
-                fmt.Printf("Error adding owner: %v\n", err)
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinCreated(c, activity)</span>
+        // Cleanup
+        MarkForDeletion(activityID uuid.UUID) error
+        CleanupOrphanedActivities() error
 }
 
-// ListActivities returns a paginated list of activities
-func (h *ActivityHandler) ListActivities(c *gin.Context) <span class="cov0" title="0">{
-        offset := 0
-        limit := 50
-
-        activities, err := h.repos.Activities.List(offset, limit)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
+// Validate ensures the activity data is valid
+func (a *Activity) Validate() error <span class="cov8" title="1">{
+        if a.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: activity ID is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, activities)</span>
-}
-
-// GetActivity returns a single activity by ID
-func (h *ActivityHandler) GetActivity(c *gin.Context) <span class="cov0" title="0">{
-        id, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
+        <span class="cov8" title="1">if a.UserID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: user ID is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">activity, err := h.repos.Activities.GetByID(id)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "Activity not found")
-                return
+        <span class="cov8" title="1">if a.Name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: name is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, activity)</span>
-}
-
-// UpdateActivityRequest represents the update activity request body
-type UpdateActivityRequest struct {
-        Name        string                `json:"name"`
-        Description string                `json:"description"`
-        Visibility  models.VisibilityType `json:"visibility"`
-        Metadata    interface{}           `json:"metadata,omitempty"`
-}
-
-// UpdateActivity updates an existing activity
-func (h *ActivityHandler) UpdateActivity(c *gin.Context) <span class="cov0" title="0">{
-        var req UpdateActivityRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, err.Error())
-                return
+        <span class="cov8" title="1">if err := a.Visibility.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
         }</span>
-
-        <span class="cov0" title="0">activityID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
+        <span class="cov8" title="1">if a.CreatedAt.IsZero() </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: created_at is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">activity, err := h.repos.Activities.GetByID(activityID)
-        if err != nil </span><span class="cov0" title="0">{
-                if err.Error() == "activity not found" </span><span class="cov0" title="0">{
-                        response.GinNotFound(c, "Activity not found")
-                        return
-                }</span>
-                <span class="cov0" title="0">response.GinInternalError(c, err)
-                return</span>
-        }
-
-        <span class="cov0" title="0">var metadata models.JSONMap
-        if req.Metadata != nil </span><span class="cov0" title="0">{
-                switch m := req.Metadata.(type) </span>{
-                case map[string]interface{}:<span class="cov0" title="0">
-                        metadata = models.JSONMap(m)</span>
-                case models.JSONMap:<span class="cov0" title="0">
-                        metadata = m</span>
-                default:<span class="cov0" title="0">
-                        response.GinBadRequest(c, "Metadata must be a valid JSON object")
-                        return</span>
-                }
-
-                // Validate metadata
-                <span class="cov0" title="0">if err := metadata.Validate(); err != nil </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, err.Error())
-                        return
-                }</span>
-        }
-
-        <span class="cov0" title="0">activity.Name = req.Name
-        activity.Description = req.Description
-        activity.Visibility = req.Visibility
-        activity.Metadata = metadata
-        activity.UpdatedAt = time.Now()
-
-        if err := h.repos.Activities.Update(activity); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
+        <span class="cov8" title="1">if a.UpdatedAt.IsZero() </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: updated_at is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, activity)</span>
-}
-
-// DeleteActivity removes an activity
-func (h *ActivityHandler) DeleteActivity(c *gin.Context) <span class="cov0" title="0">{
-        id, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
+        <span class="cov8" title="1">if a.DeletedAt != nil &amp;&amp; a.DeletedAt.Before(a.CreatedAt) </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: deleted_at cannot be before created_at", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Activities.Delete(id); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// AddOwnerRequest represents the add owner request body
-type AddOwnerRequest struct {
-        OwnerID   uuid.UUID `json:"owner_id" binding:"required"`
-        OwnerType string    `json:"owner_type" binding:"required,oneof=user tribe"`
-}
-
-// AddOwner adds an owner to an activity
-func (h *ActivityHandler) AddOwner(c *gin.Context) <span class="cov0" title="0">{
-        activityID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var req AddOwnerRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Activities.AddOwner(activityID, req.OwnerID, req.OwnerType); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// RemoveOwner removes an owner from an activity
-func (h *ActivityHandler) RemoveOwner(c *gin.Context) <span class="cov0" title="0">{
-        activityID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">ownerID, err := uuid.Parse(c.Param("ownerId"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid owner ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Activities.RemoveOwner(activityID, ownerID); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// ListOwners returns all owners of an activity
-func (h *ActivityHandler) ListOwners(c *gin.Context) <span class="cov0" title="0">{
-        activityID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">owners, err := h.repos.Activities.GetOwners(activityID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, owners)</span>
-}
-
-// ShareActivityRequest represents the share activity request body
-type ShareActivityRequest struct {
-        TribeID   uuid.UUID  `json:"tribe_id" binding:"required"`
-        ExpiresAt *time.Time `json:"expires_at,omitempty"`
-}
-
-// ShareActivity shares an activity with a tribe
-func (h *ActivityHandler) ShareActivity(c *gin.Context) <span class="cov0" title="0">{
-        activityID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var req ShareActivityRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid request body")
-                return
-        }</span>
-
-        // Get the current user's ID from Firebase UID
-        <span class="cov0" title="0">firebaseUID := middleware.GetFirebaseUID(c)
-        if firebaseUID == "" </span><span class="cov0" title="0">{
-                response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
-                return
-        }</span>
-
-        <span class="cov0" title="0">user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Activities.ShareWithTribe(activityID, req.TribeID, user.ID, req.ExpiresAt); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// UnshareActivity removes an activity share from a tribe
-func (h *ActivityHandler) UnshareActivity(c *gin.Context) <span class="cov0" title="0">{
-        activityID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid activity ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">tribeID, err := uuid.Parse(c.Param("tribeId"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Activities.UnshareWithTribe(activityID, tribeID); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// ListSharedActivities returns all activities shared with the user's tribes
-func (h *ActivityHandler) ListSharedActivities(c *gin.Context) <span class="cov8" title="1">{
-        userID := c.GetString("user_id")
-        if userID == "" </span><span class="cov0" title="0">{
-                fmt.Printf("Error: user ID not found in context\n")
-                response.GinInternalError(c, fmt.Errorf("user ID not found in context"))
-                return
-        }</span>
-
-        <span class="cov8" title="1">uid, err := uuid.Parse(userID)
-        if err != nil </span><span class="cov8" title="1">{
-                fmt.Printf("Error parsing user ID (%s): %v\n", userID, err)
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        // Get user's tribes
-        <span class="cov8" title="1">tribes, err := h.repos.Tribes.GetUserTribes(uid)
-        if err != nil </span><span class="cov0" title="0">{
-                fmt.Printf("Error getting user tribes for user %s: %v\n", uid, err)
-                // Instead of returning an error, return an empty array for the test
-                response.GinSuccess(c, []*models.Activity{})
-                return
-        }</span>
-        <span class="cov8" title="1">fmt.Printf("Found %d tribes for user %s\n", len(tribes), uid)
-
-        // Get shared activities for each tribe
-        var allSharedActivities []*models.Activity
-        for _, tribe := range tribes </span><span class="cov8" title="1">{
-                fmt.Printf("Getting shared activities for tribe %s\n", tribe.ID)
-                activities, err := h.repos.Activities.GetSharedActivities(tribe.ID)
-                if err != nil </span><span class="cov0" title="0">{
-                        fmt.Printf("Error getting shared activities for tribe %s: %v\n", tribe.ID, err)
-                        // Continue instead of returning an error
-                        continue</span>
-                }
-                <span class="cov8" title="1">fmt.Printf("Found %d shared activities for tribe %s\n", len(activities), tribe.ID)
-                allSharedActivities = append(allSharedActivities, activities...)</span>
-        }
-
-        <span class="cov8" title="1">fmt.Printf("Total shared activities found: %d\n", len(allSharedActivities))
-        response.GinSuccess(c, allSharedActivities)</span>
+        <span class="cov8" title="1">return nil</span>
 }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">package handlers
+		<pre class="file" id="file1" style="display: none">package models
+
+import (
+        "github.com/google/uuid"
+)
+
+// ActivityPhoto represents a photo associated with an activity
+type ActivityPhoto struct {
+        BaseModel
+        ActivityID uuid.UUID `json:"activity_id"`
+        URL        string    `json:"url"`
+        Caption    string    `json:"caption"`
+        Metadata   JSONMap   `json:"metadata"`
+}
+
+// Validate ensures the activity photo data is valid
+func (p *ActivityPhoto) Validate() error <span class="cov8" title="1">{
+        if err := p.BaseModel.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if p.ActivityID == uuid.Nil </span><span class="cov8" title="1">{
+                return ErrInvalidActivityID
+        }</span>
+        <span class="cov8" title="1">if p.URL == "" </span><span class="cov8" title="1">{
+                return ErrInvalidURL
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package models
+
+import "errors"
+
+// Common errors
+var (
+        ErrNotFound     = errors.New("not found")
+        ErrInvalidInput = errors.New("invalid input")
+        ErrUnauthorized = errors.New("unauthorized")
+        ErrForbidden    = errors.New("forbidden")
+        ErrDuplicate    = errors.New("duplicate")
+)
+
+// Sync-specific errors
+var (
+        // Configuration errors
+        ErrInvalidSyncConfig = errors.New("invalid sync configuration")
+        ErrInvalidSyncSource = errors.New("invalid sync source")
+        ErrMissingSyncID     = errors.New("missing sync ID")
+        ErrInvalidSyncStatus = errors.New("invalid sync status")
+
+        // State transition errors
+        ErrInvalidSyncTransition = errors.New("invalid sync state transition")
+        ErrSyncDisabled          = errors.New("sync is disabled")
+        ErrSyncAlreadyEnabled    = errors.New("sync is already enabled")
+
+        // Conflict errors
+        ErrConflictNotFound        = errors.New("sync conflict not found")
+        ErrConflictAlreadyResolved = errors.New("sync conflict already resolved")
+        ErrInvalidResolution       = errors.New("invalid conflict resolution")
+
+        // External source errors
+        ErrExternalSourceUnavailable = errors.New("external sync source unavailable")
+        ErrExternalSourceError       = errors.New("external sync source error")
+        ErrExternalSourceTimeout     = errors.New("external sync source timeout")
+
+        // ErrConcurrentModification is returned when a concurrent modification is detected
+        ErrConcurrentModification = errors.New("concurrent modification detected")
+)
+
+// Activity Photo errors
+var (
+        ErrInvalidID         = errors.New("invalid ID")
+        ErrInvalidActivityID = errors.New("invalid activity ID")
+        ErrInvalidURL        = errors.New("invalid URL")
+        ErrInvalidCreatedAt  = errors.New("invalid created at time")
+        ErrInvalidUpdatedAt  = errors.New("invalid updated at time")
+        ErrInvalidDeletedAt  = errors.New("deleted at time cannot be before created at time")
+)
+
+// IsSyncError checks if an error is a sync-related error
+func IsSyncError(err error) bool <span class="cov8" title="1">{
+        return errors.Is(err, ErrInvalidSyncConfig) ||
+                errors.Is(err, ErrInvalidSyncSource) ||
+                errors.Is(err, ErrMissingSyncID) ||
+                errors.Is(err, ErrInvalidSyncStatus) ||
+                errors.Is(err, ErrInvalidSyncTransition) ||
+                errors.Is(err, ErrSyncDisabled) ||
+                errors.Is(err, ErrSyncAlreadyEnabled) ||
+                errors.Is(err, ErrConflictNotFound) ||
+                errors.Is(err, ErrConflictAlreadyResolved) ||
+                errors.Is(err, ErrInvalidResolution) ||
+                errors.Is(err, ErrExternalSourceUnavailable) ||
+                errors.Is(err, ErrExternalSourceError) ||
+                errors.Is(err, ErrExternalSourceTimeout)
+}</span>
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package models
 
 import (
         "encoding/json"
-        "errors"
-        "io"
-        "net/http"
-        "strconv"
+        "fmt"
         "time"
 
-        "github.com/go-chi/chi/v5"
         "github.com/google/uuid"
-        "github.com/jenglund/rlship-tools/internal/api/response"
-        "github.com/jenglund/rlship-tools/internal/api/service"
-        "github.com/jenglund/rlship-tools/internal/models"
 )
 
-type ListHandler struct {
-        service service.ListService
-}
-
-func NewListHandler(service service.ListService) *ListHandler <span class="cov0" title="0">{
-        return &amp;ListHandler{service: service}
-}</span>
-
-// RegisterRoutes registers the list management routes
-func (h *ListHandler) RegisterRoutes(r chi.Router) <span class="cov0" title="0">{
-        r.Route("/lists", func(r chi.Router) </span><span class="cov0" title="0">{
-                r.Post("/", h.CreateList)
-                r.Get("/", h.ListLists)
-                r.Get("/{listID}", h.GetList)
-                r.Put("/{listID}", h.UpdateList)
-                r.Delete("/{listID}", h.DeleteList)
-
-                // List items
-                r.Post("/{listID}/items", h.AddListItem)
-                r.Get("/{listID}/items", h.GetListItems)
-                r.Put("/{listID}/items/{itemID}", h.UpdateListItem)
-                r.Delete("/{listID}/items/{itemID}", h.RemoveListItem)
-
-                // Menu generation
-                r.Post("/menu", h.GenerateMenu)
-
-                // Sync management
-                r.Post("/{listID}/sync", h.SyncList)
-                r.Get("/{listID}/conflicts", h.GetListConflicts)
-                r.Post("/{listID}/conflicts/{conflictID}/resolve", h.ResolveListConflict)
-
-                // Owner management
-                r.Post("/{listID}/owners", h.AddListOwner)
-                r.Delete("/{listID}/owners/{ownerID}", h.RemoveListOwner)
-                r.Get("/{listID}/owners", h.GetListOwners)
-                r.Get("/user/{userID}", h.GetUserLists)
-                r.Get("/tribe/{tribeID}", h.GetTribeLists)
-
-                // Sharing management
-                r.Post("/{listID}/share", h.ShareList)
-                r.Delete("/{listID}/share/{tribeID}", h.UnshareList)
-                r.Get("/shared/{tribeID}", h.GetSharedLists)
-
-                // New handler
-                r.Get("/{listID}/shares", h.GetListShares)
-        }</span>)
-}
-
-// CreateList handles the creation of a new list
-func (h *ListHandler) CreateList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        var list models.List
-        if err := json.NewDecoder(r.Body).Decode(&amp;list); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.CreateList(&amp;list); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusCreated, list)</span>
-}
-
-// ListLists handles retrieving a paginated list of lists
-func (h *ListHandler) ListLists(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-        limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-        if limit == 0 </span><span class="cov0" title="0">{
-                limit = 20
-        }</span>
-
-        <span class="cov0" title="0">lists, err := h.service.List(offset, limit)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, lists)</span>
-}
-
-// GetList handles retrieving a single list by ID
-func (h *ListHandler) GetList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">list, err := h.service.GetList(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusNotFound, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, list)</span>
-}
-
-// UpdateList handles updating an existing list
-func (h *ListHandler) UpdateList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var list models.List
-        if err := json.NewDecoder(r.Body).Decode(&amp;list); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">list.ID = listID
-        if err := h.service.UpdateList(&amp;list); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, list)</span>
-}
-
-// DeleteList handles deleting a list
-func (h *ListHandler) DeleteList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.DeleteList(listID); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// AddListItem handles adding a new item to a list
-func (h *ListHandler) AddListItem(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var item models.ListItem
-        if err := json.NewDecoder(r.Body).Decode(&amp;item); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">item.ListID = listID
-        if err := h.service.AddListItem(&amp;item); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusCreated, item)</span>
-}
-
-// GetListItems handles retrieving all items in a list
-func (h *ListHandler) GetListItems(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">items, err := h.service.GetListItems(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, items)</span>
-}
-
-// UpdateListItem handles updating an existing list item
-func (h *ListHandler) UpdateListItem(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">itemID, err := uuid.Parse(chi.URLParam(r, "itemID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid item ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var item models.ListItem
-        if err := json.NewDecoder(r.Body).Decode(&amp;item); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">item.ID = itemID
-        item.ListID = listID
-        if err := h.service.UpdateListItem(&amp;item); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, item)</span>
-}
-
-// RemoveListItem handles removing an item from a list
-func (h *ListHandler) RemoveListItem(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">itemID, err := uuid.Parse(chi.URLParam(r, "itemID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid item ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.RemoveListItem(listID, itemID); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// GenerateMenu handles generating a menu from multiple lists
-func (h *ListHandler) GenerateMenu(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        var params models.MenuParams
-        if err := json.NewDecoder(r.Body).Decode(&amp;params); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">lists, err := h.service.GenerateMenu(&amp;params)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, lists)</span>
-}
-
-// SyncList handles syncing a list with its external source
-func (h *ListHandler) SyncList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID format")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.SyncList(listID); err != nil </span><span class="cov0" title="0">{
-                switch </span>{
-                case errors.Is(err, models.ErrNotFound):<span class="cov0" title="0">
-                        response.Error(w, http.StatusNotFound, "List not found")</span>
-                case errors.Is(err, models.ErrSyncDisabled):<span class="cov0" title="0">
-                        response.Error(w, http.StatusBadRequest, "Sync is not enabled for this list")</span>
-                case errors.Is(err, models.ErrExternalSourceUnavailable):<span class="cov0" title="0">
-                        response.Error(w, http.StatusServiceUnavailable, "External sync source is unavailable")</span>
-                case errors.Is(err, models.ErrExternalSourceTimeout):<span class="cov0" title="0">
-                        response.Error(w, http.StatusGatewayTimeout, "External sync source timed out")</span>
-                case errors.Is(err, models.ErrExternalSourceError):<span class="cov0" title="0">
-                        response.Error(w, http.StatusBadGateway, "External sync source error")</span>
-                default:<span class="cov0" title="0">
-                        response.Error(w, http.StatusInternalServerError, "Failed to sync list")</span>
-                }
-                <span class="cov0" title="0">return</span>
-        }
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// GetListConflicts handles retrieving all unresolved conflicts for a list
-func (h *ListHandler) GetListConflicts(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID format")
-                return
-        }</span>
-
-        <span class="cov0" title="0">conflicts, err := h.service.GetListConflicts(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                switch </span>{
-                case errors.Is(err, models.ErrNotFound):<span class="cov0" title="0">
-                        response.Error(w, http.StatusNotFound, "List not found")</span>
-                case errors.Is(err, models.ErrSyncDisabled):<span class="cov0" title="0">
-                        response.Error(w, http.StatusBadRequest, "Sync is not enabled for this list")</span>
-                default:<span class="cov0" title="0">
-                        response.Error(w, http.StatusInternalServerError, "Failed to get list conflicts")</span>
-                }
-                <span class="cov0" title="0">return</span>
-        }
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, conflicts)</span>
-}
-
-// ResolveListConflict handles resolving a list sync conflict
-func (h *ListHandler) ResolveListConflict(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID format")
-                return
-        }</span>
-
-        <span class="cov0" title="0">conflictID, err := uuid.Parse(chi.URLParam(r, "conflictID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid conflict ID format")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var resolution struct {
-                Resolution string `json:"resolution"`
-        }
-        if err := json.NewDecoder(r.Body).Decode(&amp;resolution); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.ResolveListConflict(listID, conflictID, resolution.Resolution); err != nil </span><span class="cov0" title="0">{
-                switch </span>{
-                case errors.Is(err, models.ErrNotFound):<span class="cov0" title="0">
-                        response.Error(w, http.StatusNotFound, "List not found")</span>
-                case errors.Is(err, models.ErrConflictNotFound):<span class="cov0" title="0">
-                        response.Error(w, http.StatusNotFound, "Conflict not found")</span>
-                case errors.Is(err, models.ErrConflictAlreadyResolved):<span class="cov0" title="0">
-                        response.Error(w, http.StatusConflict, "Conflict already resolved")</span>
-                case errors.Is(err, models.ErrInvalidResolution):<span class="cov0" title="0">
-                        response.Error(w, http.StatusBadRequest, "Invalid resolution")</span>
-                case errors.Is(err, models.ErrSyncDisabled):<span class="cov0" title="0">
-                        response.Error(w, http.StatusBadRequest, "Sync is not enabled for this list")</span>
-                default:<span class="cov0" title="0">
-                        response.Error(w, http.StatusInternalServerError, "Failed to resolve conflict")</span>
-                }
-                <span class="cov0" title="0">return</span>
-        }
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// AddListOwner handles adding a new owner to a list
-func (h *ListHandler) AddListOwner(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var req struct {
-                OwnerID   uuid.UUID `json:"owner_id"`
-                OwnerType string    `json:"owner_type"`
-        }
-
-        if err := json.NewDecoder(r.Body).Decode(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.AddListOwner(listID, req.OwnerID, req.OwnerType); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// RemoveListOwner handles removing an owner from a list
-func (h *ListHandler) RemoveListOwner(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">ownerID, err := uuid.Parse(chi.URLParam(r, "ownerID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid owner ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.RemoveListOwner(listID, ownerID); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// GetListOwners handles retrieving all owners of a list
-func (h *ListHandler) GetListOwners(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">owners, err := h.service.GetListOwners(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, owners)</span>
-}
-
-// GetUserLists handles retrieving all lists owned by a user
-func (h *ListHandler) GetUserLists(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        userID, err := uuid.Parse(chi.URLParam(r, "userID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid user ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">lists, err := h.service.GetUserLists(userID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, lists)</span>
-}
-
-// GetTribeLists handles retrieving all lists owned by a tribe
-func (h *ListHandler) GetTribeLists(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">lists, err := h.service.GetTribeLists(tribeID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, lists)</span>
-}
-
-// ShareList handles sharing a list with a tribe
-func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var req struct {
-                TribeID   uuid.UUID  `json:"tribe_id"`
-                ExpiresAt *time.Time `json:"expires_at,omitempty"`
-        }
-
-        if err := json.NewDecoder(r.Body).Decode(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid request body")
-                return
-        }</span>
-
-        // Get the user ID from the authenticated context
-        <span class="cov0" title="0">userID := r.Context().Value("user_id").(uuid.UUID)
-
-        // Check if the user has permission to share the list
-        owners, err := h.service.GetListOwners(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">hasPermission := false
-        for _, owner := range owners </span><span class="cov0" title="0">{
-                if owner.OwnerID == userID &amp;&amp; owner.OwnerType == "user" </span><span class="cov0" title="0">{
-                        hasPermission = true
-                        break</span>
-                }
-        }
-
-        <span class="cov0" title="0">if !hasPermission </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusForbidden, "You do not have permission to share this list")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.service.ShareListWithTribe(listID, req.TribeID, userID, req.ExpiresAt); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// UnshareList handles removing a list share from a tribe
-func (h *ListHandler) UnshareList(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "listID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid list ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
-                return
-        }</span>
-
-        // Get the user ID from the authenticated context
-        <span class="cov0" title="0">userID := r.Context().Value("user_id").(uuid.UUID)
-
-        if err := h.service.UnshareListWithTribe(listID, tribeID, userID); err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.NoContent(w)</span>
-}
-
-// GetSharedLists handles retrieving all lists shared with a tribe
-func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">lists, err := h.service.GetSharedLists(tribeID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusInternalServerError, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, lists)</span>
-}
-
-// GetListShares handles retrieving all shares for a list
-func (h *ListHandler) GetListShares(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "invalid list ID")
-                return
-        }</span>
-
-        // Get the user ID from the authenticated context
-        <span class="cov0" title="0">userID := r.Context().Value("user_id").(uuid.UUID)
-
-        // Check if the user has permission to view the list shares
-        owners, err := h.service.GetListOwners(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                h.handleError(w, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">hasPermission := false
-        for _, owner := range owners </span><span class="cov0" title="0">{
-                if owner.OwnerID == userID &amp;&amp; owner.OwnerType == "user" </span><span class="cov0" title="0">{
-                        hasPermission = true
-                        break</span>
-                }
-        }
-
-        <span class="cov0" title="0">if !hasPermission </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusForbidden, "you do not have permission to view this list's shares")
-                return
-        }</span>
-
-        <span class="cov0" title="0">shares, err := h.service.GetListShares(listID)
-        if err != nil </span><span class="cov0" title="0">{
-                h.handleError(w, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.JSON(w, http.StatusOK, shares)</span>
-}
-
-// handleError converts service errors to appropriate HTTP responses
-func (h *ListHandler) handleError(w http.ResponseWriter, err error) <span class="cov0" title="0">{
-        switch </span>{
-        case errors.Is(err, models.ErrNotFound):<span class="cov0" title="0">
-                response.Error(w, http.StatusNotFound, err.Error())</span>
-        case errors.Is(err, models.ErrInvalidInput):<span class="cov0" title="0">
-                response.Error(w, http.StatusBadRequest, err.Error())</span>
-        case errors.Is(err, models.ErrUnauthorized):<span class="cov0" title="0">
-                response.Error(w, http.StatusUnauthorized, err.Error())</span>
-        case errors.Is(err, models.ErrForbidden):<span class="cov0" title="0">
-                response.Error(w, http.StatusForbidden, err.Error())</span>
-        default:<span class="cov0" title="0">
-                response.Error(w, http.StatusInternalServerError, err.Error())</span>
+// ListType represents the type of list
+type ListType string
+
+const (
+        ListTypeGeneral   ListType = "general"
+        ListTypeLocation  ListType = "location"
+        ListTypeActivity  ListType = "activity"
+        ListTypeInterest  ListType = "interest"
+        ListTypeGoogleMap ListType = "google_map"
+)
+
+func (lt ListType) Validate() error <span class="cov8" title="1">{
+        switch lt </span>{
+        case ListTypeGeneral, ListTypeLocation, ListTypeActivity, ListTypeInterest, ListTypeGoogleMap:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid list type: %s", ErrInvalidInput, lt)</span>
         }
 }
 
-// ShareListWithTribe handles the request to share a list with a tribe
-func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "invalid list ID")
-                return
-        }</span>
+// ListSyncStatus represents the sync status of a list
+type ListSyncStatus string
 
-        <span class="cov0" title="0">tribeID, err := uuid.Parse(chi.URLParam(r, "tribeId"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "invalid tribe ID")
-                return
-        }</span>
+const (
+        ListSyncStatusNone     ListSyncStatus = "none"
+        ListSyncStatusPending  ListSyncStatus = "pending"
+        ListSyncStatusSynced   ListSyncStatus = "synced"
+        ListSyncStatusConflict ListSyncStatus = "conflict"
+)
 
-        <span class="cov0" title="0">userID, ok := r.Context().Value("user_id").(uuid.UUID)
-        if !ok </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusUnauthorized, "user not authenticated")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var req struct {
-                ExpiresAt *time.Time `json:"expires_at"`
+func (ls ListSyncStatus) Validate() error <span class="cov8" title="1">{
+        switch ls </span>{
+        case ListSyncStatusNone, ListSyncStatusSynced, ListSyncStatusPending, ListSyncStatusConflict:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid sync status: %s", ErrInvalidInput, ls)</span>
         }
-        if err := json.NewDecoder(r.Body).Decode(&amp;req); err != nil &amp;&amp; err != io.EOF </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "invalid request body")
-                return
-        }</span>
-
-        <span class="cov0" title="0">err = h.service.ShareListWithTribe(listID, tribeID, userID, req.ExpiresAt)
-        if err != nil </span><span class="cov0" title="0">{
-                h.handleError(w, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">w.WriteHeader(http.StatusNoContent)</span>
 }
 
-// UnshareListWithTribe handles the request to unshare a list from a tribe
-func (h *ListHandler) UnshareListWithTribe(w http.ResponseWriter, r *http.Request) <span class="cov0" title="0">{
-        listID, err := uuid.Parse(chi.URLParam(r, "id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "invalid list ID")
-                return
+// List represents a list in the system
+type List struct {
+        ID            uuid.UUID      `json:"id" db:"id"`
+        Type          ListType       `json:"type" db:"type"`
+        Name          string         `json:"name" db:"name"`
+        Description   string         `json:"description" db:"description"`
+        Visibility    VisibilityType `json:"visibility" db:"visibility"`
+        SyncConfig    *SyncConfig    `json:"-" db:"-"`                     // Internal sync configuration
+        SyncStatus    ListSyncStatus `json:"sync_status" db:"sync_status"` // Denormalized for querying
+        SyncSource    SyncSource     `json:"sync_source" db:"sync_source"` // Denormalized for querying
+        SyncID        string         `json:"sync_id" db:"sync_id"`         // Denormalized for querying
+        LastSyncAt    *time.Time     `json:"last_sync_at" db:"last_sync_at"`
+        DefaultWeight float64        `json:"default_weight" db:"default_weight"`
+        MaxItems      *int           `json:"max_items" db:"max_items"`
+        CooldownDays  *int           `json:"cooldown_days" db:"cooldown_days"`
+        CreatedAt     time.Time      `json:"created_at" db:"created_at"`
+        UpdatedAt     time.Time      `json:"updated_at" db:"updated_at"`
+        DeletedAt     *time.Time     `json:"deleted_at,omitempty" db:"deleted_at"`
+        Items         []*ListItem    `json:"items,omitempty" db:"-"`
+        Owners        []*ListOwner   `json:"owners,omitempty" db:"-"`
+        Shares        []*ListShare   `json:"shares,omitempty" db:"-"`
+
+        // Owner fields for creation/update operations
+        OwnerID   *uuid.UUID `json:"owner_id,omitempty" db:"-"`
+        OwnerType *OwnerType `json:"owner_type,omitempty" db:"-"`
+}
+
+// Validate performs validation on the List
+func (l *List) Validate() error <span class="cov8" title="1">{
+        if l.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if err := l.Type.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := l.Visibility.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
         }</span>
 
-        <span class="cov0" title="0">tribeID, err := uuid.Parse(chi.URLParam(r, "tribeId"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusBadRequest, "invalid tribe ID")
-                return
+        // Validate sync configuration
+        <span class="cov8" title="1">if l.SyncConfig != nil </span><span class="cov8" title="1">{
+                if err := l.SyncConfig.Validate(); err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+                // Ensure denormalized fields match the config
+                <span class="cov8" title="1">if l.SyncStatus != l.SyncConfig.Status </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync status mismatch", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if l.SyncSource != l.SyncConfig.Source </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync source mismatch", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if l.SyncID != l.SyncConfig.ID </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync ID mismatch", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if !((l.LastSyncAt == nil &amp;&amp; l.SyncConfig.LastSyncAt == nil) ||
+                        (l.LastSyncAt != nil &amp;&amp; l.SyncConfig.LastSyncAt != nil &amp;&amp; l.LastSyncAt.Equal(*l.SyncConfig.LastSyncAt))) </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: last sync time mismatch", ErrInvalidInput)
+                }</span>
+        } else<span class="cov8" title="1"> {
+                // If no sync config, ensure sync fields are in their default state
+                if l.SyncStatus != ListSyncStatusNone </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync status must be none when no config is present", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if l.SyncSource != SyncSourceNone </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync source must be none when no config is present", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if l.SyncID != "" </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync ID must be empty when no config is present", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if l.LastSyncAt != nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: last sync time must be empty when no config is present", ErrInvalidInput)
+                }</span>
+        }
+
+        <span class="cov8" title="1">if l.Name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: list name is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.DefaultWeight &lt;= 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: default weight must be positive", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.MaxItems != nil &amp;&amp; *l.MaxItems &lt;= 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: max items must be positive", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.CooldownDays != nil &amp;&amp; *l.CooldownDays &lt; 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: cooldown days cannot be negative", ErrInvalidInput)
         }</span>
 
-        <span class="cov0" title="0">userID, ok := r.Context().Value("user_id").(uuid.UUID)
-        if !ok </span><span class="cov0" title="0">{
-                response.Error(w, http.StatusUnauthorized, "user not authenticated")
-                return
+        // Validate owner fields if provided
+        <span class="cov8" title="1">if l.OwnerID != nil &amp;&amp; l.OwnerType == nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: owner type is required when owner ID is provided", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.OwnerID == nil &amp;&amp; l.OwnerType != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: owner ID is required when owner type is provided", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.OwnerType != nil </span><span class="cov8" title="1">{
+                if err := l.OwnerType.Validate(); err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ListItem represents an item in a list
+type ListItem struct {
+        ID          uuid.UUID    `json:"id" db:"id"`
+        ListID      uuid.UUID    `json:"list_id" db:"list_id"`
+        Name        string       `json:"name" db:"name"`
+        Description string       `json:"description" db:"description"`
+        Metadata    Metadata     `json:"metadata,omitempty" db:"metadata"`
+        ExternalID  string       `json:"external_id,omitempty" db:"external_id"`
+        Latitude    *float64     `json:"latitude,omitempty" db:"latitude"`
+        Longitude   *float64     `json:"longitude,omitempty" db:"longitude"`
+        Address     *string      `json:"address,omitempty" db:"address"`
+        Location    *LocationRef `json:"location,omitempty" db:"-"`
+        Weight      float64      `json:"weight" db:"weight"`
+        LastChosen  *time.Time   `json:"last_chosen" db:"last_chosen"`
+        ChosenCount int          `json:"chosen_count" db:"chosen_count"`
+        LastUsed    *time.Time   `json:"last_used" db:"last_used"`
+        UseCount    int          `json:"use_count" db:"use_count"`
+        Cooldown    *int         `json:"cooldown" db:"cooldown"`
+        Available   bool         `json:"available" db:"available"`
+        Seasonal    bool         `json:"seasonal" db:"seasonal"`
+        StartDate   *time.Time   `json:"start_date" db:"start_date"`
+        EndDate     *time.Time   `json:"end_date" db:"end_date"`
+        CreatedAt   time.Time    `json:"created_at" db:"created_at"`
+        UpdatedAt   time.Time    `json:"updated_at" db:"updated_at"`
+        DeletedAt   *time.Time   `json:"deleted_at,omitempty" db:"deleted_at"`
+}
+
+// Validate performs validation on the ListItem
+func (li *ListItem) Validate() error <span class="cov8" title="1">{
+        if li.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: item ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if li.ListID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if li.Name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: item name is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if li.Weight &lt;= 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: weight must be positive", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if li.Cooldown != nil &amp;&amp; *li.Cooldown &lt; 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: cooldown cannot be negative", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if li.Seasonal </span><span class="cov8" title="1">{
+                if li.StartDate == nil || li.EndDate == nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: seasonal items must have start and end dates", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if li.StartDate.After(*li.EndDate) </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: start date must be before end date", ErrInvalidInput)
+                }</span>
+        }
+        <span class="cov8" title="1">if li.Latitude != nil &amp;&amp; (li.Longitude == nil || li.Address == nil) </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: location requires latitude, longitude, and address", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// LocationRef represents a reference to a location
+type LocationRef struct {
+        Latitude  float64 `json:"latitude"`
+        Longitude float64 `json:"longitude"`
+        Address   string  `json:"address"`
+        PlaceID   string  `json:"place_id,omitempty"`
+}
+
+// Validate performs validation on the LocationRef
+func (l *LocationRef) Validate() error <span class="cov8" title="1">{
+        if l.Latitude &lt; -90 || l.Latitude &gt; 90 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: latitude must be between -90 and 90", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.Longitude &lt; -180 || l.Longitude &gt; 180 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: longitude must be between -180 and 180", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.Address == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: address is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// Metadata represents additional data for a list item
+type Metadata = JSONMap
+
+// Validate performs validation on the Metadata
+func (m Metadata) Validate() error <span class="cov8" title="1">{
+        if m == nil </span><span class="cov8" title="1">{
+                return nil
         }</span>
 
-        <span class="cov0" title="0">err = h.service.UnshareListWithTribe(listID, tribeID, userID)
-        if err != nil </span><span class="cov0" title="0">{
-                h.handleError(w, err)
-                return
+        // Ensure metadata can be marshaled to JSON
+        <span class="cov8" title="1">bytes, err := json.Marshal(m)
+        if err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: invalid metadata: %v", ErrInvalidInput, err)
         }</span>
 
-        <span class="cov0" title="0">w.WriteHeader(http.StatusNoContent)</span>
+        // Check if the metadata is too large (&gt; 50KB)
+        <span class="cov8" title="1">const maxSize = 50 * 1024 // 50KB
+        if len(bytes) &gt; maxSize </span><span class="cov0" title="0">{
+                return fmt.Errorf("%w: metadata size exceeds maximum allowed size of 50KB", ErrInvalidInput)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ListOwner represents an owner of a list
+type ListOwner struct {
+        ListID    uuid.UUID  `json:"list_id" db:"list_id"`
+        OwnerID   uuid.UUID  `json:"owner_id" db:"owner_id"`
+        OwnerType OwnerType  `json:"owner_type" db:"owner_type"`
+        CreatedAt time.Time  `json:"created_at" db:"created_at"`
+        UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+        DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
+}
+
+// Validate performs validation on the ListOwner
+func (lo *ListOwner) Validate() error <span class="cov8" title="1">{
+        if lo.ListID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if lo.OwnerID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: owner ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if err := lo.OwnerType.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ListShare represents a shared list with a tribe
+type ListShare struct {
+        ListID    uuid.UUID  `json:"list_id" db:"list_id"`
+        TribeID   uuid.UUID  `json:"tribe_id" db:"tribe_id"`
+        UserID    uuid.UUID  `json:"user_id" db:"user_id"`
+        CreatedAt time.Time  `json:"created_at" db:"created_at"`
+        UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+        ExpiresAt *time.Time `json:"expires_at,omitempty" db:"expires_at"`
+        DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
+        Version   int        `json:"version" db:"version"`
+}
+
+// Validate performs validation on the ListShare
+func (ls *ListShare) Validate() error <span class="cov8" title="1">{
+        if ls.ListID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if ls.TribeID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: tribe ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if ls.UserID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: user ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if ls.ExpiresAt != nil &amp;&amp; ls.ExpiresAt.Before(time.Now()) </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: expiration date must be in the future", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// ListRepository defines the interface for list storage operations
+type ListRepository interface {
+        // Basic CRUD operations
+        Create(list *List) error
+        GetByID(id uuid.UUID) (*List, error)
+        Update(list *List) error
+        Delete(id uuid.UUID) error
+        List(offset, limit int) ([]*List, error)
+
+        // List item operations
+        AddItem(item *ListItem) error
+        UpdateItem(item *ListItem) error
+        RemoveItem(listID, itemID uuid.UUID) error
+        GetItems(listID uuid.UUID) ([]*ListItem, error)
+        GetEligibleItems(listIDs []uuid.UUID, filters map[string]interface{}) ([]*ListItem, error)
+        UpdateItemStats(itemID uuid.UUID, chosen bool) error
+        MarkItemChosen(itemID uuid.UUID) error
+
+        // Owner management
+        AddOwner(owner *ListOwner) error
+        RemoveOwner(listID, ownerID uuid.UUID) error
+        GetOwners(listID uuid.UUID) ([]*ListOwner, error)
+        GetUserLists(userID uuid.UUID) ([]*List, error)
+        GetTribeLists(tribeID uuid.UUID) ([]*List, error)
+        GetListsByOwner(ownerID uuid.UUID, ownerType OwnerType) ([]*List, error)
+
+        // Share management
+        ShareWithTribe(share *ListShare) error
+        UnshareWithTribe(listID, tribeID uuid.UUID) error
+        GetSharedLists(tribeID uuid.UUID) ([]*List, error)
+        GetSharedTribes(listID uuid.UUID) ([]*Tribe, error)
+        GetListShares(listID uuid.UUID) ([]*ListShare, error)
+
+        // Sync management
+        UpdateSyncStatus(listID uuid.UUID, status ListSyncStatus) error
+        GetConflicts(listID uuid.UUID) ([]*SyncConflict, error)
+        CreateConflict(conflict *SyncConflict) error
+        ResolveConflict(conflictID uuid.UUID) error
+        GetListsBySource(source string) ([]*List, error)
+        AddConflict(conflict *SyncConflict) error
 }
 </pre>
 		
-		<pre class="file" id="file2" style="display: none">package handlers
+		<pre class="file" id="file4" style="display: none">package models
 
 import (
         "fmt"
-        "strconv"
-        "strings"
         "time"
 
-        "github.com/gin-gonic/gin"
         "github.com/google/uuid"
-        "github.com/jenglund/rlship-tools/internal/api/response"
-        "github.com/jenglund/rlship-tools/internal/middleware"
-        "github.com/jenglund/rlship-tools/internal/models"
-        "github.com/jenglund/rlship-tools/internal/repository/postgres"
 )
 
-// TribeHandler handles tribe-related requests
-type TribeHandler struct {
-        repos *postgres.Repositories
+// SyncSource represents a supported external sync source
+type SyncSource string
+
+const (
+        SyncSourceNone       SyncSource = "none"
+        SyncSourceGoogleMaps SyncSource = "google_maps"
+        SyncSourceManual     SyncSource = "manual"
+        SyncSourceImported   SyncSource = "imported"
+)
+
+// Validate checks if the sync source is valid
+func (s SyncSource) Validate() error <span class="cov8" title="1">{
+        switch s </span>{
+        case SyncSourceNone, SyncSourceGoogleMaps, SyncSourceManual, SyncSourceImported:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid sync source: %s", ErrInvalidInput, s)</span>
+        }
 }
 
-// NewTribeHandler creates a new tribe handler
-func NewTribeHandler(repos *postgres.Repositories) *TribeHandler <span class="cov0" title="0">{
-        return &amp;TribeHandler{repos: repos}
-}</span>
-
-// RegisterRoutes registers the tribe routes
-func (h *TribeHandler) RegisterRoutes(r *gin.RouterGroup) <span class="cov0" title="0">{
-        tribes := r.Group("/tribes", middleware.RequireAuth())
-        </span><span class="cov0" title="0">{
-                tribes.POST("", h.CreateTribe)
-                tribes.GET("", h.ListTribes)
-                tribes.GET("/my", h.ListMyTribes)
-                tribes.GET("/:id", h.GetTribe)
-                tribes.PUT("/:id", h.UpdateTribe)
-                tribes.DELETE("/:id", h.DeleteTribe)
-
-                // Member management
-                tribes.POST("/:id/members", h.AddMember)
-                tribes.DELETE("/:id/members/:userId", h.RemoveMember)
-                tribes.GET("/:id/members", h.ListMembers)
-        }</span>
+// SyncTransition represents a valid state transition in the sync state machine
+type SyncTransition struct {
+        From   ListSyncStatus
+        To     ListSyncStatus
+        Action string
 }
 
-// CreateTribeRequest represents the create tribe request body
-type CreateTribeRequest struct {
-        Name        string                `json:"name" binding:"required"`
-        Type        models.TribeType      `json:"type" binding:"required"`
-        Description string                `json:"description"`
-        Visibility  models.VisibilityType `json:"visibility" binding:"required"`
-        Metadata    interface{}           `json:"metadata,omitempty"`
+// ValidSyncTransitions defines all valid state transitions
+var ValidSyncTransitions = []SyncTransition{
+        {From: ListSyncStatusNone, To: ListSyncStatusPending, Action: "configure_sync"},
+        {From: ListSyncStatusPending, To: ListSyncStatusSynced, Action: "sync_complete"},
+        {From: ListSyncStatusPending, To: ListSyncStatusConflict, Action: "conflict_detected"},
+        {From: ListSyncStatusSynced, To: ListSyncStatusPending, Action: "local_change"},
+        {From: ListSyncStatusSynced, To: ListSyncStatusConflict, Action: "remote_change_conflict"},
+        {From: ListSyncStatusConflict, To: ListSyncStatusPending, Action: "resolve_conflict"},
+        {From: ListSyncStatusConflict, To: ListSyncStatusSynced, Action: "auto_resolve"},
+        {From: ListSyncStatusPending, To: ListSyncStatusNone, Action: "disable_sync"},
+        {From: ListSyncStatusSynced, To: ListSyncStatusNone, Action: "disable_sync"},
+        {From: ListSyncStatusConflict, To: ListSyncStatusNone, Action: "disable_sync"},
 }
 
-// CreateTribe creates a new tribe
-func (h *TribeHandler) CreateTribe(c *gin.Context) <span class="cov0" title="0">{
-        var req CreateTribeRequest
+// SyncConfig represents the sync configuration for a list
+type SyncConfig struct {
+        Source     SyncSource     `json:"source" db:"sync_source"`
+        ID         string         `json:"id" db:"sync_id"`
+        Status     ListSyncStatus `json:"status" db:"sync_status"`
+        LastSyncAt *time.Time     `json:"last_sync_at" db:"last_sync_at"`
+}
 
-        // Validate request body
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                fmt.Printf("DEBUG: Failed to bind JSON: %v\n", err)
-                response.GinBadRequest(c, fmt.Sprintf("Invalid request body: %v", err))
-                return
+// Validate performs validation on the sync configuration
+func (sc *SyncConfig) Validate() error <span class="cov8" title="1">{
+        if err := sc.Source.Validate(); err != nil </span><span class="cov0" title="0">{
+                return err
         }</span>
 
-        // Validate name
-        <span class="cov0" title="0">if req.Name == "" </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Tribe name is required")
-                return
+        <span class="cov8" title="1">if err := sc.Status.Validate(); err != nil </span><span class="cov0" title="0">{
+                return err
         }</span>
 
-        <span class="cov0" title="0">if len(req.Name) &gt; 100 </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Tribe name cannot be longer than 100 characters")
-                return
-        }</span>
-
-        // Validate tribe type
-        <span class="cov0" title="0">if err := req.Type.Validate(); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, fmt.Sprintf("Invalid tribe type: %v", err))
-                return
-        }</span>
-
-        // Validate visibility
-        <span class="cov0" title="0">if err := req.Visibility.Validate(); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, fmt.Sprintf("Invalid visibility type: %v", err))
-                return
-        }</span>
-
-        // Convert metadata to JSONMap if provided
-        <span class="cov0" title="0">var metadata models.JSONMap
-        if req.Metadata != nil </span><span class="cov0" title="0">{
-                switch m := req.Metadata.(type) </span>{
-                case map[string]interface{}:<span class="cov0" title="0">
-                        metadata = models.JSONMap(m)</span>
-                case models.JSONMap:<span class="cov0" title="0">
-                        metadata = m</span>
-                default:<span class="cov0" title="0">
-                        response.GinBadRequest(c, "Metadata must be a valid JSON object")
-                        return</span>
-                }
-
-                // Validate metadata
-                <span class="cov0" title="0">if err := metadata.Validate(); err != nil </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, err.Error())
-                        return
+        // Validate sync source specific rules
+        <span class="cov8" title="1">switch sc.Source </span>{
+        case SyncSourceGoogleMaps:<span class="cov8" title="1">
+                if sc.ID == "" </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: Google Maps sync requires a valid place ID", ErrInvalidInput)
                 }</span>
-        } else<span class="cov0" title="0"> {
-                // Initialize empty metadata if nil was provided
-                metadata = models.JSONMap{}
-        }</span>
-
-        // Get user ID from context
-        <span class="cov0" title="0">userID, err := getUserIDFromContext(c)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinUnauthorized(c, "Authentication required")
-                return
-        }</span>
-
-        // Create the tribe object
-        <span class="cov0" title="0">now := time.Now()
-
-        // Make sure metadata is never nil - initialize to empty map if needed
-        if metadata == nil </span><span class="cov0" title="0">{
-                metadata = models.JSONMap{}
-        }</span>
-
-        <span class="cov0" title="0">tribe := &amp;models.Tribe{
-                BaseModel: models.BaseModel{
-                        ID:        uuid.New(),
-                        CreatedAt: now,
-                        UpdatedAt: now,
-                        Version:   1,
-                },
-                Name:        req.Name,
-                Type:        req.Type,
-                Description: req.Description,
-                Visibility:  req.Visibility,
-                Metadata:    metadata,
-        }
-
-        // Validate the tribe
-        if err := tribe.Validate(); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, err.Error())
-                return
-        }</span>
-
-        // Create tribe and add member in a transaction
-        <span class="cov0" title="0">if err := h.repos.Tribes.Create(tribe); err != nil </span><span class="cov0" title="0">{
-                // Check for duplicate tribe name error
-                if strings.Contains(err.Error(), "duplicate key value violates unique constraint") &amp;&amp;
-                        strings.Contains(err.Error(), "idx_unique_tribe_name") </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, "A tribe with this name already exists")
-                        return
+        case SyncSourceNone:<span class="cov8" title="1">
+                if sc.Status != ListSyncStatusNone </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync status must be none when no source is configured", ErrInvalidInput)
                 }</span>
-                <span class="cov0" title="0">fmt.Printf("DEBUG: Failed to create tribe: %v\n", err)
-                response.GinBadRequest(c, fmt.Sprintf("Failed to create tribe: %v", err))
-                return</span>
-        }
-
-        // Add the creator as the first member
-        <span class="cov0" title="0">if err := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, nil); err != nil </span><span class="cov0" title="0">{
-                fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", err)
-
-                // Try to clean up the tribe if we couldn't add the member
-                deleteErr := h.repos.Tribes.Delete(tribe.ID)
-                if deleteErr != nil </span><span class="cov0" title="0">{
-                        fmt.Printf("DEBUG: Failed to clean up tribe after error: %v\n", deleteErr)
+                <span class="cov8" title="1">if sc.ID != "" </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: sync ID must be empty when no source is configured", ErrInvalidInput)
                 }</span>
-
-                <span class="cov0" title="0">response.GinInternalError(c, err)
-                return</span>
-        }
-
-        // Get the updated tribe with members
-        <span class="cov0" title="0">tribe, err = h.repos.Tribes.GetByID(tribe.ID)
-        if err != nil </span><span class="cov0" title="0">{
-                fmt.Printf("DEBUG: Failed to get updated tribe: %v\n", err)
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinCreated(c, tribe)</span>
-}
-
-// Helper function to get user ID from context
-func getUserIDFromContext(c *gin.Context) (uuid.UUID, error) <span class="cov0" title="0">{
-        // Try to get user ID directly first
-        if userIDVal, exists := c.Get("user_id"); exists &amp;&amp; userIDVal != nil </span><span class="cov0" title="0">{
-                switch id := userIDVal.(type) </span>{
-                case uuid.UUID:<span class="cov0" title="0">
-                        return id, nil</span>
-                case string:<span class="cov0" title="0">
-                        return uuid.Parse(id)</span>
-                }
-        }
-
-        // If we couldn't get a valid user ID, return an error
-        <span class="cov0" title="0">return uuid.Nil, fmt.Errorf("user ID not found in context")</span>
-}
-
-// ListTribes returns a paginated list of all tribes
-func (h *TribeHandler) ListTribes(c *gin.Context) <span class="cov0" title="0">{
-        // Parse pagination parameters
-        page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-        limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-
-        // Validate pagination parameters
-        if page &lt; 1 </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Page number must be greater than 0")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if limit &lt; 1 </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Limit must be greater than 0")
-                return
-        }</span>
-
-        // Calculate offset
-        <span class="cov0" title="0">offset := (page - 1) * limit
-
-        // Parse filter parameters
-        tribeType := c.Query("type")
-
-        // Validate tribe type if provided
-        if tribeType != "" </span><span class="cov0" title="0">{
-                valid := false
-                validTypes := []models.TribeType{
-                        models.TribeTypeCouple,
-                        models.TribeTypePolyCule,
-                        models.TribeTypeFriends,
-                        models.TribeTypeFamily,
-                        models.TribeTypeRoommates,
-                        models.TribeTypeCoworkers,
-                        models.TribeTypeCustom,
-                }
-
-                // Convert type to lowercase for case-insensitive matching
-                typeToCheck := strings.ToLower(tribeType)
-
-                for _, validType := range validTypes </span><span class="cov0" title="0">{
-                        if models.TribeType(typeToCheck) == validType </span><span class="cov0" title="0">{
-                                valid = true
-                                tribeType = string(validType) // Use canonical version
-                                break</span>
-                        }
-                }
-
-                <span class="cov0" title="0">if !valid </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, "Invalid tribe type")
-                        return
+                <span class="cov8" title="1">if sc.LastSyncAt != nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: last sync time must be empty when no source is configured", ErrInvalidInput)
                 }</span>
         }
 
-        <span class="cov0" title="0">var tribes []*models.Tribe
-        var err error
+        <span class="cov8" title="1">return nil</span>
+}
 
-        // Fetch tribes based on filter
-        if tribeType != "" </span><span class="cov0" title="0">{
-                fmt.Printf("DEBUG: Filtering tribes by type: %s\n", tribeType)
-                tribes, err = h.repos.Tribes.GetByType(models.TribeType(tribeType), offset, limit)
-                if err != nil </span><span class="cov0" title="0">{
-                        fmt.Printf("DEBUG: Error getting tribes by type: %v\n", err)
-                        response.GinInternalError(c, err)
-                        return
-                }</span>
-        } else<span class="cov0" title="0"> {
-                tribes, err = h.repos.Tribes.List(offset, limit)
-                if err != nil </span><span class="cov0" title="0">{
-                        fmt.Printf("DEBUG: Error listing tribes: %v\n", err)
-                        response.GinInternalError(c, err)
-                        return
+// ValidateTransition checks if a sync status transition is valid
+func ValidateTransition(from, to ListSyncStatus, action string) error <span class="cov8" title="1">{
+        for _, t := range ValidSyncTransitions </span><span class="cov8" title="1">{
+                if t.From == from &amp;&amp; t.To == to &amp;&amp; t.Action == action </span><span class="cov8" title="1">{
+                        return nil
                 }</span>
         }
-
-        <span class="cov0" title="0">response.GinSuccess(c, tribes)</span>
+        <span class="cov8" title="1">return fmt.Errorf("invalid transition from '%s' to '%s' with action '%s'",
+                from, to, action)</span>
 }
 
-// ListMyTribes returns all tribes that the current user is a member of
-func (h *TribeHandler) ListMyTribes(c *gin.Context) <span class="cov0" title="0">{
-        // Parse pagination parameters
-        page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-        limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-
-        // Validate pagination parameters
-        if page &lt; 1 </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Page number must be greater than 0")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if limit &lt; 1 </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Limit must be greater than 0")
-                return
-        }</span>
-
-        // Parse filter parameters
-        <span class="cov0" title="0">tribeType := c.Query("type")
-
-        // Validate tribe type if provided
-        if tribeType != "" </span><span class="cov0" title="0">{
-                valid := false
-                validTypes := []models.TribeType{
-                        models.TribeTypeCouple,
-                        models.TribeTypePolyCule,
-                        models.TribeTypeFriends,
-                        models.TribeTypeFamily,
-                        models.TribeTypeRoommates,
-                        models.TribeTypeCoworkers,
-                        models.TribeTypeCustom,
-                }
-
-                // Convert type to lowercase for case-insensitive matching
-                typeToCheck := strings.ToLower(tribeType)
-
-                for _, validType := range validTypes </span><span class="cov0" title="0">{
-                        if models.TribeType(typeToCheck) == validType </span><span class="cov0" title="0">{
-                                valid = true
-                                tribeType = string(validType) // Use canonical version
-                                break</span>
-                        }
-                }
-
-                <span class="cov0" title="0">if !valid </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, "Invalid tribe type")
-                        return
-                }</span>
-        }
-
-        <span class="cov0" title="0">firebaseUID := middleware.GetFirebaseUID(c)
-        user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "User not found")
-                return
-        }</span>
-
-        // Calculate offset
-        <span class="cov0" title="0">offset := (page - 1) * limit
-
-        // Get user tribes, filtering by type if specified
-        tribes, err := h.repos.Tribes.GetUserTribes(user.ID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        // If type filter is specified, filter the results
-        <span class="cov0" title="0">if tribeType != "" </span><span class="cov0" title="0">{
-                filteredTribes := make([]*models.Tribe, 0)
-                for _, tribe := range tribes </span><span class="cov0" title="0">{
-                        if tribe.Type == models.TribeType(tribeType) </span><span class="cov0" title="0">{
-                                filteredTribes = append(filteredTribes, tribe)
-                        }</span>
-                }
-                <span class="cov0" title="0">tribes = filteredTribes</span>
-        }
-
-        // Apply pagination to the results (since GetUserTribes doesn't support pagination directly)
-        <span class="cov0" title="0">start := offset
-        end := offset + limit
-
-        if start &gt;= len(tribes) </span><span class="cov0" title="0">{
-                // Return empty slice if start is beyond the available results
-                tribes = []*models.Tribe{}
-        }</span> else<span class="cov0" title="0"> if end &gt; len(tribes) </span><span class="cov0" title="0">{
-                // Adjust end if it's beyond the available results
-                tribes = tribes[start:]
-        }</span> else<span class="cov0" title="0"> {
-                // Apply pagination
-                tribes = tribes[start:end]
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, tribes)</span>
+// SyncConflict represents a sync conflict that needs resolution
+type SyncConflict struct {
+        ID         uuid.UUID   `json:"id" db:"id"`
+        ListID     uuid.UUID   `json:"list_id" db:"list_id"`
+        ItemID     *uuid.UUID  `json:"item_id,omitempty" db:"item_id"`
+        Type       string      `json:"type" db:"type"`
+        LocalData  interface{} `json:"local_data" db:"local_data"`
+        RemoteData interface{} `json:"remote_data" db:"remote_data"`
+        Resolution string      `json:"resolution" db:"resolution"`
+        CreatedAt  time.Time   `json:"created_at" db:"created_at"`
+        UpdatedAt  time.Time   `json:"updated_at" db:"updated_at"`
+        ResolvedAt *time.Time  `json:"resolved_at,omitempty" db:"resolved_at"`
 }
 
-// GetTribe returns a specific tribe by ID
-func (h *TribeHandler) GetTribe(c *gin.Context) <span class="cov0" title="0">{
-        id, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
+// Validate performs validation on the sync conflict
+func (sc *SyncConflict) Validate() error <span class="cov8" title="1">{
+        if sc.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: conflict ID is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">tribe, err := h.repos.Tribes.GetByID(id)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "Tribe not found")
-                return
+        <span class="cov8" title="1">if sc.ListID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: list ID is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, tribe)</span>
-}
-
-// UpdateTribeRequest represents the update tribe request body
-type UpdateTribeRequest struct {
-        Name        string                `json:"name" binding:"required"`
-        Type        models.TribeType      `json:"type"`
-        Description string                `json:"description"`
-        Visibility  models.VisibilityType `json:"visibility"`
-        Metadata    interface{}           `json:"metadata,omitempty"`
-        Version     int                   `json:"version" binding:"required"`
-}
-
-// UpdateTribe updates a tribe's details
-func (h *TribeHandler) UpdateTribe(c *gin.Context) <span class="cov0" title="0">{
-        id, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
+        <span class="cov8" title="1">if sc.Type == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: conflict type is required", ErrInvalidInput)
         }</span>
-
-        <span class="cov0" title="0">var req UpdateTribeRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid request body")
-                return
+        <span class="cov8" title="1">if sc.LocalData == nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: local data is required", ErrInvalidInput)
         }</span>
-
-        // Get the existing tribe
-        <span class="cov0" title="0">tribe, err := h.repos.Tribes.GetByID(id)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "Tribe not found")
-                return
+        <span class="cov8" title="1">if sc.RemoteData == nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: remote data is required", ErrInvalidInput)
         }</span>
-
-        // Get current user ID
-        <span class="cov0" title="0">var userID uuid.UUID
-
-        // Try to get user ID directly first
-        if userIDVal, exists := c.Get("user_id"); exists </span><span class="cov0" title="0">{
-                switch id := userIDVal.(type) </span>{
-                case uuid.UUID:<span class="cov0" title="0">
-                        userID = id</span>
-                case string:<span class="cov0" title="0">
-                        userID, err = uuid.Parse(id)
-                        if err != nil </span><span class="cov0" title="0">{
-                                fmt.Printf("DEBUG: Failed to parse user ID string: %v\n", err)
-                                response.GinInternalError(c, fmt.Errorf("failed to parse user ID"))
-                                return
-                        }</span>
-                }
-        }
-
-        // If user ID is not set directly, get it from Firebase UID
-        <span class="cov0" title="0">if userID == uuid.Nil </span><span class="cov0" title="0">{
-                firebaseUID := middleware.GetFirebaseUID(c)
-                user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
-                if err != nil </span><span class="cov0" title="0">{
-                        response.GinNotFound(c, "User not found")
-                        return
-                }</span>
-                <span class="cov0" title="0">userID = user.ID</span>
-        }
-
-        // Check if user is a member of the tribe
-        <span class="cov0" title="0">isMember := false
-        for _, member := range tribe.Members </span><span class="cov0" title="0">{
-                if member.UserID == userID </span><span class="cov0" title="0">{
-                        isMember = true
-                        // Only full members can update the tribe
-                        if member.MembershipType != models.MembershipFull </span><span class="cov0" title="0">{
-                                response.GinForbidden(c, "Only full members can update tribe details")
-                                return
-                        }</span>
-                        <span class="cov0" title="0">break</span>
-                }
-        }
-
-        <span class="cov0" title="0">if !isMember </span><span class="cov0" title="0">{
-                response.GinForbidden(c, "You must be a member of the tribe to update it")
-                return
-        }</span>
-
-        // Check version for optimistic concurrency control
-        <span class="cov0" title="0">if tribe.Version != req.Version </span><span class="cov0" title="0">{
-                response.GinConflict(c, "Tribe has been modified since you last retrieved it")
-                return
-        }</span>
-
-        // Update fields
-        <span class="cov0" title="0">tribe.Name = req.Name
-
-        // Only update optional fields if they're provided
-        if req.Type != "" </span><span class="cov0" title="0">{
-                tribe.Type = req.Type
-        }</span>
-
-        <span class="cov0" title="0">tribe.Description = req.Description
-
-        if req.Visibility != "" </span><span class="cov0" title="0">{
-                tribe.Visibility = req.Visibility
-        }</span>
-
-        // Handle metadata if provided
-        <span class="cov0" title="0">if req.Metadata != nil </span><span class="cov0" title="0">{
-                var metadata models.JSONMap
-                switch m := req.Metadata.(type) </span>{
-                case map[string]interface{}:<span class="cov0" title="0">
-                        metadata = models.JSONMap(m)</span>
-                case models.JSONMap:<span class="cov0" title="0">
-                        metadata = m</span>
-                default:<span class="cov0" title="0">
-                        response.GinBadRequest(c, "Metadata must be a valid JSON object")
-                        return</span>
-                }
-
-                // Validate metadata
-                <span class="cov0" title="0">if err := metadata.Validate(); err != nil </span><span class="cov0" title="0">{
-                        response.GinBadRequest(c, err.Error())
-                        return
-                }</span>
-
-                <span class="cov0" title="0">tribe.Metadata = metadata</span>
-        }
-
-        // Validate the updated tribe
-        <span class="cov0" title="0">if err := tribe.Validate(); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, err.Error())
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Tribes.Update(tribe); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, tribe)</span>
-}
-
-// DeleteTribe removes a tribe and all its associations
-func (h *TribeHandler) DeleteTribe(c *gin.Context) <span class="cov0" title="0">{
-        id, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Tribes.Delete(id); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// AddMemberRequest represents the add member request body
-type AddMemberRequest struct {
-        UserID uuid.UUID `json:"user_id" binding:"required"`
-}
-
-// AddMember adds a user to a tribe
-func (h *TribeHandler) AddMember(c *gin.Context) <span class="cov0" title="0">{
-        tribeID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">var req AddMemberRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid request body")
-                return
-        }</span>
-
-        // Get the current user as the inviter
-        <span class="cov0" title="0">inviterID := c.GetString("user_id")
-        var inviter *uuid.UUID
-        if inviterID != "" </span><span class="cov0" title="0">{
-                uid, err := uuid.Parse(inviterID)
-                if err == nil </span><span class="cov0" title="0">{
-                        inviter = &amp;uid
-                }</span>
-        }
-
-        <span class="cov0" title="0">if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipFull, nil, inviter); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// RemoveMember removes a user from a tribe
-func (h *TribeHandler) RemoveMember(c *gin.Context) <span class="cov0" title="0">{
-        tribeID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">userID, err := uuid.Parse(c.Param("userId"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid user ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">if err := h.repos.Tribes.RemoveMember(tribeID, userID); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinNoContent(c)</span>
-}
-
-// ListMembers returns all members of a tribe
-func (h *TribeHandler) ListMembers(c *gin.Context) <span class="cov0" title="0">{
-        tribeID, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid tribe ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">members, err := h.repos.Tribes.GetMembers(tribeID)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, members)</span>
+        <span class="cov8" title="1">return nil</span>
 }
 </pre>
 		
-		<pre class="file" id="file3" style="display: none">package handlers
+		<pre class="file" id="file5" style="display: none">package models
 
 import (
-        "github.com/gin-gonic/gin"
+        "encoding/json"
+        "fmt"
+        "time"
+
         "github.com/google/uuid"
-        "github.com/jenglund/rlship-tools/internal/api/response"
-        "github.com/jenglund/rlship-tools/internal/middleware"
-        "github.com/jenglund/rlship-tools/internal/models"
 )
 
-// RepositoryProvider defines the interface for accessing repositories
-type RepositoryProvider interface {
-        GetUserRepository() models.UserRepository
-}
+// TribeType represents the type of tribe
+type TribeType string
 
-// UserHandler handles user-related requests
-type UserHandler struct {
-        repos RepositoryProvider
-}
+const (
+        TribeTypeCouple    TribeType = "couple"    // Two-person romantic relationship
+        TribeTypePolyCule  TribeType = "polycule"  // Polyamorous relationship group
+        TribeTypeFriends   TribeType = "friends"   // Friend group
+        TribeTypeFamily    TribeType = "family"    // Family group
+        TribeTypeRoommates TribeType = "roommates" // Roommate group
+        TribeTypeCoworkers TribeType = "coworkers" // Work team or group
+        TribeTypeCustom    TribeType = "custom"    // Custom group type
+)
 
-// NewUserHandler creates a new user handler
-func NewUserHandler(repos RepositoryProvider) *UserHandler <span class="cov0" title="0">{
-        return &amp;UserHandler{
-                repos: repos,
-        }
-}</span>
-
-// RegisterRoutes registers the user routes
-func (h *UserHandler) RegisterRoutes(r *gin.RouterGroup) <span class="cov0" title="0">{
-        users := r.Group("/users")
-        </span><span class="cov0" title="0">{
-                // Public routes
-                users.POST("/auth", h.AuthenticateUser)
-
-                // Protected routes
-                auth := users.Use(middleware.RequireAuth())
-                </span><span class="cov0" title="0">{
-                        auth.GET("/me", h.GetCurrentUser)
-                        auth.PUT("/me", h.UpdateCurrentUser)
-                        auth.GET("/:id", h.GetUser)
-                }</span>
+func (t TribeType) Validate() error <span class="cov8" title="1">{
+        switch t </span>{
+        case TribeTypeCouple, TribeTypePolyCule, TribeTypeFriends, TribeTypeFamily,
+                TribeTypeRoommates, TribeTypeCoworkers, TribeTypeCustom:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid tribe type: %s", ErrInvalidInput, t)</span>
         }
 }
 
-// AuthRequest represents the authentication request body
-type AuthRequest struct {
-        FirebaseUID string `json:"firebase_uid" binding:"required"`
-        Email       string `json:"email"`
-        Name        string `json:"name"`
-        AvatarURL   string `json:"avatar_url"`
-        Provider    string `json:"provider" binding:"required"`
+// MembershipType represents the type of membership in a tribe
+type MembershipType string
+
+const (
+        MembershipFull    MembershipType = "full"    // Full member with all privileges
+        MembershipLimited MembershipType = "limited" // Limited access member
+        MembershipGuest   MembershipType = "guest"   // Temporary guest access
+)
+
+func (m MembershipType) Validate() error <span class="cov8" title="1">{
+        switch m </span>{
+        case MembershipFull, MembershipLimited, MembershipGuest:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid membership type: %s", ErrInvalidInput, m)</span>
+        }
 }
 
-// AuthenticateUser handles user authentication and registration
-func (h *UserHandler) AuthenticateUser(c *gin.Context) <span class="cov0" title="0">{
-        var req AuthRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid request body")
-                return
+// Tribe represents a group of users who share activities and plans
+type Tribe struct {
+        BaseModel
+        Name        string         `json:"name" db:"name"`
+        Type        TribeType      `json:"type" db:"type"`
+        Description string         `json:"description" db:"description"`
+        Visibility  VisibilityType `json:"visibility" db:"visibility"`
+        Metadata    JSONMap        `json:"metadata,omitempty" db:"metadata"`
+        Members     []*TribeMember `json:"members,omitempty" db:"-"`
+}
+
+// Validate performs validation on the tribe
+func (t *Tribe) Validate() error <span class="cov8" title="1">{
+        if err := t.BaseModel.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if t.Name == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: name is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if len(t.Name) &gt; 100 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: name cannot be longer than 100 characters", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if err := t.Type.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := t.Visibility.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
         }</span>
 
-        // Check if user exists
-        <span class="cov0" title="0">user, err := h.repos.GetUserRepository().GetByFirebaseUID(req.FirebaseUID)
-        if err != nil </span><span class="cov0" title="0">{
-                // Create new user if not found
-                user = &amp;models.User{
-                        ID:          uuid.New(),
-                        FirebaseUID: req.FirebaseUID,
-                        Email:       req.Email,
-                        Name:        req.Name,
-                        AvatarURL:   req.AvatarURL,
-                        Provider:    models.AuthProvider(req.Provider),
+        // Ensure metadata is never nil
+        <span class="cov8" title="1">if t.Metadata == nil </span><span class="cov8" title="1">{
+                t.Metadata = JSONMap{}
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for Tribe to ensure Metadata is never nil
+func (t *Tribe) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
+        // Define an alias type to avoid infinite recursion
+        type AliasType Tribe
+
+        // Use a temporary structure with the same fields
+        aux := struct {
+                *AliasType
+                Metadata *JSONMap `json:"metadata,omitempty"`
+        }{
+                AliasType: (*AliasType)(t),
+        }
+
+        // Unmarshal JSON into the temporary structure
+        if err := json.Unmarshal(data, &amp;aux); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+
+        // Initialize empty metadata if it's nil
+        <span class="cov8" title="1">if aux.Metadata == nil </span><span class="cov8" title="1">{
+                t.Metadata = JSONMap{}
+        }</span> else<span class="cov8" title="1"> {
+                t.Metadata = *aux.Metadata
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// TribeMember represents a user's membership in a tribe
+type TribeMember struct {
+        BaseModel
+        TribeID        uuid.UUID      `json:"tribe_id" db:"tribe_id"`
+        UserID         uuid.UUID      `json:"user_id" db:"user_id"`
+        MembershipType MembershipType `json:"membership_type" db:"membership_type"`
+        DisplayName    string         `json:"display_name" db:"display_name"`
+        ExpiresAt      *time.Time     `json:"expires_at,omitempty" db:"expires_at"`
+        Metadata       JSONMap        `json:"metadata,omitempty" db:"metadata"`
+        User           *User          `json:"user,omitempty" db:"-"`
+}
+
+// Validate performs validation on the tribe member
+func (tm *TribeMember) Validate() error <span class="cov8" title="1">{
+        if err := tm.BaseModel.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if tm.TribeID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: tribe_id is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if tm.UserID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if err := tm.MembershipType.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if tm.DisplayName == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: display_name is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if tm.MembershipType == MembershipGuest </span><span class="cov8" title="1">{
+                if tm.ExpiresAt == nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: guest membership requires expiration date", ErrInvalidInput)
+                }</span>
+                <span class="cov8" title="1">if tm.ExpiresAt.Before(time.Now()) </span><span class="cov8" title="1">{
+                        return fmt.Errorf("%w: expiration date cannot be in the past", ErrInvalidInput)
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+// TribeRepository defines the interface for tribe data operations
+type TribeRepository interface {
+        // Basic CRUD operations
+        Create(tribe *Tribe) error
+        GetByID(id uuid.UUID) (*Tribe, error)
+        Update(tribe *Tribe) error
+        Delete(id uuid.UUID) error
+        List(offset, limit int) ([]*Tribe, error)
+
+        // Member management
+        AddMember(tribeID, userID uuid.UUID, memberType MembershipType, expiresAt *time.Time, invitedBy *uuid.UUID) error
+        UpdateMember(tribeID, userID uuid.UUID, memberType MembershipType, expiresAt *time.Time) error
+        RemoveMember(tribeID, userID uuid.UUID) error
+        GetMembers(tribeID uuid.UUID) ([]*TribeMember, error)
+        GetUserTribes(userID uuid.UUID) ([]*Tribe, error)
+
+        // Queries
+        GetByType(tribeType TribeType, offset, limit int) ([]*Tribe, error)
+        Search(query string, offset, limit int) ([]*Tribe, error)
+        GetExpiredGuestMemberships() ([]*TribeMember, error)
+}
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package models
+
+import (
+        "encoding/json"
+        "fmt"
+        "time"
+
+        "database/sql/driver"
+
+        "github.com/google/uuid"
+)
+
+// VisibilityType defines who can see a resource
+type VisibilityType string
+
+const (
+        VisibilityPrivate VisibilityType = "private" // Only visible to owner
+        VisibilityShared  VisibilityType = "shared"  // Visible to specific tribes/users
+        VisibilityPublic  VisibilityType = "public"  // Visible to everyone
+)
+
+func (v VisibilityType) Validate() error <span class="cov8" title="1">{
+        switch v </span>{
+        case VisibilityPrivate, VisibilityShared, VisibilityPublic:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid visibility type: %s", ErrInvalidInput, v)</span>
+        }
+}
+
+// OwnerType defines what type of entity owns a resource
+type OwnerType string
+
+const (
+        OwnerTypeUser  OwnerType = "user"
+        OwnerTypeTribe OwnerType = "tribe"
+)
+
+func (o OwnerType) Validate() error <span class="cov8" title="1">{
+        switch o </span>{
+        case OwnerTypeUser, OwnerTypeTribe:<span class="cov8" title="1">
+                return nil</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: invalid owner type: %s", ErrInvalidInput, o)</span>
+        }
+}
+
+// BaseModel contains common fields for all models
+type BaseModel struct {
+        ID        uuid.UUID  `json:"id" db:"id"`
+        CreatedAt time.Time  `json:"created_at" db:"created_at"`
+        UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
+        DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
+        Version   int        `json:"version" db:"version"`
+}
+
+// Validate performs basic validation on the base model
+func (b *BaseModel) Validate() error <span class="cov8" title="1">{
+        if b.ID == uuid.Nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: id is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if b.CreatedAt.IsZero() </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: created_at is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if b.UpdatedAt.IsZero() </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: updated_at is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if b.DeletedAt != nil &amp;&amp; b.DeletedAt.Before(b.CreatedAt) </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: deleted_at cannot be before created_at", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if b.Version &lt; 1 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: version must be at least 1", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// Location represents a physical location that can be referenced in activities
+type Location struct {
+        BaseModel
+        Name        string  `json:"name" db:"name"`
+        Address     string  `json:"address" db:"address"`
+        Latitude    float64 `json:"latitude" db:"latitude"`
+        Longitude   float64 `json:"longitude" db:"longitude"`
+        GoogleMapID string  `json:"google_map_id,omitempty" db:"google_map_id"`
+        Metadata    JSONMap `json:"metadata,omitempty" db:"metadata"`
+}
+
+// Validate performs validation on the location
+func (l *Location) Validate() error <span class="cov8" title="1">{
+        if err := l.BaseModel.Validate(); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if l.Name == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("%w: name is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.Address == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("%w: address is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.Latitude &lt; -90 || l.Latitude &gt; 90 </span><span class="cov0" title="0">{
+                return fmt.Errorf("%w: latitude must be between -90 and 90", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if l.Longitude &lt; -180 || l.Longitude &gt; 180 </span><span class="cov0" title="0">{
+                return fmt.Errorf("%w: longitude must be between -180 and 180", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// MenuParams represents parameters for generating a menu from lists
+type MenuParams struct {
+        ListIDs      []uuid.UUID            `json:"list_ids"`
+        Count        int                    `json:"count"`
+        Filters      map[string]interface{} `json:"filters,omitempty"`
+        ExcludeItems []uuid.UUID            `json:"exclude_items,omitempty"`
+}
+
+// Validate performs validation on the menu parameters
+func (m *MenuParams) Validate() error <span class="cov8" title="1">{
+        if len(m.ListIDs) == 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: at least one list ID is required", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">if m.Count &lt;= 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: count must be positive", ErrInvalidInput)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// JSONMap is a type alias for map[string]interface{} that implements database scanning
+type JSONMap map[string]interface{}
+
+// Scan implements the sql.Scanner interface
+func (m *JSONMap) Scan(value interface{}) error <span class="cov8" title="1">{
+        if value == nil </span><span class="cov8" title="1">{
+                *m = make(JSONMap) // Always initialize to empty map, never nil
+                return nil
+        }</span>
+
+        <span class="cov8" title="1">var bytes []byte
+        switch v := value.(type) </span>{
+        case []byte:<span class="cov8" title="1">
+                bytes = v</span>
+        case string:<span class="cov8" title="1">
+                bytes = []byte(v)</span>
+        default:<span class="cov8" title="1">
+                return fmt.Errorf("%w: unsupported JSONMap scan type: %T", ErrInvalidInput, value)</span>
+        }
+
+        // Handle empty string/bytes as empty map
+        <span class="cov8" title="1">if len(bytes) == 0 </span><span class="cov8" title="1">{
+                *m = make(JSONMap)
+                return nil
+        }</span>
+
+        // Parse JSON into map
+        <span class="cov8" title="1">var result map[string]interface{}
+        if err := json.Unmarshal(bytes, &amp;result); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: invalid JSON data: %v", ErrInvalidInput, err)
+        }</span>
+
+        // Convert any []interface{} to []string where appropriate
+        <span class="cov8" title="1">for key, value := range result </span><span class="cov8" title="1">{
+                if arr, ok := value.([]interface{}); ok </span><span class="cov8" title="1">{
+                        strArr := make([]string, len(arr))
+                        for i, v := range arr </span><span class="cov8" title="1">{
+                                strArr[i] = fmt.Sprint(v)
+                        }</span>
+                        <span class="cov8" title="1">result[key] = strArr</span>
                 }
-
-                if err := h.repos.GetUserRepository().Create(user); err != nil </span><span class="cov0" title="0">{
-                        response.GinInternalError(c, err)
-                        return
-                }</span>
-                <span class="cov0" title="0">response.GinCreated(c, user)
-                return</span>
         }
 
-        // Update existing user's information
-        <span class="cov0" title="0">user.Email = req.Email
-        user.Name = req.Name
-        user.AvatarURL = req.AvatarURL
-        user.Provider = models.AuthProvider(req.Provider)
-
-        if err := h.repos.GetUserRepository().Update(user); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, user)</span>
+        <span class="cov8" title="1">*m = result
+        return nil</span>
 }
 
-// GetCurrentUser returns the current authenticated user
-func (h *UserHandler) GetCurrentUser(c *gin.Context) <span class="cov0" title="0">{
-        userID, exists := c.Get("user_id")
-        if !exists </span><span class="cov0" title="0">{
-                response.GinUnauthorized(c, "User not authenticated")
-                return
+// Value implements the driver.Valuer interface
+func (m JSONMap) Value() (driver.Value, error) <span class="cov8" title="1">{
+        if m == nil </span><span class="cov8" title="1">{
+                return nil, nil
         }</span>
 
-        <span class="cov0" title="0">user, err := h.repos.GetUserRepository().GetByID(userID.(uuid.UUID))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "User not found")
-                return
-        }</span>
+        // Convert any []string back to []interface{} for consistent JSON encoding
+        <span class="cov8" title="1">converted := make(map[string]interface{})
+        for key, value := range m </span><span class="cov8" title="1">{
+                if strArr, ok := value.([]string); ok </span><span class="cov8" title="1">{
+                        interfaceArr := make([]interface{}, len(strArr))
+                        for i, v := range strArr </span><span class="cov8" title="1">{
+                                interfaceArr[i] = v
+                        }</span>
+                        <span class="cov8" title="1">converted[key] = interfaceArr</span>
+                } else<span class="cov8" title="1"> {
+                        converted[key] = value
+                }</span>
+        }
 
-        <span class="cov0" title="0">response.GinSuccess(c, user)</span>
+        <span class="cov8" title="1">return json.Marshal(converted)</span>
 }
 
-// UpdateUserRequest represents the update user request body
-type UpdateUserRequest struct {
-        Name      string `json:"name"`
-        AvatarURL string `json:"avatar_url"`
+// MarshalJSON implements the json.Marshaler interface
+func (m JSONMap) MarshalJSON() ([]byte, error) <span class="cov8" title="1">{
+        if m == nil </span><span class="cov8" title="1">{
+                return []byte("null"), nil
+        }</span>
+        <span class="cov8" title="1">return json.Marshal(map[string]interface{}(m))</span>
 }
 
-// UpdateCurrentUser updates the current user's profile
-func (h *UserHandler) UpdateCurrentUser(c *gin.Context) <span class="cov0" title="0">{
-        var req UpdateUserRequest
-        if err := c.ShouldBindJSON(&amp;req); err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid request body")
-                return
+// UnmarshalJSON implements the json.Unmarshaler interface
+func (m *JSONMap) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
+        if m == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("%w: JSONMap is nil", ErrInvalidInput)
         }</span>
 
-        <span class="cov0" title="0">userID, exists := c.Get("user_id")
-        if !exists </span><span class="cov0" title="0">{
-                response.GinUnauthorized(c, "User not authenticated")
-                return
+        // Handle null JSON value
+        <span class="cov8" title="1">if string(data) == "null" </span><span class="cov8" title="1">{
+                *m = make(JSONMap)
+                return nil
         }</span>
 
-        <span class="cov0" title="0">user, err := h.repos.GetUserRepository().GetByID(userID.(uuid.UUID))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "User not found")
-                return
+        // Parse JSON into temporary map
+        <span class="cov8" title="1">var raw map[string]interface{}
+        if err := json.Unmarshal(data, &amp;raw); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("%w: invalid JSON data: %v", ErrInvalidInput, err)
         }</span>
 
-        // Update fields
-        <span class="cov0" title="0">if req.Name != "" </span><span class="cov0" title="0">{
-                user.Name = req.Name
-        }</span>
-        <span class="cov0" title="0">if req.AvatarURL != "" </span><span class="cov0" title="0">{
-                user.AvatarURL = req.AvatarURL
-        }</span>
+        // Convert any []interface{} to []string where appropriate
+        <span class="cov8" title="1">for key, value := range raw </span><span class="cov8" title="1">{
+                if arr, ok := value.([]interface{}); ok </span><span class="cov8" title="1">{
+                        strArr := make([]string, len(arr))
+                        for i, v := range arr </span><span class="cov8" title="1">{
+                                strArr[i] = fmt.Sprint(v)
+                        }</span>
+                        <span class="cov8" title="1">raw[key] = strArr</span>
+                }
+        }
 
-        <span class="cov0" title="0">if err := h.repos.GetUserRepository().Update(user); err != nil </span><span class="cov0" title="0">{
-                response.GinInternalError(c, err)
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, user)</span>
-}
-
-// GetUser returns a specific user by ID
-func (h *UserHandler) GetUser(c *gin.Context) <span class="cov0" title="0">{
-        id, err := uuid.Parse(c.Param("id"))
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinBadRequest(c, "Invalid user ID")
-                return
-        }</span>
-
-        <span class="cov0" title="0">user, err := h.repos.GetUserRepository().GetByID(id)
-        if err != nil </span><span class="cov0" title="0">{
-                response.GinNotFound(c, "User not found")
-                return
-        }</span>
-
-        <span class="cov0" title="0">response.GinSuccess(c, user)</span>
+        <span class="cov8" title="1">*m = raw
+        return nil</span>
 }
 </pre>
 		
