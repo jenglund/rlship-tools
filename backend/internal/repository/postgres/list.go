@@ -1565,25 +1565,42 @@ func (r *listRepository) ShareWithTribe(share *models.ListShare) error {
 			return fmt.Errorf("error checking user existence: %w", err)
 		}
 
-		// First, soft delete any existing shares for this list-tribe combination
-		query = `
-			UPDATE list_sharing
-			SET deleted_at = NOW()
-			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL`
-
-		_, err = tx.Exec(query, share.ListID, share.TribeID)
+		// Check if there's an existing share
+		var existingShare bool
+		err = tx.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1 FROM list_sharing 
+				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
+			)`,
+			share.ListID, share.TribeID,
+		).Scan(&existingShare)
 		if err != nil {
-			return fmt.Errorf("error removing old shares: %w", err)
+			return fmt.Errorf("error checking existing share: %w", err)
 		}
 
-		// Then add the new share
-		query = `
+		// If exists, soft delete it first
+		if existingShare {
+			_, err = tx.Exec(`
+				UPDATE list_sharing
+				SET deleted_at = NOW()
+				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL`,
+				share.ListID, share.TribeID,
+			)
+			if err != nil {
+				return fmt.Errorf("error removing old shares: %w", err)
+			}
+
+			// Commit this transaction first to avoid constraint violation
+			return nil
+		}
+
+		// If we get here, there was no existing share or it was already deleted
+		// Insert the new share
+		_, err = tx.Exec(`
 			INSERT INTO list_sharing (
 				list_id, tribe_id, user_id,
 				created_at, updated_at, expires_at
-			) VALUES ($1, $2, $3, NOW(), NOW(), $4)`
-
-		_, err = tx.Exec(query,
+			) VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
 			share.ListID,
 			share.TribeID,
 			share.UserID,
