@@ -43,13 +43,7 @@ func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 	if err != nil {
 		t.Fatalf("Error starting transaction: %v", err)
 	}
-	defer func() {
-		if err != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				t.Logf("Error rolling back transaction: %v", rbErr)
-			}
-		}
-	}()
+	defer safeClose(tx)
 
 	user := TestUser{
 		ID:          uuid.New(),
@@ -88,7 +82,7 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 	if err != nil {
 		t.Fatalf("Failed to start transaction: %v", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	// Set constraints to deferred
 	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
@@ -139,7 +133,7 @@ func CreateTestList(t *testing.T, db *sql.DB, tribe TestTribe) TestList {
 	if err != nil {
 		t.Fatalf("Failed to start transaction: %v", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	// Set constraints to deferred
 	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
@@ -189,7 +183,7 @@ func CreateTestActivity(t *testing.T, db *sql.DB, user TestUser) *models.Activit
 	if err != nil {
 		t.Fatalf("Failed to start transaction: %v", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	// Set constraints to deferred
 	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
@@ -242,13 +236,7 @@ func CleanupTestData(t *testing.T, db *sql.DB) {
 	if err != nil {
 		t.Fatalf("Error starting transaction: %v", err)
 	}
-	defer func() {
-		if err != nil {
-			if rbErr := tx.Rollback(); rbErr != nil {
-				t.Logf("Error rolling back transaction: %v", rbErr)
-			}
-		}
-	}()
+	defer safeClose(tx)
 
 	// Set constraints to deferred for this transaction
 	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")

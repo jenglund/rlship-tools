@@ -78,7 +78,7 @@ func TestDatabaseIntegration_Reconnection(t *testing.T) {
 	db, err := NewDB(host, port, user, password, dbname, sslmode)
 	require.NoError(t, err)
 	require.NotNil(t, db)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Simulate idle connection timeout by waiting
 	t.Log("Waiting for connection to potentially timeout...")
@@ -119,7 +119,7 @@ func TestDatabaseIntegration_ConnectionPooling(t *testing.T) {
 	db, err := NewDB(host, port, user, password, dbname, sslmode)
 	require.NoError(t, err)
 	require.NotNil(t, db)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Verify connection pool settings
 	assert.Equal(t, 25, db.Stats().MaxOpenConnections)
@@ -175,7 +175,7 @@ func TestDatabaseIntegration_ErrorHandling(t *testing.T) {
 	db, err := NewDB(host, port, user, password, dbname, sslmode)
 	require.NoError(t, err)
 	require.NotNil(t, db)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Test invalid SQL syntax
 	_, err = db.Exec("INVALID SQL QUERY")
@@ -216,7 +216,7 @@ func TestRepositoriesIntegration_Initialization(t *testing.T) {
 	db, err := NewDB(host, port, user, password, dbname, sslmode)
 	require.NoError(t, err)
 	require.NotNil(t, db)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Initialize repositories
 	repos := NewRepositories(db)

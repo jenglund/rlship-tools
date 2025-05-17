@@ -19,6 +19,13 @@ import (
 	"github.com/jenglund/rlship-tools/internal/models"
 )
 
+// Define a custom key type to avoid string key collisions
+type contextKey string
+
+const (
+	userIDKey contextKey = "user_id"
+)
+
 // MockListService provides a mock for the ListService interface
 type MockListService struct {
 	mock.Mock
@@ -484,7 +491,8 @@ func TestListHandler(t *testing.T) {
 
 		// Create the request with user ID in context
 		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/lists/%s/share", listID), bytes.NewReader(body))
-		req = req.WithContext(context.WithValue(req.Context(), "user_id", userID))
+		ctx := context.WithValue(req.Context(), userIDKey, userID)
+		*req = *req.WithContext(ctx)
 		rec := httptest.NewRecorder()
 
 		// Send the request
@@ -523,7 +531,7 @@ func TestListHandler(t *testing.T) {
 				name:   "success",
 				listID: validListID.String(),
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), "user_id", validUserID)
+					ctx := context.WithValue(r.Context(), userIDKey, validUserID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func() {
@@ -538,7 +546,7 @@ func TestListHandler(t *testing.T) {
 				name:   "invalid list ID",
 				listID: "invalid-uuid",
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), "user_id", validUserID)
+					ctx := context.WithValue(r.Context(), userIDKey, validUserID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedStatus: http.StatusBadRequest,
@@ -548,7 +556,7 @@ func TestListHandler(t *testing.T) {
 				name:   "unauthorized",
 				listID: validListID.String(),
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), "user_id", uuid.New())
+					ctx := context.WithValue(r.Context(), userIDKey, uuid.New())
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func() {
@@ -633,7 +641,8 @@ func TestListHandler_ShareListWithTribe(t *testing.T) {
 			requestBody:    []byte(`{"expires_at": null}`),
 			expectedStatus: http.StatusNoContent,
 			setupAuth: func(r *http.Request) {
-				ctx := context.WithValue(r.Context(), "user_id", uuid.New())
+				userID := uuid.New()
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			setupMocks: func(mockService *MockListService) {
@@ -662,7 +671,8 @@ func TestListHandler_ShareListWithTribe(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 			expectedError:  "not found",
 			setupAuth: func(r *http.Request) {
-				ctx := context.WithValue(r.Context(), "user_id", uuid.New())
+				userID := uuid.New()
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			setupMocks: func(mockService *MockListService) {
@@ -680,7 +690,8 @@ func TestListHandler_ShareListWithTribe(t *testing.T) {
 			expectedStatus: http.StatusForbidden,
 			expectedError:  "forbidden",
 			setupAuth: func(r *http.Request) {
-				ctx := context.WithValue(r.Context(), "user_id", uuid.New())
+				userID := uuid.New()
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			setupMocks: func(mockService *MockListService) {
@@ -753,7 +764,7 @@ func TestListHandler_UnshareList(t *testing.T) {
 			expectedStatus: http.StatusNoContent,
 			setupAuth: func(r *http.Request) {
 				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), "user_id", userID)
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -767,7 +778,7 @@ func TestListHandler_UnshareList(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			setupAuth: func(r *http.Request) {
 				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), "user_id", userID)
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			expectedError: "Invalid list ID",
@@ -779,7 +790,7 @@ func TestListHandler_UnshareList(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			setupAuth: func(r *http.Request) {
 				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), "user_id", userID)
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			expectedError: "Invalid tribe ID",
@@ -799,7 +810,7 @@ func TestListHandler_UnshareList(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			setupAuth: func(r *http.Request) {
 				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), "user_id", userID)
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -813,7 +824,7 @@ func TestListHandler_UnshareList(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			setupAuth: func(r *http.Request) {
 				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), "user_id", userID)
+				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				*r = *r.WithContext(ctx)
 			},
 			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -844,7 +855,7 @@ func TestListHandler_UnshareList(t *testing.T) {
 			if tt.setupMocks != nil {
 				listID, _ := uuid.Parse(tt.listID)
 				tribeID, _ := uuid.Parse(tt.tribeID)
-				userID, ok := r.Context().Value("user_id").(uuid.UUID)
+				userID, ok := r.Context().Value(userIDKey).(uuid.UUID)
 				if ok {
 					tt.setupMocks(mockService, listID, tribeID, userID)
 				}

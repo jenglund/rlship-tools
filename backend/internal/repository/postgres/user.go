@@ -279,7 +279,7 @@ func (r *UserRepository) List(offset, limit int) ([]*models.User, error) {
 		if err != nil {
 			return fmt.Errorf("error listing users: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		users = make([]*models.User, 0)
 		for rows.Next() {

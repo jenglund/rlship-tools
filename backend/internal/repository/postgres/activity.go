@@ -239,7 +239,7 @@ func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error)
 		if err != nil {
 			return fmt.Errorf("error listing activities: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		activities = make([]*models.Activity, 0)
 		for rows.Next() {
@@ -332,7 +332,7 @@ func (r *ActivityRepository) GetOwners(activityID uuid.UUID) ([]*models.Activity
 	if err != nil {
 		return nil, fmt.Errorf("error getting activity owners: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var owners []*models.ActivityOwner
 	for rows.Next() {
@@ -373,7 +373,7 @@ func (r *ActivityRepository) GetUserActivities(userID uuid.UUID) ([]*models.Acti
 	if err != nil {
 		return nil, fmt.Errorf("error getting user activities: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var activities []*models.Activity
 	for rows.Next() {
@@ -426,7 +426,7 @@ func (r *ActivityRepository) GetTribeActivities(tribeID uuid.UUID) ([]*models.Ac
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribe activities: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var activities []*models.Activity
 	for rows.Next() {
@@ -629,7 +629,7 @@ func (r *ActivityRepository) GetSharedActivities(tribeID uuid.UUID) ([]*models.A
 		if err != nil {
 			return fmt.Errorf("error querying shared activities: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		activities = make([]*models.Activity, 0)
 		for rows.Next() {

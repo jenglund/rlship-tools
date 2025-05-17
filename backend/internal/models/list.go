@@ -101,8 +101,10 @@ func (l *List) Validate() error {
 		if l.SyncID != l.SyncConfig.ID {
 			return fmt.Errorf("%w: sync ID mismatch", ErrInvalidInput)
 		}
-		if !((l.LastSyncAt == nil && l.SyncConfig.LastSyncAt == nil) ||
-			(l.LastSyncAt != nil && l.SyncConfig.LastSyncAt != nil && l.LastSyncAt.Equal(*l.SyncConfig.LastSyncAt))) {
+		if (l.LastSyncAt == nil && l.SyncConfig.LastSyncAt != nil) ||
+			(l.LastSyncAt != nil && l.SyncConfig.LastSyncAt == nil) ||
+			(l.LastSyncAt != nil && l.SyncConfig.LastSyncAt != nil &&
+				!l.LastSyncAt.Equal(*l.SyncConfig.LastSyncAt)) {
 			return fmt.Errorf("%w: last sync time mismatch", ErrInvalidInput)
 		}
 	} else {

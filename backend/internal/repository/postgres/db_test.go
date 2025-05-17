@@ -63,7 +63,7 @@ func TestNewDB(t *testing.T) {
 				// Only check this if we're expecting success and got no error
 				if err == nil {
 					assert.NotNil(t, db)
-					db.Close()
+					safeClose(db)
 				}
 			}
 		})
@@ -74,7 +74,7 @@ func TestNewRepositories(t *testing.T) {
 	// Create a mock DB
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Test creating repositories
 	repos := NewRepositories(db)
@@ -93,7 +93,7 @@ func TestRepositories_DB(t *testing.T) {
 	// Create a mock DB
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Initialize repositories
 	repos := NewRepositories(db)
@@ -107,7 +107,7 @@ func TestRepositories_GetUserRepository(t *testing.T) {
 	// Create a mock DB
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Initialize repositories
 	repos := NewRepositories(db)
@@ -142,7 +142,7 @@ func TestNewRepositories_ListRepository(t *testing.T) {
 	// Create a mock DB
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer safeClose(db)
 
 	// Test creating list repository directly
 	listRepo := NewListRepository(db)
@@ -175,7 +175,7 @@ func TestNewDB_ConnectionPooling(t *testing.T) {
 	if err != nil {
 		t.Skip("Skipping test because could not connect to database")
 	}
-	defer db.Close()
+	defer safeClose(db)
 
 	// Check that connection pool settings are applied
 	maxOpenConns := db.Stats().MaxOpenConnections

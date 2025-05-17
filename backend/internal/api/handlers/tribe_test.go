@@ -788,9 +788,10 @@ func TestCreateTribe(t *testing.T) {
 			var err error
 
 			// Special handling for specific test cases
-			if tt.name == "malformed request body" {
+			switch tt.name {
+			case "malformed request body":
 				reqBody = []byte(`{"name": "Test Tribe", type": "invalid json`)
-			} else if tt.name == "malformed metadata json structure" {
+			case "malformed metadata json structure":
 				// Create a request with malformed JSON for metadata
 				reqWithoutFunc := CreateTribeRequest{
 					Name:       "Tribe with Invalid Metadata Structure",
@@ -805,7 +806,7 @@ func TestCreateTribe(t *testing.T) {
 				reqStr := string(reqBody)
 				reqStr = strings.Replace(reqStr, "\"metadata\":{}", "\"metadata\":{\"circular\":\"illegal\\u0000character\"}", 1)
 				reqBody = []byte(reqStr)
-			} else {
+			default:
 				reqBody, err = json.Marshal(tt.request)
 				require.NoError(t, err)
 			}

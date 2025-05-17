@@ -77,7 +77,7 @@ func TestTeardownTestDB(t *testing.T) {
 		// Verify database no longer exists by connecting to postgres and checking
 		pgdb, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
-		defer pgdb.Close()
+		defer safeClose(pgdb)
 
 		var exists bool
 		err = pgdb.QueryRow(`
@@ -98,11 +98,11 @@ func TestTeardownTestDB(t *testing.T) {
 		// Create additional connections
 		db2, err := sql.Open("postgres", getPostgresConnection(currentTestDBName))
 		require.NoError(t, err)
-		defer db2.Close()
+		defer safeClose(db2)
 
 		db3, err := sql.Open("postgres", getPostgresConnection(currentTestDBName))
 		require.NoError(t, err)
-		defer db3.Close()
+		defer safeClose(db3)
 
 		// Perform some queries to ensure connections are active
 		var count int
@@ -227,8 +227,7 @@ func TestDatabaseOperations(t *testing.T) {
 		require.NoError(t, err)
 
 		// Rollback transaction
-		err = tx.Rollback()
-		require.NoError(t, err)
+		safeClose(tx)
 
 		// Verify no data was inserted
 		var count int
@@ -273,7 +272,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// Verify database was cleaned up
 		db, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
-		defer db.Close()
+		defer safeClose(db)
 
 		var exists bool
 		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", currentTestDBName).Scan(&exists)
@@ -290,7 +289,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// Connect to postgres to create test database
 		db, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
-		defer db.Close()
+		defer safeClose(db)
 
 		// Create test database
 		_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(testDBName)))
@@ -302,7 +301,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// Create an invalid migration state
 		testDB, err := sql.Open("postgres", getPostgresConnection(testDBName))
 		require.NoError(t, err)
-		defer testDB.Close()
+		defer safeClose(testDB)
 
 		// Create schema_migrations table with a dirty state
 		_, err = testDB.Exec(`
@@ -341,7 +340,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// 1. The setup failed and returned nil
 		// 2. The setup succeeded and cleaned up the dirty state
 		if setupDB != nil {
-			defer setupDB.Close()
+			defer safeClose(setupDB)
 
 			// Verify the schema_migrations table is in a clean state
 			var version int64
@@ -362,7 +361,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// Connect to postgres to create test database
 		db, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
-		defer db.Close()
+		defer safeClose(db)
 
 		// Create test database
 		_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(testDBName)))
@@ -374,7 +373,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// Create an invalid table to cause migration failure
 		testDB, err := sql.Open("postgres", getPostgresConnection(testDBName))
 		require.NoError(t, err)
-		defer testDB.Close()
+		defer safeClose(testDB)
 
 		// Create an invalid table that will conflict with migrations
 		_, err = testDB.Exec(`
@@ -411,7 +410,7 @@ func TestDatabaseErrors(t *testing.T) {
 		// 1. The setup failed and returned nil
 		// 2. The setup succeeded and fixed the schema
 		if setupDB != nil {
-			defer setupDB.Close()
+			defer safeClose(setupDB)
 
 			// Verify the users table has the correct schema
 			var dataType string
@@ -455,7 +454,7 @@ func TestDatabaseErrors(t *testing.T) {
 
 					_, err = tx.Exec("INSERT INTO concurrent_write_test (value) VALUES ($1)", fmt.Sprintf("value-%d", val))
 					if err != nil {
-						tx.Rollback()
+						safeClose(tx)
 						if retry < maxRetries-1 {
 							time.Sleep(10 * time.Millisecond)
 							continue

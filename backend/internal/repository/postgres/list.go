@@ -120,7 +120,7 @@ func (r *listRepository) Create(list *models.List) error {
 			if err != nil {
 				return fmt.Errorf("error preparing owner insert statement: %w", err)
 			}
-			defer stmt.Close()
+			defer safeClose(stmt)
 
 			for _, owner := range list.Owners {
 				// Skip the primary owner as it's already handled above
@@ -205,7 +205,7 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	if err != nil {
 		return fmt.Errorf("error loading list items: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var items []*models.ListItem
 	for rows.Next() {
@@ -247,7 +247,7 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	if err != nil {
 		return fmt.Errorf("error loading list owners: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var owners []*models.ListOwner
 	for rows.Next() {
@@ -279,7 +279,7 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	if err != nil {
 		return fmt.Errorf("error loading list shares: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var shares []*models.ListShare
 	for rows.Next() {
@@ -636,7 +636,7 @@ func (r *listRepository) List(offset, limit int) ([]*models.List, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error listing lists: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var lists []*models.List
 	for rows.Next() {
@@ -832,7 +832,7 @@ func (r *listRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var items []*models.ListItem
 	for rows.Next() {
@@ -889,7 +889,7 @@ func (r *listRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var items []*models.ListItem
 	for rows.Next() {
@@ -1012,7 +1012,7 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 		if err != nil {
 			return fmt.Errorf("error getting lists by source: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			list := &models.List{
@@ -1054,7 +1054,7 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 			if err != nil {
 				return fmt.Errorf("error getting list items: %w", err)
 			}
-			defer itemRows.Close()
+			defer safeClose(itemRows)
 
 			for itemRows.Next() {
 				item := &models.ListItem{}
@@ -1102,7 +1102,7 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 			if err != nil {
 				return fmt.Errorf("error getting list owners: %w", err)
 			}
-			defer ownerRows.Close()
+			defer safeClose(ownerRows)
 
 			for ownerRows.Next() {
 				owner := &models.ListOwner{}
@@ -1205,7 +1205,7 @@ func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict,
 		if err != nil {
 			return fmt.Errorf("error getting conflicts: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			conflict := &models.SyncConflict{}
@@ -1355,7 +1355,7 @@ func (r *listRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error
 		if err != nil {
 			return fmt.Errorf("error getting list owners: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		owners = make([]*models.ListOwner, 0)
 		for rows.Next() {
@@ -1411,7 +1411,7 @@ func (r *listRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) 
 		if err != nil {
 			return fmt.Errorf("error getting user lists: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			list := &models.List{}
@@ -1467,7 +1467,7 @@ func (r *listRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error
 		if err != nil {
 			return fmt.Errorf("error getting tribe lists: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			list := &models.List{}
@@ -1659,7 +1659,7 @@ func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 		if err != nil {
 			return fmt.Errorf("error getting list shares: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			share := &models.ListShare{}
@@ -1713,7 +1713,7 @@ func (r *listRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 		if err != nil {
 			return fmt.Errorf("error getting shared lists: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			list := &models.List{}
@@ -1769,7 +1769,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		if err != nil {
 			return fmt.Errorf("error getting lists by owner: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		var listIDs []uuid.UUID
 		for rows.Next() {
@@ -1823,7 +1823,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		if err != nil {
 			return fmt.Errorf("error loading list items: %w", err)
 		}
-		defer itemRows.Close()
+		defer safeClose(itemRows)
 
 		// Map to store items by list ID
 		itemsByListID := make(map[uuid.UUID][]*models.ListItem)
@@ -1863,7 +1863,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		if err != nil {
 			return fmt.Errorf("error loading list owners: %w", err)
 		}
-		defer ownerRows.Close()
+		defer safeClose(ownerRows)
 
 		// Map to store owners by list ID
 		ownersByListID := make(map[uuid.UUID][]*models.ListOwner)
@@ -1893,7 +1893,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		if err != nil {
 			return fmt.Errorf("error loading list shares: %w", err)
 		}
-		defer shareRows.Close()
+		defer safeClose(shareRows)
 
 		// Map to store shares by list ID
 		sharesByListID := make(map[uuid.UUID][]*models.ListShare)
@@ -1953,7 +1953,7 @@ func (r *listRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, err
 		if err != nil {
 			return fmt.Errorf("error getting shared tribes: %w", err)
 		}
-		defer rows.Close()
+		defer safeClose(rows)
 
 		for rows.Next() {
 			tribe := &models.Tribe{}

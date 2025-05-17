@@ -284,7 +284,7 @@ func (s *listService) SyncList(listID uuid.UUID) error {
 		// Handle concurrent modification by retrying once
 		if err == models.ErrConcurrentModification {
 			// Retry with fresh data
-			list, err = s.repo.GetByID(listID)
+			_, err = s.repo.GetByID(listID)
 			if err != nil {
 				return err
 			}

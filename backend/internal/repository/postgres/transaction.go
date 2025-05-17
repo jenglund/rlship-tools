@@ -64,7 +64,7 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		// Set lock timeout
 		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL lock_timeout = '%dms'", opts.LockTimeout.Milliseconds()))
 		if err != nil {
-			tx.Rollback()
+			safeClose(tx)
 			return fmt.Errorf("error setting lock timeout: %w", err)
 		}
 
@@ -73,7 +73,7 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 
 		// Check for deadlock or lock timeout
 		if err != nil {
-			tx.Rollback()
+			safeClose(tx)
 
 			if pqErr, ok := err.(*pq.Error); ok {
 				switch pqErr.Code {

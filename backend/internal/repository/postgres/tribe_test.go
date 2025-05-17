@@ -725,9 +725,10 @@ func TestTribeRepository(t *testing.T) {
 			memberIDs := make(map[uuid.UUID]bool)
 			for _, member := range foundTribe.Members {
 				memberIDs[member.UserID] = true
-				if member.UserID == user1.ID {
+				switch member.UserID {
+				case user1.ID:
 					assert.Equal(t, models.MembershipFull, member.MembershipType)
-				} else if member.UserID == user2.ID {
+				case user2.ID:
 					assert.Equal(t, models.MembershipGuest, member.MembershipType)
 				}
 			}
@@ -903,9 +904,10 @@ func TestTribeRepository(t *testing.T) {
 			memberIDs := make(map[uuid.UUID]bool)
 			for _, member := range tribe.Members {
 				memberIDs[member.UserID] = true
-				if member.UserID == user1.ID {
+				switch member.UserID {
+				case user1.ID:
 					assert.Equal(t, models.MembershipFull, member.MembershipType)
-				} else if member.UserID == user2.ID {
+				case user2.ID:
 					assert.Equal(t, models.MembershipGuest, member.MembershipType)
 				}
 			}

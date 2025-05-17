@@ -73,7 +73,7 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	query := `
 		SELECT 
@@ -119,7 +119,7 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribe members: %w", err)
 	}
-	defer memberRows.Close()
+	defer safeClose(memberRows)
 
 	var members []*models.TribeMember
 	for memberRows.Next() {
@@ -220,7 +220,7 @@ func (r *TribeRepository) Delete(id uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	now := time.Now()
 
@@ -270,7 +270,7 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	// First, get basic tribe information with a simple query
 	query := `
@@ -285,10 +285,9 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error listing tribes: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var tribes []*models.Tribe
-	var tribeIDs []uuid.UUID
 
 	for rows.Next() {
 		tribe := &models.Tribe{
@@ -312,7 +311,6 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 		}
 
 		tribes = append(tribes, tribe)
-		tribeIDs = append(tribeIDs, tribe.ID)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -338,7 +336,7 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error getting tribe members: %w", err)
 		}
-		defer memberRows.Close()
+		defer safeClose(memberRows)
 
 		for memberRows.Next() {
 			member := &models.TribeMember{}
@@ -357,7 +355,7 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 				&member.Version,
 			)
 			if err != nil {
-				memberRows.Close()
+				safeClose(memberRows)
 				return nil, fmt.Errorf("error scanning tribe member: %w", err)
 			}
 
@@ -367,7 +365,7 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 		if err = memberRows.Err(); err != nil {
 			return nil, fmt.Errorf("error iterating tribe members: %w", err)
 		}
-		memberRows.Close()
+		safeClose(memberRows)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -384,7 +382,7 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	// Get user's name for display_name
 	var displayName sql.NullString
@@ -479,7 +477,7 @@ func (r *TribeRepository) RemoveMember(tribeID, userID uuid.UUID) error {
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	query := `
 		UPDATE tribe_members
@@ -515,7 +513,7 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	// First check if the tribe exists
 	exists := false
@@ -541,7 +539,7 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribe members: %w", err)
 	}
-	defer memberRows.Close()
+	defer safeClose(memberRows)
 
 	var members []*models.TribeMember
 	for memberRows.Next() {
@@ -594,7 +592,7 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	query := `
 		SELECT 
@@ -610,7 +608,7 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 	if err != nil {
 		return nil, fmt.Errorf("error getting expired guest memberships: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var members []*models.TribeMember
 	for rows.Next() {
@@ -652,7 +650,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer safeClose(tx)
 
 	query := `
 		SELECT DISTINCT t.id, t.name, t.type, t.description, t.visibility,
@@ -667,7 +665,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 	if err != nil {
 		return nil, fmt.Errorf("error getting user tribes: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var tribes []*models.Tribe
 	for rows.Next() {
@@ -716,7 +714,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		if err != nil {
 			return nil, fmt.Errorf("error getting tribe members: %w", err)
 		}
-		defer memberRows.Close()
+		defer safeClose(memberRows)
 
 		for memberRows.Next() {
 			member := &models.TribeMember{}
@@ -735,7 +733,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 				&member.Version,
 			)
 			if err != nil {
-				memberRows.Close()
+				safeClose(memberRows)
 				return nil, fmt.Errorf("error scanning tribe member: %w", err)
 			}
 
@@ -745,7 +743,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		if err = memberRows.Err(); err != nil {
 			return nil, fmt.Errorf("error iterating tribe members: %w", err)
 		}
-		memberRows.Close()
+		safeClose(memberRows)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -770,7 +768,7 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribes by type: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var tribes []*models.Tribe
 	for rows.Next() {
@@ -828,7 +826,7 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 	if err != nil {
 		return nil, fmt.Errorf("error searching tribes: %w", err)
 	}
-	defer rows.Close()
+	defer safeClose(rows)
 
 	var tribes []*models.Tribe
 	for rows.Next() {

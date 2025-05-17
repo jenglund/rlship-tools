@@ -3,6 +3,7 @@ package testutil
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -79,7 +80,7 @@ func cleanupDatabase(dbName string) {
 		fmt.Printf("DEBUG: Error connecting to postgres for cleanup: %v\n", err)
 		return // Can't clean up if we can't connect
 	}
-	defer db.Close()
+	defer safeClose(db)
 
 	// Terminate any remaining connections with retries
 	maxRetries := 3
@@ -116,6 +117,31 @@ func cleanupDatabase(dbName string) {
 	}
 }
 
+// safeClose helper for testutil package
+func safeClose(c interface{}) {
+	var err error
+	switch v := c.(type) {
+	case *sql.Rows:
+		err = v.Close()
+	case *sql.Stmt:
+		err = v.Close()
+	case *sql.Tx:
+		err = v.Rollback()
+	case *sql.DB:
+		err = v.Close()
+	case *migrate.Migrate:
+		// migrate.Close() returns (error, int)
+		err, _ = v.Close()
+	default:
+		log.Printf("Unknown closer type: %T", v)
+		return
+	}
+
+	if err != nil {
+		log.Printf("Error closing resource: %v", err)
+	}
+}
+
 // SetupTestDB creates a test database and runs migrations
 func SetupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -138,7 +164,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 		cleanupDatabase(dbName)
 		panic(fmt.Sprintf("Error connecting to postgres: %v", err))
 	}
-	defer db.Close()
+	defer safeClose(db)
 
 	// Create test database
 	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(dbName)))
@@ -164,7 +190,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	setupSuccess := false
 	defer func() {
 		if !setupSuccess {
-			testDB.Close()
+			safeClose(testDB)
 			cleanupDatabase(dbName)
 		}
 	}()
@@ -212,7 +238,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		panic(fmt.Sprintf("Error creating migrate instance: %v", err))
 	}
-	defer m.Close()
+	defer safeClose(m)
 
 	// Check for dirty state before running migrations
 	version, dirty, err := m.Version()
@@ -258,9 +284,7 @@ func TeardownTestDB(t *testing.T, db *sql.DB) {
 
 	if db != nil && currentTestDBName != "" {
 		// Close the test database connection
-		if err := db.Close(); err != nil {
-			t.Errorf("Error closing test database connection: %v", err)
-		}
+		safeClose(db)
 
 		// Wait a bit to ensure all connections are closed
 		time.Sleep(100 * time.Millisecond)

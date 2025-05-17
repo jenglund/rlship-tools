@@ -13,7 +13,7 @@ import (
 
 func TestTransactionManager_WithTransaction(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer safeClose(db)
 
 	tm := NewTransactionManager(db)
 	ctx := context.Background()
@@ -75,7 +75,7 @@ func TestTransactionManager_WithTransaction(t *testing.T) {
 
 func TestTransactionManager_OrderedTransaction(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer safeClose(db)
 
 	tm := NewTransactionManager(db)
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func TestTransactionManager_OrderedTransaction(t *testing.T) {
 
 func TestTransactionManager_MonitorDeadlocks(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer safeClose(db)
 
 	tm := NewTransactionManager(db)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

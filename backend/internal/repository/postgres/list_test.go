@@ -1048,7 +1048,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 		// Check user1 lists
 		rows, err := db.Query(query, user1.ID)
 		require.NoError(t, err)
-		defer rows.Close()
+		defer safeClose(rows)
 
 		var user1Lists []struct {
 			ID        uuid.UUID
@@ -1092,7 +1092,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 		// Check user2 lists
 		rows, err = db.Query(query, user2.ID)
 		require.NoError(t, err)
-		defer rows.Close()
+		defer safeClose(rows)
 
 		var user2Lists []struct {
 			ID        uuid.UUID
@@ -1121,7 +1121,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 		randomUserID := uuid.New()
 		rows, err = db.Query(query, randomUserID)
 		require.NoError(t, err)
-		defer rows.Close()
+		defer safeClose(rows)
 
 		var emptyLists []struct {
 			ID        uuid.UUID
@@ -1375,7 +1375,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 		// Check tribe1 lists
 		rows, err := db.Query(query, tribe1.ID)
 		require.NoError(t, err)
-		defer rows.Close()
+		defer safeClose(rows)
 
 		var tribe1Lists []struct {
 			ID        uuid.UUID
@@ -1419,7 +1419,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 		// Check tribe2 lists
 		rows, err = db.Query(query, tribe2.ID)
 		require.NoError(t, err)
-		defer rows.Close()
+		defer safeClose(rows)
 
 		var tribe2Lists []struct {
 			ID        uuid.UUID
