@@ -163,16 +163,19 @@ All tests are now passing! This represents a significant milestone for the stabi
 The primary focus now is on improving test coverage and implementing remaining critical features. Our priorities are:
 
 1. **Test Coverage Improvements**:
-   - Current overall test coverage: 54.6%
-   - Current backend repository coverage: 52.6% (up from 48.8%)
+   - Current overall test coverage: 58.4% (up from 54.6%)
+   - Current backend repository coverage: 57.3% (up from 52.6%)
    - Priority areas with remaining low/no coverage:
      - Activity repository methods:
        - ✅ Delete (84.6% coverage)
        - ✅ List (80.8% coverage)
        - ✅ AddOwner/RemoveOwner/GetOwners (80% coverage)
-       - GetUserActivities/GetTribeActivities (0%)
+       - ✅ GetUserActivities/GetTribeActivities (80% coverage)
      - List repository methods:
-       - List, RemoveItem, GetItems, GetEligibleItems (0%)
+       - ✅ RemoveItem (80.0% coverage)
+       - ✅ GetItems (82.4% coverage)
+       - ✅ GetEligibleItems (80.0% coverage)
+       - List (0% coverage, workaround in place)
        - ShareWithTribe, GetListShares, GetSharedLists (0%)
        - Sync-related functionality methods (0-50%)
      - Database connection and setup code (0%)
@@ -217,11 +220,13 @@ To systematically improve test coverage, we'll follow this action plan:
    - ✅ Write tests for Delete method (0% → 84.6%)
    - ✅ Write tests for List method (0% → 80.8%)
    - ✅ Write tests for Owner management methods (AddOwner, RemoveOwner, GetOwners) (0% → 80%)
-   - Write tests for GetUserActivities and GetTribeActivities (0% → 80%)
+   - ✅ Write tests for GetUserActivities and GetTribeActivities (0% → 80%)
 
 2. **List Repository** (Week 1-2)
-   - Write tests for List method (0% → 80%)
-   - Write tests for RemoveItem, GetItems, GetEligibleItems (0% → 80%)
+   - ✅ Write tests for RemoveItem (0% → 80.0%)
+   - ✅ Write tests for GetItems (0% → 82.4%)
+   - ✅ Write tests for GetEligibleItems (0% → 80.0%)
+   - Write tests for List method (0% → 80%, workaround implemented due to complex loading mechanism)
    - Write tests for ShareWithTribe, GetListShares, GetSharedLists (0% → 80%)
    
 3. **Sync Functionality** (Week 2)
@@ -301,6 +306,11 @@ We've significantly improved test coverage for key methods in the Activity Repos
 | AddOwner | 0% | 80.0% | +80.0% |
 | RemoveOwner | 0% | 80.0% | +80.0% |
 | GetOwners | 0% | 80.0% | +80.0% |
+| GetUserActivities | 0% | 80.0% | +80.0% |
+| GetTribeActivities | 0% | 80.0% | +80.0% |
+| RemoveItem | 0% | 80.0% | +80.0% |
+| GetItems | 0% | 82.4% | +82.4% |
+| GetEligibleItems | 0% | 80.0% | +80.0% |
 
 ### Testing Strategy Demonstrated
 
@@ -345,7 +355,12 @@ Our tests follow these best practices:
    - Checking database state after operations
    - Validating relationships between entities
 
-Next steps include continuing with our Phase 1 plan to test the remaining untested methods in the Activity Repository, particularly GetUserActivities and GetTribeActivities.
+We have made significant progress in our test coverage goals:
+- Completed all planned testing for the Activity Repository (80%+ coverage for all key methods)
+- Implemented tests for several key List Repository methods (RemoveItem, GetItems, GetEligibleItems) achieving our 80% target
+- Developed a workaround for the List method due to complex loading mechanisms
+
+Next steps include continuing with our Phase 1 plan to test the remaining List Repository methods, focusing on ShareWithTribe, GetListShares, and GetSharedLists, followed by the sync functionality.
 
 ## License
 
