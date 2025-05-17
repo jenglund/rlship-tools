@@ -27,6 +27,7 @@ export default function ListsScreen() {
 
   const handleCreateList = () => {
     // Here you would typically make an API call to create the list
+    // eslint-disable-next-line no-console
     console.log('Creating list:', { name: newListName, type: newListType });
     hideModal();
     setNewListName('');
@@ -45,6 +46,7 @@ export default function ListsScreen() {
               description={`${list.itemCount} items`}
               left={props => <List.Icon {...props} icon="format-list-bulleted" />}
               right={props => <List.Icon {...props} icon="chevron-right" />}
+              // eslint-disable-next-line no-console
               onPress={() => console.log('Navigate to list:', list.id)}
             />
           ))}

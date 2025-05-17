@@ -51,6 +51,7 @@ export default function InterestButtonsScreen() {
 
   const handleCreateButton = () => {
     // Here you would typically make an API call to create the button
+    // eslint-disable-next-line no-console
     console.log('Creating button:', {
       name: newButtonName,
       defaultDuration: parseInt(newButtonDuration),
@@ -66,6 +67,7 @@ export default function InterestButtonsScreen() {
 
   const handlePressButton = (buttonId: string, isActive: boolean) => {
     // Here you would typically make an API call to update the button state
+    // eslint-disable-next-line no-console
     console.log('Toggling button:', buttonId, !isActive);
   };
 
