@@ -1,19 +1,30 @@
-.PHONY: test test-backend test-frontend dev dev-backend dev-frontend clean migrate-up migrate-down
+.PHONY: test test-backend test-frontend lint lint-backend lint-frontend dev dev-backend dev-frontend clean migrate-up migrate-down
 
 # Default target
-all: test
+all: test lint
 
 # Testing targets
 test: test-backend test-frontend
 
 test-backend:
 	@echo "Running backend tests..."
-	cd backend && go test -v -race -coverprofile=coverage.out ./...
+	cd backend && POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_DB=postgres go test -v -race -coverprofile=coverage.out ./...
 	cd backend && go tool cover -func=coverage.out
 
 test-frontend:
 	@echo "Running frontend tests..."
 	cd apps/mobile && npm test -- --coverage
+
+# Linting targets
+lint: lint-backend lint-frontend
+
+lint-backend:
+	@echo "Linting backend code..."
+	cd backend && golangci-lint run --timeout=5m
+
+lint-frontend:
+	@echo "Linting frontend code..."
+	cd apps/mobile && npm run lint
 
 # Development targets
 dev: dev-backend dev-frontend
