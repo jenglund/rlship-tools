@@ -13,6 +13,7 @@ import (
 	"github.com/jenglund/rlship-tools/internal/config"
 	"github.com/jenglund/rlship-tools/internal/middleware"
 	"github.com/jenglund/rlship-tools/internal/repository/postgres"
+	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -46,15 +47,8 @@ type MockConfig struct {
 	}
 }
 
-// MockFirebaseAuth is a mock implementation of FirebaseAuth
-type MockFirebaseAuth struct {
-	mock.Mock
-}
-
-func (m *MockFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
-	args := m.Called()
-	return args.Get(0).(gin.HandlerFunc)
-}
+// Use MockFirebaseAuth from testutil instead of local definition
+type MockFirebaseAuth = testutil.MockFirebaseAuth
 
 func TestConfigLoading(t *testing.T) {
 	// Save current env and restore after test

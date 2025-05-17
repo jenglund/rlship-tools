@@ -20,6 +20,11 @@ type Migrator interface {
 	Version() (uint, bool, error)
 }
 
+// migrator is a wrapper for migrate.Migrate that implements Migrator
+type migrator struct {
+	*migrate.Migrate
+}
+
 // MigrateFactory is a function type that creates a new migrate instance
 type MigrateFactory func(sourceURL, databaseURL string) (Migrator, error)
 
@@ -28,7 +33,11 @@ type ConfigLoader func() (*config.Config, error)
 
 // defaultMigrateFactory is the default implementation that uses migrate.New
 func defaultMigrateFactory(sourceURL, databaseURL string) (Migrator, error) {
-	return migrate.New(sourceURL, databaseURL)
+	m, err := migrate.New(sourceURL, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return &migrator{Migrate: m}, nil
 }
 
 // defaultConfigLoader is the default implementation that uses config.Load

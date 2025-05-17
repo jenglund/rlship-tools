@@ -156,6 +156,13 @@ When analyzing test failures, follow these best practices:
    - Add proper default values when initializing models
    - For JSON fields, ensure they're never NULL by providing empty objects/arrays
 
+6. **Complete Verification Process**:
+   - After making changes, run the full test suite with `make test`
+   - MUST run linting checks with `make lint` before considering your changes complete
+   - Code must pass both tests AND linter checks before submitting/committing
+   - Use `make all` to run both tests and linters in sequence
+   - Linting errors on CI indicate that local linting checks were skipped - NEVER skip these checks
+
 ## Development Philosophy
 
 1. **Consistent Error Handling Across Layers**:
