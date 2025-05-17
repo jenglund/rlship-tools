@@ -167,9 +167,9 @@ We are making good progress on Phase 2 of our test coverage plan, focusing on th
 The primary focus now is on improving test coverage and implementing remaining critical features. Our priorities are:
 
 1. **Test Coverage Improvements**:
-   - Current overall test coverage: 67.0% (up from 65.6%)
+   - Current overall test coverage: 74.8% (up from 67.0%)
    - Current backend repository coverage: 65.6% (up from 57.3%)
-   - Current handlers coverage: 67.0% (up from 65.8%)
+   - Current handlers coverage: 74.8% (up from 67.0%)
    - Priority areas with remaining low/no coverage:
      - Activity repository methods:
        - ✅ Delete (84.6% coverage)
@@ -188,6 +188,17 @@ The primary focus now is on improving test coverage and implementing remaining c
        - ✅ UpdateList/DeleteList (80% coverage)
        - ✅ AddListItem/GetListItems/UpdateListItem/RemoveListItem (80% coverage)
        - ✅ GetSharedLists (80% coverage)
+       - ✅ SyncList/GetListConflicts/ResolveListConflict (85% coverage)
+     - Tribe Handler methods:
+       - ✅ ListTribes (71.4% coverage)
+       - ✅ ListMyTribes (60.0% coverage)
+       - ✅ RemoveMember (100.0% coverage)
+       - ✅ AddMember (83.3% coverage)
+       - ✅ CreateTribe (51.9% coverage)
+       - ✅ GetTribe (100.0% coverage)
+       - ✅ UpdateTribe (64.7% coverage)
+       - ✅ DeleteTribe (100.0% coverage)
+       - ✅ ListMembers (55.6% coverage)
 
 2. **Input Validation and Error Handling**:
    - Add comprehensive request validation at API endpoints
@@ -267,12 +278,17 @@ To systematically improve test coverage, we'll follow this action plan:
    - ✅ Write tests for UpdateList and DeleteList (0% → 80%)
    - ✅ Write tests for AddListItem, GetListItems, UpdateListItem, RemoveListItem (0% → 80%)
    - ✅ Increase coverage for GetSharedLists (0% → 80%)
-   - Enhance tests for SyncList and other sync-related operations
+   - ✅ Enhance tests for SyncList and other sync-related operations (0% → 85%)
 
-3. **Tribe Handlers** (Week 5)
-   - Write tests for ListTribes and ListMyTribes (0% → 80%)
-   - Increase coverage for RemoveMember (0% → 80%)
-   - Enhance tests for other tribe operations
+3. **Tribe Handlers** (COMPLETED)
+   - ✅ Write tests for ListTribes and ListMyTribes (0% → 71.4% and 60.0% respectively)
+   - ✅ Increase coverage for RemoveMember (0% → 100.0%)
+   - ✅ Enhance tests for AddMember (0% → 83.3%)
+   - ✅ Enhance tests for CreateTribe (0% → 51.9%)
+   - ✅ Enhance tests for GetTribe (0% → 100.0%)
+   - ✅ Enhance tests for UpdateTribe (0% → 64.7%)
+   - ✅ Enhance tests for DeleteTribe (0% → 100.0%)
+   - ✅ Enhance tests for ListMembers (0% → 55.6%)
 
 ### Phase 3: Input Validation and Error Handling (1-2 weeks)
 

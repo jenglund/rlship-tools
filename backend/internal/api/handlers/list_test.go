@@ -53,6 +53,9 @@ func (m *MockListService) AddListItem(item *models.ListItem) error {
 
 func (m *MockListService) GetListItems(listID uuid.UUID) ([]*models.ListItem, error) {
 	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.ListItem), args.Error(1)
 }
 
@@ -68,6 +71,9 @@ func (m *MockListService) RemoveListItem(listID, itemID uuid.UUID) error {
 
 func (m *MockListService) GenerateMenu(params *models.MenuParams) ([]*models.List, error) {
 	args := m.Called(params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
@@ -78,6 +84,9 @@ func (m *MockListService) SyncList(listID uuid.UUID) error {
 
 func (m *MockListService) GetListConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
 	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.SyncConflict), args.Error(1)
 }
 
@@ -98,16 +107,25 @@ func (m *MockListService) RemoveListOwner(listID, ownerID uuid.UUID) error {
 
 func (m *MockListService) GetListOwners(listID uuid.UUID) ([]*models.ListOwner, error) {
 	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.ListOwner), args.Error(1)
 }
 
 func (m *MockListService) GetUserLists(userID uuid.UUID) ([]*models.List, error) {
 	args := m.Called(userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
 func (m *MockListService) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
 	args := m.Called(tribeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
@@ -123,6 +141,9 @@ func (m *MockListService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID
 
 func (m *MockListService) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
 	args := m.Called(tribeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
@@ -136,6 +157,9 @@ func (m *MockListService) List(offset, limit int) ([]*models.List, error) {
 
 func (m *MockListService) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
 	args := m.Called(listID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
 	return args.Get(0).([]*models.ListShare), args.Error(1)
 }
 
