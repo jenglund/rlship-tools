@@ -18,8 +18,11 @@ $$ LANGUAGE plpgsql;
 -- Create enum types
 CREATE TYPE visibility_type AS ENUM ('private', 'public', 'shared');
 CREATE TYPE tribe_type AS ENUM ('custom', 'couple', 'polycule', 'friends', 'family', 'roommates', 'coworkers');
-CREATE TYPE sync_status AS ENUM ('pending', 'syncing', 'synced', 'error');
-CREATE TYPE sync_source AS ENUM ('google_maps', 'manual', 'imported');
+CREATE TYPE sync_status AS ENUM ('none', 'pending', 'synced', 'conflict');
+CREATE TYPE sync_source AS ENUM ('none', 'google_maps', 'manual', 'imported');
+CREATE TYPE activity_type AS ENUM ('location', 'interest', 'list', 'custom', 'activity', 'event');
+CREATE TYPE owner_type AS ENUM ('user', 'tribe');
+CREATE TYPE membership_type AS ENUM ('full', 'limited', 'guest');
 
 -- Create users table
 CREATE TABLE users (
@@ -29,9 +32,11 @@ CREATE TABLE users (
     email TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     avatar_url TEXT,
+    last_login TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    version INTEGER NOT NULL DEFAULT 1
+    version INTEGER NOT NULL DEFAULT 1,
+    deleted_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Create tribes table
@@ -44,112 +49,154 @@ CREATE TABLE tribes (
     metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    version INTEGER NOT NULL DEFAULT 1
+    version INTEGER NOT NULL DEFAULT 1,
+    deleted_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Create tribe_members table
 CREATE TABLE tribe_members (
-    tribe_id UUID NOT NULL REFERENCES tribes(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tribe_id UUID NOT NULL REFERENCES tribes(id),
+    user_id UUID NOT NULL REFERENCES users(id),
+    membership_type membership_type NOT NULL DEFAULT 'full',
+    display_name TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (tribe_id, user_id)
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE (tribe_id, user_id)
 );
 
 -- Create lists table
 CREATE TABLE lists (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID NOT NULL REFERENCES users(id),
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    type TEXT NOT NULL CHECK (type IN ('wishlist', 'places', 'activities', 'custom')),
     visibility visibility_type NOT NULL DEFAULT 'private',
-    metadata JSONB NOT NULL DEFAULT '{}',
-    sync_status sync_status NOT NULL DEFAULT 'pending',
-    sync_source sync_source NOT NULL DEFAULT 'manual',
+    type TEXT NOT NULL,
+    default_weight FLOAT NOT NULL DEFAULT 1.0,
+    sync_source sync_source NOT NULL DEFAULT 'none',
     sync_id TEXT,
+    sync_status sync_status NOT NULL DEFAULT 'none',
+    last_sync_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    version INTEGER NOT NULL DEFAULT 1
+    version INTEGER NOT NULL DEFAULT 1,
+    deleted_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Create list_owners table
 CREATE TABLE list_owners (
-    list_id UUID NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
-    owner_id UUID NOT NULL,
-    owner_type TEXT NOT NULL CHECK (owner_type IN ('user', 'tribe')),
+    list_id UUID NOT NULL REFERENCES lists(id),
+    user_id UUID NOT NULL REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (list_id, owner_id)
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    PRIMARY KEY (list_id, user_id)
 );
 
 -- Create list_items table
 CREATE TABLE list_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    list_id UUID NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    list_id UUID NOT NULL REFERENCES lists(id),
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    weight FLOAT NOT NULL DEFAULT 1.0,
     metadata JSONB NOT NULL DEFAULT '{}',
-    last_chosen_at TIMESTAMP WITH TIME ZONE,
-    times_chosen INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    version INTEGER NOT NULL DEFAULT 1
-);
-
--- Create list_shares table
-CREATE TABLE list_shares (
-    list_id UUID NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
-    tribe_id UUID NOT NULL REFERENCES tribes(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (list_id, tribe_id)
+    deleted_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Create activities table
 CREATE TABLE activities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    tribe_id UUID REFERENCES tribes(id) ON DELETE CASCADE,
-    list_id UUID REFERENCES lists(id) ON DELETE CASCADE,
-    item_id UUID REFERENCES list_items(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id),
+    type activity_type NOT NULL,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     visibility visibility_type NOT NULL DEFAULT 'private',
     metadata JSONB NOT NULL DEFAULT '{}',
-    scheduled_for TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version INTEGER NOT NULL DEFAULT 1,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Create activity_owners table
+CREATE TABLE activity_owners (
+    activity_id UUID NOT NULL REFERENCES activities(id),
+    user_id UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (activity_id, user_id)
+);
+
+-- Create activity_photos table
+CREATE TABLE activity_photos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    activity_id UUID NOT NULL REFERENCES activities(id),
+    url TEXT NOT NULL,
+    caption TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
     version INTEGER NOT NULL DEFAULT 1
+);
+
+-- Create activity_shares table
+CREATE TABLE activity_shares (
+    activity_id UUID NOT NULL REFERENCES activities(id),
+    tribe_id UUID NOT NULL REFERENCES tribes(id),
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (activity_id, tribe_id)
+);
+
+-- Create list_shares table
+CREATE TABLE list_shares (
+    list_id UUID NOT NULL REFERENCES lists(id),
+    tribe_id UUID NOT NULL REFERENCES tribes(id),
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (list_id, tribe_id)
 );
 
 -- Create sync_conflicts table
 CREATE TABLE sync_conflicts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    list_id UUID NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
-    conflict_data JSONB NOT NULL,
-    resolved_at TIMESTAMP WITH TIME ZONE,
+    list_id UUID NOT NULL REFERENCES lists(id),
+    type TEXT NOT NULL,
+    local_data TEXT NOT NULL,
+    remote_data TEXT NOT NULL,
+    resolved BOOLEAN NOT NULL DEFAULT false,
+    resolution TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    version INTEGER NOT NULL DEFAULT 1
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes
 CREATE INDEX idx_users_firebase_uid ON users(firebase_uid);
 CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_tribes_type ON tribes(type);
-CREATE INDEX idx_tribes_visibility ON tribes(visibility);
-CREATE INDEX idx_lists_sync_status ON lists(sync_status);
-CREATE INDEX idx_lists_sync_source ON lists(sync_source);
+CREATE INDEX idx_tribes_name ON tribes(name);
+CREATE INDEX idx_tribe_members_tribe_id ON tribe_members(tribe_id);
+CREATE INDEX idx_tribe_members_user_id ON tribe_members(user_id);
+CREATE INDEX idx_lists_owner ON lists(owner_id);
+CREATE INDEX idx_lists_sync_id ON lists(sync_id);
 CREATE INDEX idx_list_items_list_id ON list_items(list_id);
-CREATE INDEX idx_list_items_last_chosen_at ON list_items(last_chosen_at);
 CREATE INDEX idx_activities_user_id ON activities(user_id);
-CREATE INDEX idx_activities_tribe_id ON activities(tribe_id);
-CREATE INDEX idx_activities_list_id ON activities(list_id);
-CREATE INDEX idx_activities_item_id ON activities(item_id);
-CREATE INDEX idx_activities_scheduled_for ON activities(scheduled_for);
-CREATE INDEX idx_activities_completed_at ON activities(completed_at);
+CREATE INDEX idx_activity_photos_activity_id ON activity_photos(activity_id);
+CREATE INDEX idx_activity_shares_activity_id ON activity_shares(activity_id);
+CREATE INDEX idx_list_shares_list_id ON list_shares(list_id);
 CREATE INDEX idx_sync_conflicts_list_id ON sync_conflicts(list_id);
 
 -- Create test database role if it doesn't exist
@@ -161,114 +208,117 @@ BEGIN
 END
 $$;
 
--- Create triggers for updated_at
+-- Create triggers for updated_at and version
 CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER increment_users_version
+    BEFORE UPDATE ON users
+    FOR EACH ROW
+    EXECUTE FUNCTION increment_version();
 
 CREATE TRIGGER update_tribes_updated_at
     BEFORE UPDATE ON tribes
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_tribe_members_updated_at
-    BEFORE UPDATE ON tribe_members
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_lists_updated_at
-    BEFORE UPDATE ON lists
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_list_items_updated_at
-    BEFORE UPDATE ON list_items
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_list_shares_updated_at
-    BEFORE UPDATE ON list_shares
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_activities_updated_at
-    BEFORE UPDATE ON activities
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_sync_conflicts_updated_at
-    BEFORE UPDATE ON sync_conflicts
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Create version increment triggers
-CREATE TRIGGER increment_users_version
-    BEFORE UPDATE ON users
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
-
 CREATE TRIGGER increment_tribes_version
     BEFORE UPDATE ON tribes
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
+
+CREATE TRIGGER update_tribe_members_updated_at
+    BEFORE UPDATE ON tribe_members
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER increment_tribe_members_version
     BEFORE UPDATE ON tribe_members
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
-CREATE TRIGGER increment_lists_version
-    BEFORE UPDATE ON lists
+CREATE TRIGGER update_activities_updated_at
+    BEFORE UPDATE ON activities
     FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
-
-CREATE TRIGGER increment_list_items_version
-    BEFORE UPDATE ON list_items
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
-
-CREATE TRIGGER increment_list_shares_version
-    BEFORE UPDATE ON list_shares
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
+    EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER increment_activities_version
     BEFORE UPDATE ON activities
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
-CREATE TRIGGER increment_sync_conflicts_version
-    BEFORE UPDATE ON sync_conflicts
+CREATE TRIGGER update_activity_photos_updated_at
+    BEFORE UPDATE ON activity_photos
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER increment_activity_photos_version
+    BEFORE UPDATE ON activity_photos
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
--- Create trigger function to validate owner_id based on owner_type
+CREATE TRIGGER update_activity_shares_updated_at
+    BEFORE UPDATE ON activity_shares
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER increment_activity_shares_version
+    BEFORE UPDATE ON activity_shares
+    FOR EACH ROW
+    EXECUTE FUNCTION increment_version();
+
+CREATE TRIGGER update_lists_updated_at
+    BEFORE UPDATE ON lists
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER increment_lists_version
+    BEFORE UPDATE ON lists
+    FOR EACH ROW
+    EXECUTE FUNCTION increment_version();
+
+CREATE TRIGGER update_list_items_updated_at
+    BEFORE UPDATE ON list_items
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER increment_list_items_version
+    BEFORE UPDATE ON list_items
+    FOR EACH ROW
+    EXECUTE FUNCTION increment_version();
+
+CREATE TRIGGER update_list_shares_updated_at
+    BEFORE UPDATE ON list_shares
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER increment_list_shares_version
+    BEFORE UPDATE ON list_shares
+    FOR EACH ROW
+    EXECUTE FUNCTION increment_version();
+
+-- Create foreign key validation function
 CREATE OR REPLACE FUNCTION validate_list_owner()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.owner_type = 'user' THEN
-        IF NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
-            RAISE EXCEPTION 'Invalid user ID in list_owners';
-        END IF;
-    ELSIF NEW.owner_type = 'tribe' THEN
-        IF NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
-            RAISE EXCEPTION 'Invalid tribe ID in list_owners';
-        END IF;
-    ELSE
-        RAISE EXCEPTION 'Invalid owner_type in list_owners';
+    IF NEW.owner_type = 'user' AND NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
+        RAISE EXCEPTION 'Invalid user ID in owner_id';
+    ELSIF NEW.owner_type = 'tribe' AND NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
+        RAISE EXCEPTION 'Invalid tribe ID in owner_id';
     END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Create triggers for list_owners validation
+-- Create triggers for list owner validation
 CREATE TRIGGER validate_list_owner_insert
-    BEFORE INSERT ON list_owners
+    BEFORE INSERT ON lists
     FOR EACH ROW
     EXECUTE FUNCTION validate_list_owner();
 
 CREATE TRIGGER validate_list_owner_update
-    BEFORE UPDATE ON list_owners
+    BEFORE UPDATE ON lists
     FOR EACH ROW
     EXECUTE FUNCTION validate_list_owner(); 

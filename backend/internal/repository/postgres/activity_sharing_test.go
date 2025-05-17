@@ -24,6 +24,7 @@ func TestActivitySharing(t *testing.T) {
 	t.Run("Share Activity with Tribe", func(t *testing.T) {
 		// Create test activity
 		activity := &models.Activity{
+			UserID:      user1.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Test Location",
 			Description: "Test Description",
@@ -46,6 +47,7 @@ func TestActivitySharing(t *testing.T) {
 	t.Run("Share Activity with Expiration", func(t *testing.T) {
 		// Create test activity
 		activity := &models.Activity{
+			UserID:      user1.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Test Location",
 			Description: "Test Description",
@@ -79,6 +81,7 @@ func TestActivitySharing(t *testing.T) {
 	t.Run("Unshare Activity", func(t *testing.T) {
 		// Create and share test activity
 		activity := &models.Activity{
+			UserID:      user1.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Test Location",
 			Description: "Test Description",
@@ -106,6 +109,7 @@ func TestActivitySharing(t *testing.T) {
 
 		// Create test activity
 		activity := &models.Activity{
+			UserID:      user1.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Test Location",
 			Description: "Test Description",
@@ -149,6 +153,7 @@ func TestActivitySharing(t *testing.T) {
 	t.Run("Share Private Activity", func(t *testing.T) {
 		// Create private activity
 		activity := &models.Activity{
+			UserID:      user1.ID,
 			Type:        models.ActivityTypeLocation,
 			Name:        "Private Location",
 			Description: "Test Description",

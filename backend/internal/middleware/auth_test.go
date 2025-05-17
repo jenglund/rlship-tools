@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,7 +74,7 @@ func (m *MockUserRepository) List(offset, limit int) ([]*models.User, error) {
 
 // MockRepositories is a mock implementation of the repositories struct
 type MockRepositories struct {
-	Users      *MockUserRepository
+	Users      models.UserRepository
 	Tribes     *postgres.TribeRepository
 	Activities *postgres.ActivityRepository
 	db         *sql.DB
@@ -345,32 +344,38 @@ func TestUserIDMiddleware_RepositoryErrors(t *testing.T) {
 			name:        "database error",
 			firebaseUID: "test-uid",
 			setupRepo: func(repo *MockUserRepository) {
-				repo.On("GetByFirebaseUID", "test-uid").Return(nil, fmt.Errorf("database connection error"))
+				repo.On("GetByFirebaseUID", "test-uid").Return(nil, errors.New("database error"))
 			},
 			expectedStatus: http.StatusUnauthorized,
 			expectedError:  "user not found",
 		},
 		{
-			name:        "nil repository",
-			firebaseUID: "test-uid",
-			setupRepo: func(repo *MockUserRepository) {
-				// Simulate nil repository by not setting up any expectations
-			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "user not found",
+			name:           "nil repository",
+			firebaseUID:    "test-uid",
+			setupRepo:      nil,
+			expectedStatus: http.StatusInternalServerError,
+			expectedError:  "user repository not configured",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			mockRepo := &MockUserRepository{}
-			if tt.setupRepo != nil {
-				tt.setupRepo(mockRepo)
-			}
+			var mockRepo *MockUserRepository
+			var repos *MockRepositories
 
-			repos := &MockRepositories{
-				Users: mockRepo,
+			if tt.name == "nil repository" {
+				repos = &MockRepositories{
+					Users: nil,
+				}
+			} else {
+				mockRepo = &MockUserRepository{}
+				if tt.setupRepo != nil {
+					tt.setupRepo(mockRepo)
+				}
+				repos = &MockRepositories{
+					Users: mockRepo,
+				}
 			}
 
 			router.Use(func(c *gin.Context) {

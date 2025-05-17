@@ -252,7 +252,7 @@ func TestListService_Sharing(t *testing.T) {
 
 	t.Run("Share With Tribe", func(t *testing.T) {
 		mockRepo.On("GetByID", listID).Return(&models.List{ID: listID}, nil).Once()
-		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{{OwnerID: userID}}, nil).Once()
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{{OwnerID: userID, OwnerType: models.OwnerTypeUser}}, nil).Once()
 		mockRepo.On("ShareWithTribe", mock.MatchedBy(func(share *models.ListShare) bool {
 			return share.ListID == listID && share.TribeID == tribeID && share.UserID == userID
 		})).Return(nil).Once()
@@ -262,7 +262,7 @@ func TestListService_Sharing(t *testing.T) {
 
 	t.Run("Unshare With Tribe", func(t *testing.T) {
 		mockRepo.On("GetByID", listID).Return(&models.List{ID: listID}, nil).Once()
-		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{{OwnerID: userID}}, nil).Once()
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{{OwnerID: userID, OwnerType: models.OwnerTypeUser}}, nil).Once()
 		mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil).Once()
 		err := service.UnshareListWithTribe(listID, tribeID, userID)
 		assert.NoError(t, err)

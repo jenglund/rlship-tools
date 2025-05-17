@@ -36,12 +36,12 @@ func TestActivityPhotos(t *testing.T) {
 
 	t.Run("Add Photo", func(t *testing.T) {
 		// Add photo metadata
-		photos := []map[string]interface{}{
-			{
+		photos := []interface{}{
+			map[string]interface{}{
 				"url":         "https://example.com/photos/1.jpg",
 				"uploadedAt":  time.Now().UTC().Format(time.RFC3339),
 				"description": "Test photo 1",
-				"tags":        []string{"food", "interior"},
+				"tags":        []interface{}{"food", "interior"},
 			},
 		}
 		activity.Metadata = models.JSONMap{"photos": photos}
@@ -66,18 +66,18 @@ func TestActivityPhotos(t *testing.T) {
 
 	t.Run("Add Multiple Photos", func(t *testing.T) {
 		// Add multiple photos
-		photos := []map[string]interface{}{
-			{
+		photos := []interface{}{
+			map[string]interface{}{
 				"url":         "https://example.com/photos/1.jpg",
 				"uploadedAt":  time.Now().UTC().Format(time.RFC3339),
 				"description": "Test photo 1",
-				"tags":        []string{"food", "interior"},
+				"tags":        []interface{}{"food", "interior"},
 			},
-			{
+			map[string]interface{}{
 				"url":         "https://example.com/photos/2.jpg",
 				"uploadedAt":  time.Now().UTC().Format(time.RFC3339),
 				"description": "Test photo 2",
-				"tags":        []string{"exterior", "building"},
+				"tags":        []interface{}{"exterior", "building"},
 			},
 		}
 		activity.Metadata = models.JSONMap{"photos": photos}
@@ -98,24 +98,24 @@ func TestActivityPhotos(t *testing.T) {
 		for i, p := range updatedPhotos {
 			photo, ok := p.(map[string]interface{})
 			require.True(t, ok, "photo should be a map[string]interface{}")
-			assert.Equal(t, photos[i]["url"], photo["url"])
+			assert.Equal(t, photos[i].(map[string]interface{})["url"], photo["url"])
 		}
 	})
 
 	t.Run("Remove Photo", func(t *testing.T) {
 		// Create test activity with photos
-		photos := []map[string]interface{}{
-			{
+		photos := []interface{}{
+			map[string]interface{}{
 				"url":         "https://example.com/photos/1.jpg",
 				"uploadedAt":  time.Now().UTC().Format(time.RFC3339),
 				"description": "Test photo 1",
-				"tags":        []string{"food", "interior"},
+				"tags":        []interface{}{"food", "interior"},
 			},
-			{
+			map[string]interface{}{
 				"url":         "https://example.com/photos/2.jpg",
 				"uploadedAt":  time.Now().UTC().Format(time.RFC3339),
 				"description": "Test photo 2",
-				"tags":        []string{"exterior", "building"},
+				"tags":        []interface{}{"exterior", "building"},
 			},
 		}
 
@@ -138,12 +138,12 @@ func TestActivityPhotos(t *testing.T) {
 
 	t.Run("Update Photo Metadata", func(t *testing.T) {
 		// Create test activity with photo
-		photos := []map[string]interface{}{
-			{
+		photos := []interface{}{
+			map[string]interface{}{
 				"url":         "https://example.com/photos/1.jpg",
 				"uploadedAt":  time.Now().UTC().Format(time.RFC3339),
 				"description": "Original description",
-				"tags":        []string{"food"},
+				"tags":        []interface{}{"food"},
 			},
 		}
 
@@ -152,8 +152,8 @@ func TestActivityPhotos(t *testing.T) {
 		require.NoError(t, err)
 
 		// Update photo metadata
-		photos[0]["description"] = "Updated description"
-		photos[0]["tags"] = []string{"food", "drinks"}
+		photos[0].(map[string]interface{})["description"] = "Updated description"
+		photos[0].(map[string]interface{})["tags"] = []interface{}{"food", "drinks"}
 		activity.Metadata = models.JSONMap{"photos": photos}
 
 		err = repo.Update(activity)
@@ -179,6 +179,7 @@ func TestActivityPhotosRepository(t *testing.T) {
 		Name:        "Test Activity",
 		Description: "Test Description",
 		Type:        models.ActivityTypeEvent,
+		Visibility:  models.VisibilityPrivate,
 		Metadata:    models.JSONMap{"test": "data"},
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
@@ -190,19 +191,24 @@ func TestActivityPhotosRepository(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create test photo
+	now := time.Now()
 	photo := &models.ActivityPhoto{
-		ID:         uuid.New(),
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: now,
+			UpdatedAt: now,
+			Version:   1,
+		},
 		ActivityID: activity.ID,
 		URL:        "https://example.com/photo.jpg",
 		Caption:    "Test Caption",
 		Metadata:   models.JSONMap{"test": "data"},
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
 	}
 
 	t.Run("Create", func(t *testing.T) {
 		err := repo.Create(photo)
 		assert.NoError(t, err)
+		assert.Equal(t, 1, photo.Version)
 	})
 
 	t.Run("GetByID", func(t *testing.T) {
@@ -213,17 +219,21 @@ func TestActivityPhotosRepository(t *testing.T) {
 		assert.Equal(t, photo.URL, retrieved.URL)
 		assert.Equal(t, photo.Caption, retrieved.Caption)
 		assert.Equal(t, photo.Metadata, retrieved.Metadata)
+		assert.Equal(t, photo.Version, retrieved.Version)
 	})
 
 	t.Run("Update", func(t *testing.T) {
 		updated := &models.ActivityPhoto{
-			ID:         photo.ID,
+			BaseModel: models.BaseModel{
+				ID:        photo.ID,
+				CreatedAt: photo.CreatedAt,
+				UpdatedAt: time.Now(),
+				Version:   photo.Version,
+			},
 			ActivityID: photo.ActivityID,
 			URL:        "https://example.com/updated.jpg",
 			Caption:    "Updated Caption",
 			Metadata:   models.JSONMap{"updated": "data"},
-			CreatedAt:  photo.CreatedAt,
-			UpdatedAt:  time.Now(),
 		}
 
 		err := repo.Update(updated)
@@ -234,6 +244,7 @@ func TestActivityPhotosRepository(t *testing.T) {
 		assert.Equal(t, updated.URL, retrieved.URL)
 		assert.Equal(t, updated.Caption, retrieved.Caption)
 		assert.Equal(t, updated.Metadata, retrieved.Metadata)
+		assert.Equal(t, photo.Version+1, retrieved.Version)
 	})
 
 	t.Run("Delete", func(t *testing.T) {
@@ -242,5 +253,6 @@ func TestActivityPhotosRepository(t *testing.T) {
 
 		_, err = repo.GetByID(photo.ID)
 		assert.Error(t, err)
+		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
 }

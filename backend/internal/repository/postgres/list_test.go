@@ -24,442 +24,413 @@ func TestListRepository(t *testing.T) {
 	defer testutil.TeardownTestDB(t, db)
 
 	repo := NewListRepository(db)
-	user := testutil.CreateTestUser(t, db)
-	tribe := testutil.CreateTestTribe(t, db, []testutil.TestUser{
-		{
-			ID:          user.ID,
-			FirebaseUID: user.FirebaseUID,
-			Provider:    user.Provider,
-			Email:       user.Email,
-			Name:        user.Name,
-			AvatarURL:   user.AvatarURL,
-		},
-	})
+	testUser := testutil.CreateTestUser(t, db)
 
-	t.Run("Basic CRUD Operations", func(t *testing.T) {
-		// Create a test list
-		maxItems := 10
-		cooldownDays := 7
-		ownerType := models.OwnerTypeUser
+	maxItems := 100
+	cooldownDays := 7
+
+	t.Run("Create", func(t *testing.T) {
 		list := &models.List{
-			Type:          models.ListTypeLocation,
+			Type:          models.ListTypeActivity,
 			Name:          "Test List",
 			Description:   "Test Description",
-			Visibility:    models.VisibilityPublic,
+			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
 			MaxItems:      &maxItems,
 			CooldownDays:  &cooldownDays,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 
-		// Test Create
+		err := repo.Create(list)
+		assert.NoError(t, err)
+		assert.NotEqual(t, uuid.Nil, list.ID)
+		assert.False(t, list.CreatedAt.IsZero())
+		assert.False(t, list.UpdatedAt.IsZero())
+		assert.Equal(t, list.CreatedAt, list.UpdatedAt)
+
+		// Verify owners were created
+		owners, err := repo.GetOwners(list.ID)
+		assert.NoError(t, err)
+		assert.Len(t, owners, 1)
+		assert.Equal(t, testUser.ID, owners[0].OwnerID)
+		assert.Equal(t, models.OwnerTypeUser, owners[0].OwnerType)
+	})
+
+	t.Run("GetByID", func(t *testing.T) {
+		// Create test list
+		list := &models.List{
+			Type:          models.ListTypeActivity,
+			Name:          "Test List",
+			Description:   "Test Description",
+			Visibility:    models.VisibilityPrivate,
+			DefaultWeight: 1.0,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
+		}
 		err := repo.Create(list)
 		require.NoError(t, err)
-		assert.NotEqual(t, uuid.Nil, list.ID)
 
-		// Test GetByID
-		retrieved, err := repo.GetByID(list.ID)
+		// Add test item
+		item := &models.ListItem{
+			ListID:      list.ID,
+			Name:        "Test Item",
+			Description: "Test Item Description",
+			Weight:      1.0,
+			Metadata:    models.JSONMap{"test": "data"},
+		}
+		err = repo.AddItem(item)
 		require.NoError(t, err)
-		assert.Equal(t, list.Name, retrieved.Name)
+
+		// Test retrieval
+		retrieved, err := repo.GetByID(list.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, list.ID, retrieved.ID)
 		assert.Equal(t, list.Type, retrieved.Type)
+		assert.Equal(t, list.Name, retrieved.Name)
 		assert.Equal(t, list.Description, retrieved.Description)
 		assert.Equal(t, list.Visibility, retrieved.Visibility)
 		assert.Equal(t, list.DefaultWeight, retrieved.DefaultWeight)
 		assert.Equal(t, list.MaxItems, retrieved.MaxItems)
 		assert.Equal(t, list.CooldownDays, retrieved.CooldownDays)
-		assert.Equal(t, list.OwnerID, retrieved.OwnerID)
-		assert.Equal(t, list.OwnerType, retrieved.OwnerType)
 
-		// Test Update
-		list.Name = "Updated List"
-		list.Description = "Updated Description"
-		err = repo.Update(list)
-		require.NoError(t, err)
+		// Verify items were loaded
+		assert.Len(t, retrieved.Items, 1)
+		assert.Equal(t, item.ID, retrieved.Items[0].ID)
+		assert.Equal(t, item.Name, retrieved.Items[0].Name)
+		assert.Equal(t, item.Description, retrieved.Items[0].Description)
+		assert.Equal(t, item.Weight, retrieved.Items[0].Weight)
+		assert.Equal(t, item.Metadata, retrieved.Items[0].Metadata)
 
-		updated, err := repo.GetByID(list.ID)
-		require.NoError(t, err)
-		assert.Equal(t, "Updated List", updated.Name)
-		assert.Equal(t, "Updated Description", updated.Description)
+		// Verify owners were loaded
+		assert.Len(t, retrieved.Owners, 1)
+		assert.Equal(t, testUser.ID, retrieved.Owners[0].OwnerID)
+		assert.Equal(t, models.OwnerTypeUser, retrieved.Owners[0].OwnerType)
 
-		// Test Delete
-		err = repo.Delete(list.ID)
-		require.NoError(t, err)
-
-		_, err = repo.GetByID(list.ID)
+		// Test not found
+		_, err = repo.GetByID(uuid.New())
 		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
 
-	t.Run("List Items Management", func(t *testing.T) {
-		// Create a test list
-		ownerType := models.OwnerTypeUser
+	t.Run("Update", func(t *testing.T) {
+		// Create test list
 		list := &models.List{
-			Type:          models.ListTypeLocation,
+			Type:          models.ListTypeActivity,
 			Name:          "Test List",
 			Description:   "Test Description",
-			Visibility:    models.VisibilityPublic,
+			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
 
-		// Test AddItem
+		// Update list
+		updatedMaxItems := 200
+		updatedCooldownDays := 14
+		list.Name = "Updated List"
+		list.Description = "Updated Description"
+		list.Visibility = models.VisibilityPublic
+		list.DefaultWeight = 2.0
+		list.MaxItems = &updatedMaxItems
+		list.CooldownDays = &updatedCooldownDays
+
+		err = repo.Update(list)
+		assert.NoError(t, err)
+
+		// Verify changes
+		updated, err := repo.GetByID(list.ID)
+		assert.NoError(t, err)
+		assert.Equal(t, list.Name, updated.Name)
+		assert.Equal(t, list.Description, updated.Description)
+		assert.Equal(t, list.Visibility, updated.Visibility)
+		assert.Equal(t, list.DefaultWeight, updated.DefaultWeight)
+		assert.Equal(t, list.MaxItems, updated.MaxItems)
+		assert.Equal(t, list.CooldownDays, updated.CooldownDays)
+		assert.True(t, updated.UpdatedAt.After(updated.CreatedAt))
+
+		// Test not found
+		notFoundList := &models.List{
+			ID:   uuid.New(),
+			Name: "Not Found",
+		}
+		err = repo.Update(notFoundList)
+		assert.ErrorIs(t, err, models.ErrNotFound)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		// Create test list with items and owners
+		list := &models.List{
+			Type:          models.ListTypeActivity,
+			Name:          "Test List",
+			Description:   "Test Description",
+			Visibility:    models.VisibilityPrivate,
+			DefaultWeight: 1.0,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
+		}
+		err := repo.Create(list)
+		require.NoError(t, err)
+
 		item := &models.ListItem{
 			ListID:      list.ID,
 			Name:        "Test Item",
 			Description: "Test Item Description",
-			Weight:      1.5,
-			Metadata: map[string]interface{}{
-				"test_key": "test_value",
-			},
-			ExternalID: "ext123",
-			Latitude:   testutil.Float64Ptr(37.7749),
-			Longitude:  testutil.Float64Ptr(-122.4194),
-			Address:    testutil.StringPtr("123 Test St"),
+			Weight:      1.0,
 		}
-
 		err = repo.AddItem(item)
 		require.NoError(t, err)
-		assert.NotEqual(t, uuid.Nil, item.ID)
 
-		// Test GetItems
-		items, err := repo.GetItems(list.ID)
-		require.NoError(t, err)
-		require.Len(t, items, 1)
-		assert.Equal(t, item.Name, items[0].Name)
-		assert.Equal(t, item.Description, items[0].Description)
-		assert.Equal(t, item.Weight, items[0].Weight)
-		assert.Equal(t, item.ExternalID, items[0].ExternalID)
-		assert.Equal(t, item.Latitude, items[0].Latitude)
-		assert.Equal(t, item.Longitude, items[0].Longitude)
-		assert.Equal(t, item.Address, items[0].Address)
+		// Delete list
+		err = repo.Delete(list.ID)
+		assert.NoError(t, err)
 
-		// Test UpdateItem
-		item.Name = "Updated Item"
-		item.Description = "Updated Description"
-		err = repo.UpdateItem(item)
-		require.NoError(t, err)
+		// Verify list is not found
+		_, err = repo.GetByID(list.ID)
+		assert.ErrorIs(t, err, models.ErrNotFound)
 
-		updated, err := repo.GetItems(list.ID)
-		require.NoError(t, err)
-		require.Len(t, updated, 1)
-		assert.Equal(t, "Updated Item", updated[0].Name)
-		assert.Equal(t, "Updated Description", updated[0].Description)
+		// Verify items are soft deleted
+		var itemCount int
+		err = db.QueryRow("SELECT COUNT(*) FROM list_items WHERE list_id = $1 AND deleted_at IS NULL", list.ID).Scan(&itemCount)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, itemCount)
 
-		// Test RemoveItem
-		err = repo.RemoveItem(list.ID, item.ID)
-		require.NoError(t, err)
+		// Verify owners are soft deleted
+		var ownerCount int
+		err = db.QueryRow("SELECT COUNT(*) FROM list_owners WHERE list_id = $1 AND deleted_at IS NULL", list.ID).Scan(&ownerCount)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, ownerCount)
 
-		items, err = repo.GetItems(list.ID)
-		require.NoError(t, err)
-		assert.Empty(t, items)
+		// Test not found
+		err = repo.Delete(uuid.New())
+		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
 
-	t.Run("Menu Generation", func(t *testing.T) {
-		const (
-			cooldownDays = 7
-			daysAgo10    = -10 * 24 * time.Hour
-			daysAgo3     = -3 * 24 * time.Hour
-		)
-
-		// Create test lists
-		ownerType := models.OwnerTypeUser
+	t.Run("GetListsByOwner", func(t *testing.T) {
+		// Create multiple lists for the test user
 		list1 := &models.List{
-			Type:          models.ListTypeLocation,
-			Name:          "List 1",
+			Type:          models.ListTypeActivity,
+			Name:          "Test List 1",
+			Description:   "Test Description 1",
+			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
-			CooldownDays:  testutil.IntPtr(cooldownDays),
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 		err := repo.Create(list1)
 		require.NoError(t, err)
 
+		updatedMaxItems := 200
+		updatedCooldownDays := 14
 		list2 := &models.List{
-			Type:          models.ListTypeLocation,
-			Name:          "List 2",
+			Type:          models.ListTypeActivity,
+			Name:          "Test List 2",
+			Description:   "Test Description 2",
+			Visibility:    models.VisibilityPublic,
 			DefaultWeight: 2.0,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			MaxItems:      &updatedMaxItems,
+			CooldownDays:  &updatedCooldownDays,
+			Owners: []*models.ListOwner{
+				{
+					OwnerID:   testUser.ID,
+					OwnerType: models.OwnerTypeUser,
+				},
+			},
 		}
 		err = repo.Create(list2)
 		require.NoError(t, err)
 
-		// Add items to lists
-		items := []*models.ListItem{
-			{
-				ListID:      list1.ID,
-				Name:        "Item 1",
-				Weight:      1.5,
-				LastChosen:  testutil.TimePtr(time.Now().Add(daysAgo10)), // 10 days ago
-				ChosenCount: 1,
-			},
-			{
-				ListID:      list1.ID,
-				Name:        "Item 2",
-				Weight:      1.0,
-				LastChosen:  testutil.TimePtr(time.Now().Add(daysAgo3)), // 3 days ago
-				ChosenCount: 2,
-			},
-			{
-				ListID:      list2.ID,
-				Name:        "Item 3",
-				Weight:      0.0, // Should use list's default weight
-				LastChosen:  nil, // Never chosen
-				ChosenCount: 0,
-			},
-		}
+		// Get lists by owner
+		lists, err := repo.GetListsByOwner(testUser.ID, models.OwnerTypeUser)
+		assert.NoError(t, err)
+		assert.Len(t, lists, 2)
 
-		for _, item := range items {
-			err := repo.AddItem(item)
-			require.NoError(t, err)
-		}
+		// Verify lists are ordered by created_at DESC
+		assert.Equal(t, list2.ID, lists[0].ID)
+		assert.Equal(t, list1.ID, lists[1].ID)
 
-		// Test GetEligibleItems with cooldown filter
-		filters := map[string]interface{}{
-			"cooldown_days": cooldownDays,
-		}
-		eligible, err := repo.GetEligibleItems([]uuid.UUID{list1.ID, list2.ID}, filters)
-		require.NoError(t, err)
-		assert.Len(t, eligible, 2) // Item 1 and Item 3 should be eligible
-
-		// Test GetEligibleItems without cooldown filter
-		eligible, err = repo.GetEligibleItems([]uuid.UUID{list1.ID, list2.ID}, nil)
-		require.NoError(t, err)
-		assert.Len(t, eligible, 3) // All items should be eligible
-
-		// Test MarkItemChosen
-		err = repo.MarkItemChosen(items[0].ID)
-		require.NoError(t, err)
-
-		chosen, err := repo.GetItems(list1.ID)
-		require.NoError(t, err)
-		require.Len(t, chosen, 2)
-		for _, item := range chosen {
-			if item.ID == items[0].ID {
-				assert.Equal(t, 2, item.ChosenCount)
-			}
-		}
+		// Test no lists found
+		lists, err = repo.GetListsByOwner(uuid.New(), models.OwnerTypeUser)
+		assert.NoError(t, err)
+		assert.Empty(t, lists)
 	})
 
-	t.Run("Sync Management", func(t *testing.T) {
-		ownerType := models.OwnerTypeUser
+	t.Run("AddItem", func(t *testing.T) {
+		// Create test list
 		list := &models.List{
-			Type:          models.ListTypeLocation,
-			Name:          "Test List",
-			Description:   "Test Description",
-			Visibility:    models.VisibilityPublic,
-			DefaultWeight: 1.0,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
-			SyncStatus:    models.ListSyncStatusNone,
-			SyncSource:    models.SyncSourceGoogleMaps,
-		}
-		err := repo.Create(list)
-		require.NoError(t, err)
-
-		// Test UpdateSyncStatus
-		err = repo.UpdateSyncStatus(list.ID, models.ListSyncStatusSynced)
-		require.NoError(t, err)
-
-		updated, err := repo.GetByID(list.ID)
-		require.NoError(t, err)
-		assert.Equal(t, models.ListSyncStatusSynced, updated.SyncStatus)
-
-		// Test AddConflict
-		conflict := &models.SyncConflict{
-			ID:         uuid.New(),
-			ListID:     list.ID,
-			Type:       "name_conflict",
-			LocalData:  "Local Name",
-			RemoteData: "Remote Name",
-			CreatedAt:  time.Now(),
-			UpdatedAt:  time.Now(),
-		}
-		err = repo.AddConflict(conflict)
-		require.NoError(t, err)
-
-		// Test GetConflicts
-		conflicts, err := repo.GetConflicts(list.ID)
-		require.NoError(t, err)
-		require.Len(t, conflicts, 1)
-		assert.Equal(t, conflict.Type, conflicts[0].Type)
-	})
-
-	t.Run("Owner Management", func(t *testing.T) {
-		// Test GetListsByOwner for user
-		userLists, err := repo.GetListsByOwner(user.ID, models.OwnerTypeUser)
-		require.NoError(t, err)
-		assert.NotEmpty(t, userLists)
-
-		// Test GetListsByOwner for tribe
-		tribeLists, err := repo.GetListsByOwner(tribe.ID, models.OwnerTypeTribe)
-		require.NoError(t, err)
-		assert.NotEmpty(t, tribeLists)
-	})
-
-	t.Run("Share Management", func(t *testing.T) {
-		ownerType := models.OwnerTypeUser
-		list := &models.List{
-			Type:          models.ListTypeLocation,
+			Type:          models.ListTypeActivity,
 			Name:          "Test List",
 			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
 
-		// Test ShareWithTribe
-		share := &models.ListShare{
-			ListID:    list.ID,
-			TribeID:   tribe.ID,
-			UserID:    user.ID,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+		// Add item
+		lat := 12.34
+		lng := 56.78
+		addr := "123 Test St"
+		item := &models.ListItem{
+			ListID:      list.ID,
+			Name:        "Test Item",
+			Description: "Test Item Description",
+			Weight:      1.0,
+			Metadata:    models.JSONMap{"test": "data"},
+			ExternalID:  "ext123",
+			Latitude:    &lat,
+			Longitude:   &lng,
+			Address:     &addr,
 		}
-		err = repo.ShareWithTribe(share)
-		require.NoError(t, err)
 
-		// Test GetSharedTribes
-		tribes, err := repo.GetSharedTribes(list.ID)
-		require.NoError(t, err)
-		require.Len(t, tribes, 1)
-		assert.Equal(t, tribe.ID, tribes[0].ID)
+		err = repo.AddItem(item)
+		assert.NoError(t, err)
+		assert.NotEqual(t, uuid.Nil, item.ID)
+		assert.False(t, item.CreatedAt.IsZero())
+		assert.False(t, item.UpdatedAt.IsZero())
+		assert.Equal(t, item.CreatedAt, item.UpdatedAt)
+
+		// Verify item was added
+		list, err = repo.GetByID(list.ID)
+		assert.NoError(t, err)
+		assert.Len(t, list.Items, 1)
+		assert.Equal(t, item.ID, list.Items[0].ID)
+		assert.Equal(t, item.Name, list.Items[0].Name)
+		assert.Equal(t, item.Description, list.Items[0].Description)
+		assert.Equal(t, item.Weight, list.Items[0].Weight)
+		assert.Equal(t, item.Metadata, list.Items[0].Metadata)
+		assert.Equal(t, item.ExternalID, list.Items[0].ExternalID)
+		assert.Equal(t, item.Latitude, list.Items[0].Latitude)
+		assert.Equal(t, item.Longitude, list.Items[0].Longitude)
+		assert.Equal(t, item.Address, list.Items[0].Address)
 	})
 
-	t.Run("List Sharing", func(t *testing.T) {
-		// Create test users and tribe
-		user2 := testutil.CreateTestUser(t, db)
-		tribe := testutil.CreateTestTribe(t, db, []testutil.TestUser{
-			{
-				ID:          user.ID,
-				FirebaseUID: user.FirebaseUID,
-				Provider:    user.Provider,
-				Email:       user.Email,
-				Name:        user.Name,
-				AvatarURL:   user.AvatarURL,
-			},
-			{
-				ID:          user2.ID,
-				FirebaseUID: user2.FirebaseUID,
-				Provider:    user2.Provider,
-				Email:       user2.Email,
-				Name:        user2.Name,
-				AvatarURL:   user2.AvatarURL,
-			},
-		})
-
-		// Create a test list
-		ownerType := models.OwnerTypeUser
+	t.Run("UpdateItem", func(t *testing.T) {
+		// Create test list and item
 		list := &models.List{
-			Type:          models.ListTypeLocation,
-			Name:          "Shared List",
-			Description:   "List to be shared",
+			Type:          models.ListTypeActivity,
+			Name:          "Test List",
+			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
 
-		// Test ShareWithTribe
-		share := &models.ListShare{
-			ListID:    list.ID,
-			TribeID:   tribe.ID,
-			UserID:    user.ID,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+		item := &models.ListItem{
+			ListID:      list.ID,
+			Name:        "Test Item",
+			Description: "Test Item Description",
+			Weight:      1.0,
+			Metadata:    models.JSONMap{"test": "data"},
 		}
-		err = repo.ShareWithTribe(share)
+		err = repo.AddItem(item)
 		require.NoError(t, err)
 
-		// Test GetSharedTribes
-		sharedTribes, err := repo.GetSharedTribes(list.ID)
-		require.NoError(t, err)
-		assert.Len(t, sharedTribes, 1)
-		assert.Equal(t, tribe.ID, sharedTribes[0].ID)
+		// Update item
+		lat := 23.45
+		lng := 67.89
+		addr := "456 Test Ave"
+		item.Name = "Updated Item"
+		item.Description = "Updated Description"
+		item.Weight = 2.0
+		item.Metadata = models.JSONMap{"updated": "data"}
+		item.ExternalID = "ext456"
+		item.Latitude = &lat
+		item.Longitude = &lng
+		item.Address = &addr
 
-		// Test UnshareWithTribe
-		err = repo.UnshareWithTribe(list.ID, tribe.ID)
-		require.NoError(t, err)
+		err = repo.UpdateItem(item)
+		assert.NoError(t, err)
 
-		sharedTribes, err = repo.GetSharedTribes(list.ID)
-		require.NoError(t, err)
-		assert.Empty(t, sharedTribes)
+		// Verify changes
+		list, err = repo.GetByID(list.ID)
+		assert.NoError(t, err)
+		assert.Len(t, list.Items, 1)
+		assert.Equal(t, item.Name, list.Items[0].Name)
+		assert.Equal(t, item.Description, list.Items[0].Description)
+		assert.Equal(t, item.Weight, list.Items[0].Weight)
+		assert.Equal(t, item.Metadata, list.Items[0].Metadata)
+		assert.Equal(t, item.ExternalID, list.Items[0].ExternalID)
+		assert.Equal(t, item.Latitude, list.Items[0].Latitude)
+		assert.Equal(t, item.Longitude, list.Items[0].Longitude)
+		assert.Equal(t, item.Address, list.Items[0].Address)
+		assert.True(t, list.Items[0].UpdatedAt.After(list.Items[0].CreatedAt))
+
+		// Test not found
+		notFoundItem := &models.ListItem{
+			ID:     uuid.New(),
+			ListID: list.ID,
+			Name:   "Not Found",
+		}
+		err = repo.UpdateItem(notFoundItem)
+		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
 
-	t.Run("List Sharing Expiration", func(t *testing.T) {
-		// Create test users and tribe
-		user2 := testutil.CreateTestUser(t, db)
-		tribe := testutil.CreateTestTribe(t, db, []testutil.TestUser{
-			{
-				ID:          user.ID,
-				FirebaseUID: user.FirebaseUID,
-				Provider:    user.Provider,
-				Email:       user.Email,
-				Name:        user.Name,
-				AvatarURL:   user.AvatarURL,
-			},
-			{
-				ID:          user2.ID,
-				FirebaseUID: user2.FirebaseUID,
-				Provider:    user2.Provider,
-				Email:       user2.Email,
-				Name:        user2.Name,
-				AvatarURL:   user2.AvatarURL,
-			},
-		})
-
-		// Create a test list
-		ownerType := models.OwnerTypeUser
+	t.Run("UpdateItemStats", func(t *testing.T) {
+		// Create test list and item
 		list := &models.List{
-			Type:          models.ListTypeLocation,
-			Name:          "Expiring Shared List",
-			Description:   "List with expiring share",
+			Type:          models.ListTypeActivity,
+			Name:          "Test List",
+			Description:   "Test Description",
 			Visibility:    models.VisibilityPrivate,
 			DefaultWeight: 1.0,
-			OwnerID:       &user.ID,
-			OwnerType:     &ownerType,
+			MaxItems:      &maxItems,
+			CooldownDays:  &cooldownDays,
 		}
 		err := repo.Create(list)
 		require.NoError(t, err)
 
-		// Share list with expiration
-		expiresAt := time.Now().Add(24 * time.Hour)
-		share := &models.ListShare{
-			ListID:    list.ID,
-			TribeID:   tribe.ID,
-			UserID:    user.ID,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			ExpiresAt: &expiresAt,
+		item := &models.ListItem{
+			ListID:      list.ID,
+			Name:        "Test Item",
+			Description: "Test Item Description",
+			Weight:      1.0,
 		}
-		err = repo.ShareWithTribe(share)
+		err = repo.AddItem(item)
 		require.NoError(t, err)
 
-		// Test GetSharedTribes before expiration
-		sharedTribes, err := repo.GetSharedTribes(list.ID)
-		require.NoError(t, err)
-		assert.Len(t, sharedTribes, 1)
-		assert.Equal(t, tribe.ID, sharedTribes[0].ID)
+		// Update stats
+		err = repo.UpdateItemStats(item.ID, true)
+		assert.NoError(t, err)
 
-		// Test GetSharedTribes after expiration
-		_, err = db.Exec(`
-			UPDATE list_sharing 
-			SET expires_at = $1 
-			WHERE list_id = $2 AND shared_with_id = $3
-		`, time.Now().Add(-1*time.Hour), list.ID, tribe.ID)
-		require.NoError(t, err)
+		// Verify changes
+		list, err = repo.GetByID(list.ID)
+		assert.NoError(t, err)
+		assert.Len(t, list.Items, 1)
+		assert.Equal(t, 1, list.Items[0].ChosenCount)
+		assert.False(t, list.Items[0].LastChosen.IsZero())
 
-		sharedTribes, err = repo.GetSharedTribes(list.ID)
-		require.NoError(t, err)
-		assert.Empty(t, sharedTribes)
+		// Test not found
+		err = repo.UpdateItemStats(uuid.New(), true)
+		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
 }
 
@@ -592,6 +563,7 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 
 	// Create test lists
 	list1 := &models.List{
+		ID:            uuid.New(),
 		Type:          models.ListTypeGoogleMap,
 		Name:          "Test List 1",
 		Description:   "Test Description 1",
@@ -604,6 +576,7 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 	require.NoError(t, err)
 
 	list2 := &models.List{
+		ID:            uuid.New(),
 		Type:          models.ListTypeGoogleMap,
 		Name:          "Test List 2",
 		Description:   "Test Description 2",

@@ -102,23 +102,23 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 		Members: members,
 	}
 
-	// Insert the tribe
+	// Insert the tribe with all required fields
 	_, err = tx.Exec(`
-		INSERT INTO tribes (id, name)
-		VALUES ($1, $2)
-	`, tribe.ID, tribe.Name)
+		INSERT INTO tribes (id, name, description, type, visibility, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, tribe.ID, tribe.Name, "Test Description", models.TribeTypeCouple, models.VisibilityPrivate, "{}")
 	if err != nil {
-		t.Fatalf("Failed to create test tribe: %v", err)
+		t.Fatalf("error creating tribe: %v", err)
 	}
 
-	// Add members to the tribe
+	// Add members to the tribe with all required fields
 	for _, member := range members {
 		_, err = tx.Exec(`
-			INSERT INTO tribe_members (tribe_id, user_id)
-			VALUES ($1, $2)
-		`, tribe.ID, member.ID)
+			INSERT INTO tribe_members (tribe_id, user_id, membership_type, metadata)
+			VALUES ($1, $2, $3, $4)
+		`, tribe.ID, member.ID, models.MembershipFull, "{}")
 		if err != nil {
-			t.Fatalf("Failed to add member to tribe: %v", err)
+			t.Fatalf("error adding member to tribe: %v", err)
 		}
 	}
 
@@ -156,20 +156,20 @@ func CreateTestList(t *testing.T, db *sql.DB, tribe TestTribe) TestList {
 
 	// Insert the list
 	_, err = tx.Exec(`
-		INSERT INTO lists (id, name, type)
-		VALUES ($1, $2, $3)
-	`, list.ID, list.Name, list.Type)
+		INSERT INTO lists (id, name, type, owner_id, owner_type, visibility, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, list.ID, list.Name, list.Type, tribe.ID, models.OwnerTypeTribe, models.VisibilityPrivate, "{}")
 	if err != nil {
 		t.Fatalf("Failed to create test list: %v", err)
 	}
 
-	// Create the list owner relationship
+	// Create list owner entry
 	_, err = tx.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type)
 		VALUES ($1, $2, $3)
-	`, list.ID, tribe.ID, "tribe")
+	`, list.ID, tribe.ID, models.OwnerTypeTribe)
 	if err != nil {
-		t.Fatalf("Failed to create list owner relationship: %v", err)
+		t.Fatalf("Failed to create list owner: %v", err)
 	}
 
 	// Commit the transaction
@@ -178,6 +178,59 @@ func CreateTestList(t *testing.T, db *sql.DB, tribe TestTribe) TestList {
 	}
 
 	return list
+}
+
+// CreateTestActivity creates a test activity in the database
+func CreateTestActivity(t *testing.T, db *sql.DB, user TestUser) *models.Activity {
+	t.Helper()
+
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Failed to start transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Set constraints to deferred
+	_, err = tx.Exec("SET CONSTRAINTS ALL DEFERRED")
+	if err != nil {
+		t.Fatalf("Failed to defer constraints: %v", err)
+	}
+
+	activity := &models.Activity{
+		ID:          uuid.New(),
+		UserID:      user.ID,
+		Type:        models.ActivityTypeLocation,
+		Name:        fmt.Sprintf("Test Activity %s", uuid.New().String()),
+		Description: "Test Description",
+		Visibility:  models.VisibilityPrivate,
+		Metadata:    models.JSONMap{},
+	}
+
+	// Insert the activity
+	_, err = tx.Exec(`
+		INSERT INTO activities (id, user_id, type, name, description, visibility, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, activity.ID, activity.UserID, activity.Type, activity.Name, activity.Description, activity.Visibility, "{}")
+	if err != nil {
+		t.Fatalf("Failed to create test activity: %v", err)
+	}
+
+	// Create activity owner entry
+	_, err = tx.Exec(`
+		INSERT INTO activity_owners (activity_id, owner_id, owner_type)
+		VALUES ($1, $2, $3)
+	`, activity.ID, user.ID, models.OwnerTypeUser)
+	if err != nil {
+		t.Fatalf("Failed to create activity owner: %v", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
+	}
+
+	return activity
 }
 
 // CleanupTestData removes all test data from the database

@@ -24,13 +24,36 @@ Tribe is a social activity planning application designed to help groups of peopl
 - `shared/`: Shared types and utilities
 - `docs/`: Project documentation
 
-## Cursor Development Guidance
+## Development Setup
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   make setup
+   ```
+3. Set up environment variables (see .env.example)
+4. Start the development environment:
+   ```bash
+   make dev
+   ```
+
+## Development Guidance
+
+### Database Schema Changes
+1. **Early Stage Flexibility**: During early development, prefer modifying the initial schema directly rather than creating new migrations. This is appropriate while we don't have production data to maintain.
+   - This guideline exists to prevent inefficient stacking of migrations and infinite fix-verify loops
+   - Modifying the initial schema is faster and cleaner during early development
+   - The development guidelines here will be adjusted as needed based on observed problems or performance issues
+2. **Schema First**: Focus on getting the schema right in the initial migration rather than accumulating migrations early.
+3. **When to Use Migrations**: Only introduce new migrations when:
+   - We have production data that needs to be preserved
+   - The schema change is part of a new feature iteration
+   - The change requires careful data transformation
 
 ### Error Handling
 1. **Always Prefer Graceful Handling**: Never use panics for error handling. All failure modes should be gracefully handled with proper error returns and cleanup.
 2. **Comprehensive Error States**: Design functions to handle all possible error states gracefully, including:
    - Database connection failures
-   - Migration state issues
    - Constraint violations
    - Concurrent access conflicts
    - Resource cleanup failures
@@ -51,32 +74,6 @@ Tribe is a social activity planning application designed to help groups of peopl
    - Include positive and negative test cases
    - Test cleanup and resource management
 
-### Code Quality
-1. **Consistency**: Ensure changes propagate throughout the codebase for correctness and consistency
-2. **Documentation**: Maintain README files in each directory explaining:
-   - Directory purpose
-   - Usage instructions
-   - Testing procedures
-   - Development guidelines
-   - Deployment procedures
-3. **Issue Tracking**: Keep the README's Known Issues and Future Work sections updated with:
-   - Currently identified problems
-   - Planned improvements
-   - Recent changes and their implications
-
-## Development Setup
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   make setup
-   ```
-3. Set up environment variables (see .env.example)
-4. Start the development environment:
-   ```bash
-   make dev
-   ```
-
 ## Testing
 
 Run tests with:
@@ -89,51 +86,50 @@ Ensure test coverage remains above 90% for all new code.
 ## Known Issues
 
 1. Database Constraint Violations:
-   - [x] JSONMap implementation complete (Scan and Value methods implemented)
-   - [x] Metadata type standardized to use JSONMap
-   - [x] Database constraints for nullable fields added
-   - [x] Default values for boolean and numeric fields added
-   - [x] Type mismatches between models and database layer (UUID and OwnerType)
-   - [x] Type mismatch between ListConflict and SyncConflict in service and repository layers
    - [ ] `user_id` NOT NULL constraint violation in activities table
    - [ ] `owner_id` NOT NULL constraint violation in lists table
    - [ ] `metadata` NOT NULL constraint violation in tribes table
    - [ ] Foreign key constraint violation in lists table for owner_id
    - [ ] Missing `list_owners` table
-   - [ ] Invalid enum values being passed for visibility_type and tribe_type
 
 2. Test Coverage Issues:
-   - [x] Low coverage in cmd/api package (added comprehensive tests for configuration, database, auth, and server initialization)
-   - [x] Low coverage in cmd/migrate package (83.8% coverage achieved)
    - [ ] Low coverage in internal/config package (0.0%)
-   - [ ] Low coverage in internal/testutil package (6.8%)
-   - [x] Improve coverage in internal/models package (activity validation tests added)
-   - [x] Improve coverage in internal/middleware package (added tests for repository errors, middleware chaining, and Firebase auth initialization)
-   - [ ] Overall low coverage in postgres repository package (20.8%)
+   - [x] Improve coverage in internal/models package (71.6% coverage achieved)
+   - [x] Improve coverage in internal/middleware package (87.8% coverage achieved)
+   - [ ] Low coverage in internal/testutil package (65.5%)
+   - [ ] Low coverage in internal/api/service package (69.6%)
+   - [ ] Build failures in postgres repository package
 
-3. Transaction Management Issues:
-   - [ ] Role "user" does not exist for transaction tests
-   - [ ] Deadlock retry mechanism not properly tested
-   - [ ] Lock timeout retry mechanism not properly tested
-
-4. Test Infrastructure Issues:
-   - [ ] Test data generation failing due to foreign key constraints
-   - [ ] Inconsistent test database cleanup
-   - [ ] Missing test setup for required database roles
+3. Test Failures:
+   - [ ] Activity handler tests failing with panic
+   - [ ] List service sharing tests failing
+   - [ ] Sync service test failures:
+     - Invalid state transitions not handled correctly
+     - Concurrent operations not properly managed
+     - External errors not properly propagated
+     - Conflict resolution logic issues
 
 ## Future Work
 
 1. Database Improvements:
-   - [ ] Squash migrations and recreate clean migration history
    - [ ] Add proper indexes for performance optimization
-   - [ ] Add foreign key constraints for data integrity
+   - [ ] Add proper foreign key constraints for data integrity
    - [ ] Add proper cascading deletes
    - [ ] Add proper default values for required fields
    - [ ] Add proper enum type constraints
    - [ ] Create missing tables (list_owners)
-   - [ ] Review and fix all NOT NULL constraints
 
 2. Test Improvements:
+   - [ ] Fix activity handler test panics
+   - [ ] Fix list service sharing tests
+   - [ ] Fix sync service state transition tests
+   - [ ] Fix sync service concurrent operation tests
+   - [ ] Fix sync service external error handling
+   - [ ] Fix sync service conflict resolution
+   - [ ] Improve test coverage in internal/config package
+   - [ ] Improve test coverage in internal/testutil package
+   - [ ] Improve test coverage in internal/api/service package
+   - [ ] Fix postgres repository build failures
    - [ ] Add integration tests for sync functionality
    - [ ] Add performance tests for database operations
    - [ ] Add stress tests for concurrent operations

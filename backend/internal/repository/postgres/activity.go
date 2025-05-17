@@ -32,8 +32,8 @@ func (r *ActivityRepository) Create(activity *models.Activity) error {
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
-			INSERT INTO activities (id, type, name, description, visibility, metadata, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO activities (id, user_id, type, name, description, visibility, metadata, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			RETURNING id`
 
 		if activity.ID == uuid.Nil {
@@ -54,6 +54,7 @@ func (r *ActivityRepository) Create(activity *models.Activity) error {
 		err := tx.QueryRow(
 			query,
 			activity.ID,
+			activity.UserID,
 			activity.Type,
 			activity.Name,
 			activity.Description,

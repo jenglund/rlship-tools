@@ -127,7 +127,13 @@ func UserIDMiddleware(repos RepositoryProvider) gin.HandlerFunc {
 			return
 		}
 
-		user, err := repos.GetUserRepository().GetByFirebaseUID(firebaseUID)
+		userRepo := repos.GetUserRepository()
+		if userRepo == nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "user repository not configured"})
+			return
+		}
+
+		user, err := userRepo.GetByFirebaseUID(firebaseUID)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
 			return

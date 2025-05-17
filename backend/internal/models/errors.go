@@ -32,6 +32,9 @@ var (
 	ErrExternalSourceUnavailable = errors.New("external sync source unavailable")
 	ErrExternalSourceError       = errors.New("external sync source error")
 	ErrExternalSourceTimeout     = errors.New("external sync source timeout")
+
+	// ErrConcurrentModification is returned when a concurrent modification is detected
+	ErrConcurrentModification = errors.New("concurrent modification detected")
 )
 
 // Activity Photo errors

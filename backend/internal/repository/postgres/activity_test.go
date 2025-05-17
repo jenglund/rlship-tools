@@ -27,7 +27,7 @@ func TestActivityHistory(t *testing.T) {
 			Visibility:  models.VisibilityPublic,
 			Metadata: models.JSONMap{
 				"address": "123 Test St",
-				"visits":  []string{},
+				"visits":  []interface{}{},
 			},
 		}
 
@@ -35,7 +35,7 @@ func TestActivityHistory(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add visit
-		visits := []string{time.Now().UTC().Format(time.RFC3339)}
+		visits := []interface{}{time.Now().UTC().Format(time.RFC3339)}
 		activity.Metadata = models.JSONMap{
 			"address": "123 Test St",
 			"visits":  visits,
@@ -61,7 +61,7 @@ func TestActivityHistory(t *testing.T) {
 			Visibility:  models.VisibilityPublic,
 			Metadata: models.JSONMap{
 				"rating": 4.5,
-				"tags":   []string{"restaurant", "italian"},
+				"tags":   []interface{}{"restaurant", "italian"},
 			},
 		}
 
@@ -71,7 +71,7 @@ func TestActivityHistory(t *testing.T) {
 		// Update metadata
 		activity.Metadata = models.JSONMap{
 			"rating": 4.8,
-			"tags":   []string{"restaurant", "italian", "pizza"},
+			"tags":   []interface{}{"restaurant", "italian", "pizza"},
 			"price":  "$$",
 		}
 
@@ -82,7 +82,7 @@ func TestActivityHistory(t *testing.T) {
 		updated, err := repo.GetByID(activity.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 4.8, updated.Metadata["rating"])
-		assert.Equal(t, []string{"restaurant", "italian", "pizza"}, updated.Metadata["tags"])
+		assert.Equal(t, []interface{}{"restaurant", "italian", "pizza"}, updated.Metadata["tags"])
 		assert.Equal(t, "$$", updated.Metadata["price"])
 	})
 
@@ -131,7 +131,7 @@ func TestActivityHistory(t *testing.T) {
 					Description: "Test Description",
 					Visibility:  models.VisibilityPublic,
 					Metadata: models.JSONMap{
-						"items": []string{"Item 1", "Item 2"},
+						"items": []interface{}{"Item 1", "Item 2"},
 						"type":  "Bucket List",
 					},
 				},

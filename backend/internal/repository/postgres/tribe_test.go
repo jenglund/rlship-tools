@@ -50,6 +50,7 @@ func TestTribeRepository(t *testing.T) {
 				Type:        models.TribeTypeCouple,
 				Description: "A test tribe",
 				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err := repo.Create(tribe)
@@ -73,6 +74,7 @@ func TestTribeRepository(t *testing.T) {
 				Type:        models.TribeTypeCouple,
 				Description: "A test tribe",
 				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err := repo.Create(tribe1)
@@ -88,6 +90,7 @@ func TestTribeRepository(t *testing.T) {
 				Type:        models.TribeTypeCouple,
 				Description: "Another test tribe",
 				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err = repo.Create(tribe2)
@@ -108,6 +111,7 @@ func TestTribeRepository(t *testing.T) {
 				Type:        models.TribeTypeCouple,
 				Description: "A test tribe",
 				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err := repo.Create(tribe)
@@ -141,6 +145,7 @@ func TestTribeRepository(t *testing.T) {
 				Type:        models.TribeTypeCouple,
 				Description: "A test tribe",
 				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err := repo.Create(tribe)
@@ -168,7 +173,11 @@ func TestTribeRepository(t *testing.T) {
 					CreatedAt: now,
 					UpdatedAt: now,
 				},
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err := repo.Update(tribe)
@@ -185,7 +194,11 @@ func TestTribeRepository(t *testing.T) {
 					CreatedAt: now,
 					UpdatedAt: now,
 				},
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 
 			err := repo.Create(tribe)
@@ -207,16 +220,20 @@ func TestTribeRepository(t *testing.T) {
 
 	t.Run("List", func(t *testing.T) {
 		// Create multiple tribes
-		now := time.Now()
 		tribes := make([]*models.Tribe, 3)
 		for i := range tribes {
+			now := time.Now()
 			tribes[i] = &models.Tribe{
 				BaseModel: models.BaseModel{
 					ID:        uuid.New(),
 					CreatedAt: now,
 					UpdatedAt: now,
 				},
-				Name: "Test Tribe " + uuid.New().String()[:8],
+				Name:        "Test Tribe " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Description: "A test tribe",
+				Visibility:  models.VisibilityPrivate,
+				Metadata:    models.JSONMap{},
 			}
 			err := repo.Create(tribes[i])
 			require.NoError(t, err)

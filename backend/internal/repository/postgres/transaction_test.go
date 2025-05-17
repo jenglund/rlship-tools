@@ -9,12 +9,10 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTransactionManager_WithTransaction(t *testing.T) {
-	db, err := sql.Open("postgres", "postgres://user:password@localhost:5432/testdb?sslmode=disable")
-	require.NoError(t, err)
+	db := setupTestDB(t)
 	defer db.Close()
 
 	tm := NewTransactionManager(db)
@@ -76,8 +74,7 @@ func TestTransactionManager_WithTransaction(t *testing.T) {
 }
 
 func TestTransactionManager_OrderedTransaction(t *testing.T) {
-	db, err := sql.Open("postgres", "postgres://user:password@localhost:5432/testdb?sslmode=disable")
-	require.NoError(t, err)
+	db := setupTestDB(t)
 	defer db.Close()
 
 	tm := NewTransactionManager(db)
@@ -127,15 +124,14 @@ func TestTransactionManager_OrderedTransaction(t *testing.T) {
 }
 
 func TestTransactionManager_MonitorDeadlocks(t *testing.T) {
-	db, err := sql.Open("postgres", "postgres://user:password@localhost:5432/testdb?sslmode=disable")
-	require.NoError(t, err)
+	db := setupTestDB(t)
 	defer db.Close()
 
 	tm := NewTransactionManager(db)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	err = tm.MonitorDeadlocks(ctx)
+	err := tm.MonitorDeadlocks(ctx)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
