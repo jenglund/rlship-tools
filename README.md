@@ -104,20 +104,12 @@ This approach simplifies testing and development. Once we reach production, we'l
   - Updated response.Error function to use a consistent format expected by tests
   - Improved error handling in the service layer to properly return models.ErrNotFound and models.ErrForbidden
 
-- ✅ **Tribe Handler CreateTribe Test**:
-  - Fixed validation errors by adding Type and Visibility fields to the request
+- ✅ **Tribe Handler Tests**:
+  - Fixed CreateTribe test by adding Type and Visibility fields to the request
   - Fixed nil pointer dereference by ensuring the Metadata field is never nil
-  - Updated the CreateTribe handler to properly handle user_id from both UUID and string formats
-  - Fixed test setup to properly set authentication context with correct user ID
-
-### Remaining Issues
-
-#### Critical Issues:
-
-1. **Other Tribe Handler Tests Failing**:
-   - GetTribe, UpdateTribe, DeleteTribe, AddMember, and ListMembers tests are still failing
-   - Error: "error creating tribe: pq: invalid input value for enum tribe_type: """
-   - Need to update these tests to properly set the required enum values
+  - Updated handler tests (GetTribe, UpdateTribe, DeleteTribe, AddMember, ListMembers) to properly initialize the BaseModel fields
+  - Fixed routing issues in test endpoints by ensuring the path includes the nested '/tribes' route correctly
+  - Fixed other tribe tests by ensuring proper Type and Visibility fields in the Tribe struct
 
 ## Development Guidance
 
@@ -164,11 +156,7 @@ When analyzing test failures, follow these best practices:
    - Ensure data validation happens at both the model and database levels
 
 ## Current Focus
-We've fixed the Activity handler tests, GetUserTribes display_name issue, List handler tests, and CreateTribe handler tests. Now we need to focus on:
-
-1. Fixing the remaining Tribe handler tests (GetTribe, UpdateTribe, DeleteTribe, AddMember, ListMembers)
-   - These tests are failing with "pq: invalid input value for enum tribe_type"
-   - Need to ensure proper enum values are set in test fixtures
+All major test failures have been fixed! The backend tests are now passing. We can now focus on improving test coverage and implementing the remaining features.
 
 ## Future Work
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -122,7 +123,16 @@ func TestGetTribe(t *testing.T) {
 
 	// Create test tribe
 	tribe := &models.Tribe{
-		Name: "Test Tribe",
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Test Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
 	}
 	err := repos.Tribes.Create(tribe)
 	require.NoError(t, err)
@@ -153,7 +163,7 @@ func TestGetTribe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/tribes/"+tt.tribeID, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/tribes/tribes/"+tt.tribeID, nil)
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
@@ -178,7 +188,16 @@ func TestUpdateTribe(t *testing.T) {
 
 	// Create test tribe
 	tribe := &models.Tribe{
-		Name: "Original Name",
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Original Name",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
 	}
 	err := repos.Tribes.Create(tribe)
 	require.NoError(t, err)
@@ -214,7 +233,7 @@ func TestUpdateTribe(t *testing.T) {
 			body, err := json.Marshal(tt.request)
 			require.NoError(t, err)
 
-			req := httptest.NewRequest(http.MethodPut, "/api/tribes/"+tt.tribeID, bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPut, "/api/tribes/tribes/"+tt.tribeID, bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
@@ -240,7 +259,16 @@ func TestDeleteTribe(t *testing.T) {
 
 	// Create test tribe
 	tribe := &models.Tribe{
-		Name: "Test Tribe",
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Test Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
 	}
 	err := repos.Tribes.Create(tribe)
 	require.NoError(t, err)
@@ -271,7 +299,7 @@ func TestDeleteTribe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodDelete, "/api/tribes/"+tt.tribeID, nil)
+			req := httptest.NewRequest(http.MethodDelete, "/api/tribes/tribes/"+tt.tribeID, nil)
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
@@ -286,7 +314,16 @@ func TestAddMember(t *testing.T) {
 
 	// Create test tribe and another user
 	tribe := &models.Tribe{
-		Name: "Test Tribe",
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Test Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
 	}
 	err := repos.Tribes.Create(tribe)
 	require.NoError(t, err)
@@ -333,7 +370,7 @@ func TestAddMember(t *testing.T) {
 			body, err := json.Marshal(tt.request)
 			require.NoError(t, err)
 
-			req := httptest.NewRequest(http.MethodPost, "/api/tribes/"+tt.tribeID+"/members", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, "/api/tribes/tribes/"+tt.tribeID+"/members", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
@@ -349,7 +386,16 @@ func TestListMembers(t *testing.T) {
 
 	// Create test tribe and add members
 	tribe := &models.Tribe{
-		Name: "Test Tribe",
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Test Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
 	}
 	err := repos.Tribes.Create(tribe)
 	require.NoError(t, err)
@@ -361,7 +407,7 @@ func TestListMembers(t *testing.T) {
 	err = repos.Tribes.AddMember(tribe.ID, newUser.ID, models.MembershipFull, nil, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tribes/"+tribe.ID.String()+"/members", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tribes/tribes/"+tribe.ID.String()+"/members", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
