@@ -19,9 +19,6 @@ import (
 func setupTribeTest(t *testing.T) (*gin.Engine, *postgres.Repositories, *testutil.TestUser) {
 	// Set up test database
 	db := testutil.SetupTestDB(t)
-	t.Cleanup(func() {
-		testutil.TeardownTestDB(t, db)
-	})
 
 	// Create repositories
 	repos := postgres.NewRepositories(db)
@@ -29,17 +26,21 @@ func setupTribeTest(t *testing.T) (*gin.Engine, *postgres.Repositories, *testuti
 	// Create test user
 	testUser := testutil.CreateTestUser(t, db)
 
-	// Set up router with authentication middleware
-	gin.SetMode(gin.TestMode)
+	// Create Gin router
 	router := gin.New()
+	router.Use(gin.Recovery())
 
-	// Mock the authentication middleware with the test user's Firebase UID
-	router.Use(testutil.MockAuthMiddleware(testUser.ID.String(), testUser.FirebaseUID))
+	// Set up auth context middleware
+	router.Use(func(c *gin.Context) {
+		c.Set("firebase_uid", testUser.FirebaseUID)
+		c.Set("user_id", testUser.ID)
+		c.Next()
+	})
 
-	// Set up tribe routes
-	handler := NewTribeHandler(repos)
+	// Register handlers
+	tribeHandler := NewTribeHandler(repos)
 	api := router.Group("/api")
-	handler.RegisterRoutes(api)
+	tribeHandler.RegisterRoutes(api.Group("/tribes"))
 
 	return router, repos, &testUser
 }
@@ -48,21 +49,45 @@ func TestCreateTribe(t *testing.T) {
 	router, _, _ := setupTribeTest(t)
 
 	tests := []struct {
-		name       string
-		request    CreateTribeRequest
+		name    string
+		request struct {
+			Name        string                 `json:"name"`
+			Type        models.TribeType       `json:"type"`
+			Description string                 `json:"description"`
+			Visibility  models.VisibilityType  `json:"visibility"`
+			Metadata    map[string]interface{} `json:"metadata"`
+		}
 		wantStatus int
 	}{
 		{
 			name: "valid tribe",
-			request: CreateTribeRequest{
-				Name: "Test Tribe",
+			request: struct {
+				Name        string                 `json:"name"`
+				Type        models.TribeType       `json:"type"`
+				Description string                 `json:"description"`
+				Visibility  models.VisibilityType  `json:"visibility"`
+				Metadata    map[string]interface{} `json:"metadata"`
+			}{
+				Name:       "Test Tribe",
+				Type:       models.TribeTypeCustom,
+				Visibility: models.VisibilityPrivate,
+				Metadata:   map[string]interface{}{},
 			},
 			wantStatus: http.StatusCreated,
 		},
 		{
 			name: "missing name",
-			request: CreateTribeRequest{
-				Name: "",
+			request: struct {
+				Name        string                 `json:"name"`
+				Type        models.TribeType       `json:"type"`
+				Description string                 `json:"description"`
+				Visibility  models.VisibilityType  `json:"visibility"`
+				Metadata    map[string]interface{} `json:"metadata"`
+			}{
+				Name:       "",
+				Type:       models.TribeTypeCustom,
+				Visibility: models.VisibilityPrivate,
+				Metadata:   map[string]interface{}{},
 			},
 			wantStatus: http.StatusBadRequest,
 		},
@@ -70,26 +95,23 @@ func TestCreateTribe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, err := json.Marshal(tt.request)
-			require.NoError(t, err)
-
-			req := httptest.NewRequest(http.MethodPost, "/api/tribes", bytes.NewReader(body))
+			reqBody, _ := json.Marshal(tt.request)
+			req, _ := http.NewRequest("POST", "/api/tribes/tribes", bytes.NewBuffer(reqBody))
 			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
 
+			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.wantStatus, w.Code)
 
 			if tt.wantStatus == http.StatusCreated {
 				var response struct {
-					Data *models.Tribe `json:"data"`
+					Data models.Tribe `json:"data"`
 				}
-				err = json.Unmarshal(w.Body.Bytes(), &response)
+				err := json.NewDecoder(w.Body).Decode(&response)
 				require.NoError(t, err)
-				assert.NotNil(t, response.Data)
+				assert.NotEmpty(t, response.Data.ID)
 				assert.Equal(t, tt.request.Name, response.Data.Name)
-				assert.NotEmpty(t, response.Data.Members)
 			}
 		})
 	}

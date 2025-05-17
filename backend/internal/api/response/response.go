@@ -31,7 +31,19 @@ func JSON(w http.ResponseWriter, status int, data interface{}) {
 
 // Error sends a JSON error response using standard http.ResponseWriter
 func Error(w http.ResponseWriter, status int, message string) {
-	JSON(w, status, map[string]string{"error": message})
+	JSON(w, status, struct {
+		Success bool `json:"success"`
+		Error   struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}{
+		Success: false,
+		Error: struct {
+			Message string `json:"message"`
+		}{
+			Message: message,
+		},
+	})
 }
 
 // NoContent sends a 204 No Content response using standard http.ResponseWriter

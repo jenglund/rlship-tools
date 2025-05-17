@@ -84,6 +84,7 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 			ID:        uuid.New(),
 			CreatedAt: now,
 			UpdatedAt: now,
+			Version:   1,
 		},
 		Name:        req.Name,
 		Type:        req.Type,
@@ -105,25 +106,45 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	}
 
 	// Add the creator as the first member
-	creatorID := middleware.GetFirebaseUID(c)
-	fmt.Printf("DEBUG: Creator Firebase UID: %v\n", creatorID)
+	var userID uuid.UUID
 
-	user, err := h.repos.Users.GetByFirebaseUID(creatorID)
-	if err != nil {
-		fmt.Printf("DEBUG: Failed to get user by Firebase UID: %v\n", err)
-		response.GinInternalError(c, err)
-		return
+	// Try to get user ID directly first
+	if userIDVal, exists := c.Get("user_id"); exists {
+		switch id := userIDVal.(type) {
+		case uuid.UUID:
+			userID = id
+		case string:
+			var err error
+			userID, err = uuid.Parse(id)
+			if err != nil {
+				fmt.Printf("DEBUG: Failed to parse user ID string: %v\n", err)
+			}
+		}
 	}
-	fmt.Printf("DEBUG: Found user: %+v\n", user)
 
-	if err := h.repos.Tribes.AddMember(tribe.ID, user.ID, models.MembershipFull, nil, nil); err != nil {
+	// If user ID is not set directly, get it from Firebase UID
+	if userID == uuid.Nil {
+		creatorID := middleware.GetFirebaseUID(c)
+		fmt.Printf("DEBUG: Creator Firebase UID: %v\n", creatorID)
+
+		user, err := h.repos.Users.GetByFirebaseUID(creatorID)
+		if err != nil {
+			fmt.Printf("DEBUG: Failed to get user by Firebase UID: %v\n", err)
+			response.GinInternalError(c, err)
+			return
+		}
+		fmt.Printf("DEBUG: Found user: %+v\n", user)
+		userID = user.ID
+	}
+
+	if err := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, nil); err != nil {
 		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", err)
 		response.GinInternalError(c, err)
 		return
 	}
 
 	// Get the updated tribe with members
-	tribe, err = h.repos.Tribes.GetByID(tribe.ID)
+	tribe, err := h.repos.Tribes.GetByID(tribe.ID)
 	if err != nil {
 		fmt.Printf("DEBUG: Failed to get updated tribe: %v\n", err)
 		response.GinInternalError(c, err)

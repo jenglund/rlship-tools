@@ -81,45 +81,137 @@ This approach simplifies testing and development. Once we reach production, we'l
   - Ensured proper soft delete checks in queries (WHERE deleted_at IS NULL)
   - Modified UnshareWithTribe function to also remove the tribe as owner from the list_owners table
 
+- ✅ **Activity Handler Test Issues**:
+  - Fixed metadata column constraint violation by ensuring the metadata field is never null
+  - Updated the repository layer to handle null metadata and provide default empty JSON objects
+  - Fixed TestUpdateActivity to properly handle 404 errors for non-existent activities
+  - Added error handling in ListSharedActivities to handle NULL display_name values in tribe members
+  - Updated activity initialization in tests to include proper UserID field
+
+- ✅ **GetUserTribes NULL display_name Issue**:
+  - Updated the database schema to make display_name NOT NULL with a default value of 'Member'
+  - Modified TribeRepository methods to use COALESCE to provide default values for any NULL display_name fields
+  - Updated the AddMember method to handle NULL names from the users table and provide a default value
+  - Fixed all relevant methods (GetUserTribes, GetByID, List, GetByType, Search, etc.) to handle NULL display_name values
+  - Added design documentation for future per-tribe display name support
+
+- ✅ **List Handler Tests**:
+  - Fixed JSON unmarshaling errors in TestListHandler_GetListShares by ensuring proper struct field validation
+  - Added Version field to the ListShare struct to match the database schema
+  - Updated the GetListShares repository method to include the Version field
+  - Fixed status code mismatches in TestListHandler_ShareListWithTribe by properly handling error cases
+  - Fixed status code mismatches in TestListHandler_UnshareListWithTribe by properly handling error cases
+  - Updated response.Error function to use a consistent format expected by tests
+  - Improved error handling in the service layer to properly return models.ErrNotFound and models.ErrForbidden
+
+- ✅ **Tribe Handler CreateTribe Test**:
+  - Fixed validation errors by adding Type and Visibility fields to the request
+  - Fixed nil pointer dereference by ensuring the Metadata field is never nil
+  - Updated the CreateTribe handler to properly handle user_id from both UUID and string formats
+  - Fixed test setup to properly set authentication context with correct user ID
+
 ### Remaining Issues
 
 #### Critical Issues:
-None! All tests are now passing.
 
-#### Areas for Improvement:
-1. **Test Coverage**:
-   - Current backend repository coverage is 48.8%
-   - Should aim for at least 70-80% coverage
+1. **Other Tribe Handler Tests Failing**:
+   - GetTribe, UpdateTribe, DeleteTribe, AddMember, and ListMembers tests are still failing
+   - Error: "error creating tribe: pq: invalid input value for enum tribe_type: """
+   - Need to update these tests to properly set the required enum values
 
-2. **Database Schema Improvements**:
-   - Add unique constraint for tribe names
-   - Consider adding additional indexes for performance
-   - Add comprehensive validation at the database level
+## Development Guidance
 
-3. **API Improvements**:
-   - Add comprehensive request validation
-   - Implement rate limiting
-   - Enhance error responses
+When analyzing test failures, follow these best practices:
+
+1. **Shell Command Analysis**:
+   - Check exit codes of commands using `echo $?` IMMEDIATELY after the command that might fail
+   - Do not run other commands (like changing directories) between the command you're checking and checking its exit code
+   - Use `command || echo "Exit code: $?"` to capture exit codes immediately
+
+2. **Test Output Analysis**:
+   - Read ALL test output carefully - don't just look for pass/fail signals
+   - A test suite can have passing individual tests but still fail due to setup/teardown issues
+   - Look for "FAIL" in the output and trace upward to find the failing package and test
+
+3. **Repository-Level vs. Handler/Service-Level Issues**:
+   - Repository tests passing doesn't mean handler and service tests will pass
+   - Handler and service tests use different assumptions about data models and validation
+   - Be careful to maintain consistency across all layers
+
+4. **Mock Expectations**:
+   - Mock expectation failures often indicate changed behavior in the code under test
+   - Both missing calls and unexpected parameters can cause these failures
+   - Update both the test and implementation to maintain consistency
+
+5. **NULL Value Handling**:
+   - Always check for NULL values in database fields
+   - Use nullable types for fields that might be NULL
+   - Add proper default values when initializing models
+   - For JSON fields, ensure they're never NULL by providing empty objects/arrays
+
+## Development Philosophy
+
+1. **Consistent Error Handling Across Layers**:
+   - Implement consistent error handling across all handlers and services
+   - Create helper functions for standard error handling patterns
+   - Map domain-specific errors to appropriate HTTP status codes
+   - Ensure error messages are descriptive and helpful for debugging
+
+2. **Model and Schema Synchronization**:
+   - Keep model structs synchronized with database schema at all times
+   - Update tests when model fields change to ensure they reflect the current schema
+   - Include version fields in all relevant database tables and model structs
+   - Ensure data validation happens at both the model and database levels
 
 ## Current Focus
-All backend tests are now passing! The main issues we resolved were:
+We've fixed the Activity handler tests, GetUserTribes display_name issue, List handler tests, and CreateTribe handler tests. Now we need to focus on:
 
-1. Ensuring consistent table naming throughout the codebase (standardized on "list_sharing" instead of "list_shares")
-2. Adding the missing version field to tables used by the trigger system
-3. Fixing the UnshareWithTribe function to properly handle removing tribes as owners
-4. Ensuring consistent use of soft delete checks in queries
-
-Next steps should focus on increasing test coverage and implementing additional features.
+1. Fixing the remaining Tribe handler tests (GetTribe, UpdateTribe, DeleteTribe, AddMember, ListMembers)
+   - These tests are failing with "pq: invalid input value for enum tribe_type"
+   - Need to ensure proper enum values are set in test fixtures
 
 ## Future Work
 
-- Increase test coverage for all components (current backend repository coverage: 48.8%)
-- Implement database schema improvements (e.g., adding unique constraint for tribe names)
-- Add comprehensive logging around database operations for better debugging
-- Enhance API validation and error handling
-- Implement rate limiting for API endpoints
-- Add performance monitoring and optimization
-- Develop additional features for the Tribe application
+The main areas for improvement are:
+
+1. **Test Coverage Improvements**:
+   - Current backend repository coverage: 48.8%
+   - Priority areas with low coverage:
+     - Activity repository (several methods at 0% coverage)
+     - List repository methods (many at 0% coverage)
+     - Sync-related functionality
+     - Database connection and setup code
+
+2. **Backend Service Improvements**:
+   - Add comprehensive error handling and recovery
+   - Implement thorough input validation
+   - Add transaction boundaries for all multi-step operations
+   - Improve logging for debugging and monitoring
+
+3. **Database Schema Improvements**:
+   - Add unique constraint for tribe names
+   - Add additional indexes for performance enhancement
+   - Add comprehensive validation at the database level
+   - Consider schema versioning improvements
+
+4. **API Improvements**:
+   - Add comprehensive request validation
+   - Implement rate limiting
+   - Enhance error responses with more detailed information
+   - Document API endpoints more thoroughly
+
+5. **Performance Optimizations**:
+   - Add query performance monitoring
+   - Optimize database queries for list and activity operations
+   - Consider caching frequently accessed data
+   - Implement batched operations where appropriate
+
+6. **Feature Enhancements**:
+   - Enhance tribe management functionality
+   - Improve activity sharing capabilities
+   - Develop additional list features (sorting, filtering, etc.)
+   - Implement more robust user management
+   - Support per-tribe display names (allowing users to have different display names in different tribes)
 
 ## License
 

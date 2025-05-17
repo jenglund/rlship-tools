@@ -106,3 +106,27 @@ TRIBE PROJECT DEBUGGING GUIDELINES
 - Add examples for common operations
 - Create troubleshooting guides
 - Maintain up-to-date API documentation
+
+### Development Philosophy
+
+11. **Consistent Error Handling Across Layers**:
+- Implement consistent error handling across all handlers and services
+- Create helper functions for standard error handling patterns
+- Map domain-specific errors to appropriate HTTP status codes
+- Ensure error messages are descriptive and helpful for debugging
+
+12. **Model and Schema Synchronization**:
+- Keep model structs synchronized with database schema at all times
+- Update tests when model fields change to ensure they reflect the current schema
+- Include version fields in all relevant database tables and model structs
+- Ensure data validation happens at both the model and database levels
+
+### User Interface Design
+
+1. **Display Names in Tribes**:
+- Users must have at least one display name (not NULL)
+- In the future, support per-tribe display names:
+  - Users may want different display names in different tribes (e.g., real name in family tribe, gamertag in gaming tribe)
+  - Some communities know people by different names (IG/TikTok usernames, nicknames, etc.)
+  - Initially implement a single "default" display name
+  - Plan to add tribe-specific display name overrides in future iterations

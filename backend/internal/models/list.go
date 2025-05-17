@@ -279,6 +279,7 @@ type ListShare struct {
 	UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty" db:"expires_at"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
+	Version   int        `json:"version" db:"version"`
 }
 
 // Validate performs validation on the ListShare

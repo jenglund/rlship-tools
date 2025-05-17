@@ -107,7 +107,7 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 
 	// Get members directly instead of using getMembersWithTx
 	membersQuery := `
-		SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, tm.display_name, 
+		SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
 			   tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
 			   u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
 		FROM tribe_members tm
@@ -327,7 +327,7 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 	// For each tribe, get its members in a separate query to avoid the parse error
 	for i, tribe := range tribes {
 		membersQuery := `
-			SELECT tm.id, tm.user_id, tm.tribe_id, tm.display_name, 
+			SELECT tm.id, tm.user_id, tm.tribe_id, COALESCE(tm.display_name, 'Member') as display_name, 
 				   tm.membership_type, tm.metadata, tm.expires_at,
 				   tm.created_at, tm.updated_at, tm.deleted_at, tm.version
 			FROM tribe_members tm
@@ -387,10 +387,16 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 	defer tx.Rollback()
 
 	// Get user's name for display_name
-	var displayName string
+	var displayName sql.NullString
 	err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
 	if err != nil {
 		return fmt.Errorf("error getting user name: %w", err)
+	}
+
+	// Use displayName if valid, otherwise use a default name
+	finalDisplayName := "Member"
+	if displayName.Valid && displayName.String != "" {
+		finalDisplayName = displayName.String
 	}
 
 	query := `
@@ -408,7 +414,7 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 		tribeID,
 		userID,
 		memberType,
-		displayName,
+		finalDisplayName,
 		expiresAt,
 		models.JSONMap{},
 		now,
@@ -523,7 +529,7 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 
 	// Get members directly with a query similar to other methods
 	membersQuery := `
-		SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, tm.display_name, 
+		SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
 			   tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
 			   u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
 		FROM tribe_members tm
@@ -699,7 +705,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 	// For each tribe, get its members in a separate query to avoid the parse error
 	for i, tribe := range tribes {
 		membersQuery := `
-			SELECT tm.id, tm.user_id, tm.tribe_id, tm.display_name, 
+			SELECT tm.id, tm.user_id, tm.tribe_id, COALESCE(tm.display_name, 'Member') as display_name, 
 				   tm.membership_type, tm.metadata, tm.expires_at,
 				   tm.created_at, tm.updated_at, tm.deleted_at, tm.version
 			FROM tribe_members tm
@@ -796,7 +802,7 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 
 		// Get members in a separate query to avoid the parse error
 		membersQuery := `
-			SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, tm.display_name, 
+			SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
 			       tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
 			       u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
 			FROM tribe_members tm
@@ -911,7 +917,7 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 
 		// Get members in a separate query to avoid the parse error
 		membersQuery := `
-			SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, tm.display_name, 
+			SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
 			       tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
 			       u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
 			FROM tribe_members tm

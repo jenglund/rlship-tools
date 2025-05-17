@@ -59,7 +59,7 @@ CREATE TABLE tribe_members (
     tribe_id UUID NOT NULL REFERENCES tribes(id),
     user_id UUID NOT NULL REFERENCES users(id),
     membership_type membership_type NOT NULL DEFAULT 'full',
-    display_name TEXT,
+    display_name TEXT NOT NULL DEFAULT 'Member',
     expires_at TIMESTAMP WITH TIME ZONE,
     metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,

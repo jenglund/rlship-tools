@@ -342,34 +342,24 @@ func (s *listService) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
 
 // ShareListWithTribe shares a list with a tribe
 func (s *listService) ShareListWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
-	share := &models.ListShare{
-		ListID:    listID,
-		TribeID:   tribeID,
-		UserID:    userID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		ExpiresAt: expiresAt,
+	// Check if list exists
+	list, err := s.repo.GetByID(listID)
+	if err != nil {
+		if err.Error() == "list not found" {
+			return models.ErrNotFound
+		}
+		return err
 	}
-	return s.repo.ShareWithTribe(share)
-}
 
-// UnshareListWithTribe removes a list share from a tribe
-func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) error {
-	// Verify list exists and is accessible to the user
-	_, err := s.repo.GetByID(listID)
+	// Check if user is an owner of the list
+	owners, err := s.repo.GetOwners(listID)
 	if err != nil {
 		return err
 	}
 
-	// Check if user has permission to unshare the list
-	owners, err := s.repo.GetOwners(listID)
-	if err != nil {
-		return fmt.Errorf("error getting list owners: %w", err)
-	}
-
 	hasPermission := false
 	for _, owner := range owners {
-		if owner.OwnerType == models.OwnerTypeUser && owner.OwnerID == userID {
+		if owner.OwnerID == userID && owner.OwnerType == "user" {
 			hasPermission = true
 			break
 		}
@@ -379,7 +369,56 @@ func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) er
 		return models.ErrForbidden
 	}
 
-	// Unshare the list
+	// Update visibility if needed
+	if list.Visibility == models.VisibilityPrivate {
+		list.Visibility = models.VisibilityShared
+		if err := s.repo.Update(list); err != nil {
+			return err
+		}
+	}
+
+	// Create a ListShare object
+	share := &models.ListShare{
+		ListID:    listID,
+		TribeID:   tribeID,
+		UserID:    userID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		ExpiresAt: expiresAt,
+	}
+
+	return s.repo.ShareWithTribe(share)
+}
+
+// UnshareListWithTribe removes a list share from a tribe
+func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) error {
+	// Check if list exists
+	_, err := s.repo.GetByID(listID)
+	if err != nil {
+		if err.Error() == "list not found" {
+			return models.ErrNotFound
+		}
+		return err
+	}
+
+	// Check if user is an owner of the list
+	owners, err := s.repo.GetOwners(listID)
+	if err != nil {
+		return err
+	}
+
+	hasPermission := false
+	for _, owner := range owners {
+		if owner.OwnerID == userID && owner.OwnerType == "user" {
+			hasPermission = true
+			break
+		}
+	}
+
+	if !hasPermission {
+		return models.ErrForbidden
+	}
+
 	return s.repo.UnshareWithTribe(listID, tribeID)
 }
 

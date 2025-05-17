@@ -40,8 +40,8 @@ func (r *ActivityRepository) Create(activity *models.Activity) error {
 			activity.ID = uuid.New()
 		}
 
-		// Convert metadata to JSON
-		var metadataJSON interface{} = nil
+		// Convert metadata to JSON - ensure it's never null
+		var metadataJSON interface{} = []byte("{}")
 		if activity.Metadata != nil {
 			var err error
 			jsonBytes, err := json.Marshal(activity.Metadata)
@@ -49,6 +49,9 @@ func (r *ActivityRepository) Create(activity *models.Activity) error {
 				return fmt.Errorf("error encoding metadata: %w", err)
 			}
 			metadataJSON = jsonBytes
+		} else {
+			// Initialize empty metadata
+			activity.Metadata = models.JSONMap{}
 		}
 
 		err := tx.QueryRow(
@@ -151,8 +154,8 @@ func (r *ActivityRepository) Update(activity *models.Activity) error {
 			WHERE id = $7 AND deleted_at IS NULL
 			RETURNING id`
 
-		// Convert metadata to JSON
-		var metadataJSON interface{} = nil
+		// Convert metadata to JSON - ensure it's never null
+		var metadataJSON interface{} = []byte("{}")
 		if activity.Metadata != nil {
 			var err error
 			jsonBytes, err := json.Marshal(activity.Metadata)
@@ -160,6 +163,9 @@ func (r *ActivityRepository) Update(activity *models.Activity) error {
 				return fmt.Errorf("error encoding metadata: %w", err)
 			}
 			metadataJSON = jsonBytes
+		} else {
+			// Initialize empty metadata
+			activity.Metadata = models.JSONMap{}
 		}
 
 		activity.UpdatedAt = time.Now()
