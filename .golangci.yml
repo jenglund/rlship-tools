@@ -1,9 +1,12 @@
 version: "2"
 
-run:
-  timeout: 5m
-  skip-dirs:
-    - vendor
+linters-settings:
+  govet:
+    check-shadowing: true
+  gofmt:
+    simplify: true
+  misspell:
+    locale: US
 
 linters:
   disable-all: true
@@ -24,16 +27,8 @@ issues:
   
   max-issues-per-linter: 0
   max-same-issues: 0
-  fix: false
 
-output:
-  print-issued-line: true
-  print-linter-name: true
-
-linters-settings:
-  govet:
-    check-shadowing: true
-  gofmt:
-    simplify: true
-  misspell:
-    locale: US 
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor 

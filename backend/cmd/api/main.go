@@ -61,7 +61,9 @@ func setupApp(cfg *config.Config) (*gin.Engine, error) {
 	// Initialize Firebase Auth
 	firebaseAuth, err := middleware.NewFirebaseAuth(cfg.Firebase.CredentialsFile)
 	if err != nil {
-		db.Close() // Clean up DB connection on error
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Error closing database during Firebase Auth setup error: %v", closeErr)
+		}
 		return nil, fmt.Errorf("error initializing Firebase Auth: %w", err)
 	}
 
