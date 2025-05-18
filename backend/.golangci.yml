@@ -20,6 +20,8 @@ linters:
   exclusions:
     rules:
       - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv|.*Rollback). is not checked"
+        linters:
+          - errcheck
 
 issues:
   max-issues-per-linter: 0
