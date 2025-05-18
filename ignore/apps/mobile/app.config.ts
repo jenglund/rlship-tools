@@ -1,16 +1,16 @@
 import { ExpoConfig } from '@expo/config-types';
 
 export default (): ExpoConfig => ({
-  name: 'RLShip Tools',
+  name: 'Tribe',
   slug: 'rlship-tools',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/splash.png',
+    image: './assets/splash-icon.png',
     resizeMode: 'contain',
-    backgroundColor: '#ffffff'
+    backgroundColor: '#f6f6f6'
   },
   assetBundlePatterns: [
     '**/*'
@@ -28,12 +28,12 @@ export default (): ExpoConfig => ({
   },
   web: {
     favicon: './assets/favicon.png',
-    name: 'RLShip Tools',
-    shortName: 'RLShip',
+    name: 'Tribe',
+    shortName: 'Tribe',
     lang: 'en',
-    themeColor: '#ffffff',
-    backgroundColor: '#ffffff',
-    description: 'Relationship management tools for couples and polyamorous relationships',
+    themeColor: '#6200ee',
+    backgroundColor: '#f6f6f6',
+    description: 'Share experiences with your tribes',
     orientation: 'any',
     scope: '/',
     startUrl: '/',

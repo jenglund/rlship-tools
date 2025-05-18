@@ -18,7 +18,7 @@
     "@expo/webpack-config": "^19.0.1",
     "@react-native-community/cli": "^18.0.0",
     "@react-native-community/cli-server-api": "^18.0.0",
-    "react-dom": "^19.1.0",
-    "react-native-web": "^0.20.0"
+    "react-dom": "18.2.0",
+    "react-native-web": "~0.19.6"
   }
 }

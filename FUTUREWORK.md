@@ -64,9 +64,9 @@ This document outlines the roadmap for future development of the Tribe project, 
    - Set up proper state management
 
 3. **UI/UX Improvements**
-   - Enhance mobile-first design
-   - Add responsive layouts for desktop testing
+   - Enhance web-first design with responsive layouts
    - Implement proper navigation and transitions
+   - Support both desktop and mobile viewing experiences
 
 4. **Test Coverage**
    - Increase test coverage to at least 80%
@@ -84,58 +84,50 @@ This document outlines the roadmap for future development of the Tribe project, 
    - Performance optimization
    - Analytics and monitoring
 
-## Mobile App Development with Expo 50
+## React 19 Web Application Development
 
-Now that we have our mobile app running with Expo 50, here's our plan for future enhancements:
+Now that we're building a React 19-based web application, here's our plan for future enhancements:
 
-1. **Package Version Optimization**
-   - Update packages to the recommended versions shown in Expo warnings:
-     - `@expo/vector-icons`: Upgrade to ^14.0.0
-     - `expo-device`: Upgrade to ~5.9.4
-     - `expo-image-picker`: Upgrade to ~14.7.1
-     - `expo-notifications`: Upgrade to ~0.27.8
-     - `expo-status-bar`: Upgrade to ~1.11.1
-     - `react-native`: Upgrade to 0.73.6
-     - `react-native-safe-area-context`: Upgrade to 4.8.2
-     - `react-native-screens`: Upgrade to ~3.29.0
-     - `babel-preset-expo`: Upgrade to ^10.0.0
-   - Fix TypeScript errors in navigation components
+1. **Modern React Architecture**
+   - Utilize React 19's latest features and patterns
+   - Implement a component-driven architecture
+   - Use hooks for state management
+   - Create reusable UI components
 
-2. **Performance Improvements**
-   - Implement code splitting to reduce initial load time
-   - Add proper asset caching and preloading
-   - Optimize images and other assets for mobile usage
-   - Monitor and minimize re-renders using React DevTools
+2. **State Management**
+   - Consider context API for simpler state management
+   - Evaluate Redux Toolkit for more complex state requirements
+   - Implement optimized state updates
 
-3. **Testing Infrastructure**
-   - Add unit tests for core components and screens
-   - Set up end-to-end testing with Detox
-   - Implement component testing with React Native Testing Library
-   - Add CI/CD support for mobile testing
+3. **Performance Optimization**
+   - Use React's built-in performance optimization techniques
+   - Implement code splitting with dynamic imports
+   - Add proper asset caching and optimize bundle size
+   - Utilize React.memo, useMemo, and useCallback appropriately
 
-4. **UI/UX Enhancements**
-   - Add customized tab bar with appropriate icons
-   - Implement smooth transitions between screens
+4. **Testing Infrastructure**
+   - Add unit tests for core components using React Testing Library
+   - Implement component testing
+   - Set up end-to-end testing with Cypress
+   - Add CI/CD support for automated testing
+
+5. **UI/UX Enhancements**
+   - Implement a modern, responsive design system
+   - Create smooth transitions between routes
    - Add skeleton loading states for better perceived performance
    - Support dark mode through a theme provider
 
-5. **Offline Support**
-   - Implement data persistence with AsyncStorage
-   - Add proper handling of network state changes
-   - Create optimistic UI updates for faster feedback
-   - Implement background data synchronization
+6. **Offline Support**
+   - Implement Progressive Web App (PWA) capabilities
+   - Add service workers for offline access
+   - Use localStorage/IndexedDB for data persistence
+   - Implement optimistic UI updates for faster feedback
 
-6. **Development Experience**
-   - Add proper type definitions for all components
-   - Create a storybook instance for component visualization
-   - Implement hot reloading optimization
-   - Add ESLint and Prettier for code quality
-
-7. **Future Expo Upgrade Path**
-   - After stabilizing on Expo 50, explore upgrading to Expo 53 again
-   - Research compatibility requirements for React 19
-   - Create a test branch for experimental upgrades
-   - Document upgrade process and gotchas
+7. **Development Experience**
+   - Add proper TypeScript type definitions for all components
+   - Create a Storybook instance for component development and documentation
+   - Implement ESLint and Prettier for code quality
+   - Add comprehensive documentation
 
 ## Integration Testing Roadmap
 

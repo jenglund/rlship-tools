@@ -4,14 +4,9 @@ This document provides an overview of the current status of the Tribe project.
 
 ## Overview
 
-🎉 **Green Across the Board!** 🎉
+We have shifted our frontend development strategy from an Expo-based mobile app to a React 19-based web application. This decision was made to accelerate development and avoid compatibility issues encountered with Expo.
 
-We have successfully achieved a green status across all our GitHub Actions CI/CD workflows:
-- Backend tests are passing
-- Frontend tests are passing
-- Linting checks are clean (with a few shadow variable warnings that we've decided to ignore)
-
-This is a significant milestone that gives us a solid foundation to build upon. The codebase is now in a state where we can continuously iterate and add new features while maintaining stability.
+The backend remains stable with all tests passing.
 
 ## Backend Status
 
@@ -21,6 +16,7 @@ This is a significant milestone that gives us a solid foundation to build upon. 
 
 ## Frontend Status
 
-- **Mobile App**: Basic UI structure with screens for Home, Lists, Interest Buttons, and Profile. Currently attempting to run with Expo 53 and React 19.1.
-- **Test Coverage**: Basic tests in place, but coverage is low (7.01%)
-- **UI Components**: Using React Native Paper for consistent design 
+- **Web Application**: Initial structure created with React 19 and modern build tooling.
+- **Architecture**: Component-based structure with proper separation of concerns
+- **Current Phase**: Setting up the development environment and basic application structure
+- **Next Steps**: Implementing authentication flow and core UI components 

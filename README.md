@@ -1,15 +1,16 @@
 # RLship Tools aka "Tribe" (gonetribal.com)
 
-This repository contains the Tribe application stack, including backend services, mobile app, and web interface. Tribe is a platform for managing and sharing activities with your tribes - whether they're couples, families, friend groups, or any other group of people who want to do things together.
+This repository contains the Tribe application stack, including backend services and web interface. Tribe is a platform for managing and sharing activities with your tribes - whether they're couples, families, friend groups, or any other group of people who want to do things together.
 
 ## Project Structure
 
-- **apps**: Client applications (mobile and web interfaces for Tribe)
+- **frontend**: React 19-based web application for Tribe
 - **backend**: Backend services including API, models, and database connections
 - **docs**: Documentation for Tribe
 - **infrastructure**: Docker, Kubernetes, and other infrastructure configurations
 - **shared**: Shared code and libraries used across the Tribe platform
 - **tools**: Development and deployment tools
+- **ignore**: Deprecated code that is kept for reference purposes only
 
 ## Development Setup
 
@@ -20,10 +21,10 @@ cd backend
 make dev
 ```
 
-### Mobile Development
+### Frontend Development
 
 ```bash
-cd apps/mobile
+cd frontend
 npm install
 npm start
 ```
