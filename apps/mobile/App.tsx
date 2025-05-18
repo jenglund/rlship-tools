@@ -19,11 +19,11 @@ import TribeDetailsScreen from './src/screens/TribeDetailsScreen';
 import { AuthProvider } from './src/contexts/AuthContext';
 
 // Import types
-import { RootStackParamList, TabParamList } from './src/types/navigation';
+import { RootStackParamList, TabParamList, TribesStackParamList } from './src/types/navigation';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const TribesStack = createNativeStackNavigator();
+const TribesStack = createNativeStackNavigator<TribesStackParamList>();
 
 // Tribes stack navigator component
 function TribesStackNavigator() {

@@ -7,8 +7,6 @@ export default (): ExpoConfig => ({
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
-  sdkVersion: '53.0.0',
-  newArchEnabled: true,
   splash: {
     image: './assets/splash.png',
     resizeMode: 'contain',
@@ -26,8 +24,7 @@ export default (): ExpoConfig => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff'
     },
-    package: 'com.yourdomain.rlshiptools',
-    edgeToEdgeEnabled: true,
+    package: 'com.yourdomain.rlshiptools'
   },
   web: {
     favicon: './assets/favicon.png',
@@ -45,9 +42,5 @@ export default (): ExpoConfig => ({
   },
   extra: {
     apiUrl: process.env.API_URL || 'http://localhost:8080',
-  },
-  plugins: [
-    'expo-image-picker',
-    'expo-notifications'
-  ]
+  }
 }); 

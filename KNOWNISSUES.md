@@ -4,11 +4,17 @@ This document tracks the current known issues in the Tribe project that need to 
 
 ## Frontend Issues
 
-### `ConfigError` in Mobile App
-- **Issue**: The mobile application is encountering a `ConfigError` when attempting to start. The exact cause is under investigation.
-- **Suspected Packages**: Potentially outdated or misconfigured Expo-related packages like `@expo/config-types`, `@expo/metro-config`, or `jest-expo` despite `expo` and `react` being at target versions (53.0.0 and 19.1.0 respectively).
-- **Status**: Under investigation
-- **Priority**: High
+### Mobile App Development Status
+- **Update**: Mobile application has been configured to use Expo 50.0.6 with React 18.2.0. 
+- **Prior Issue**: Initially attempted to configure with Expo 53 but encountered compatibility issues.
+- **Current Status**: Application development is proceeding with Expo 50, which has better compatibility with the project requirements.
+- **Priority**: Medium
+
+### TypeScript Errors in Navigation Components
+- **Issue**: The App.tsx file has TypeScript errors related to React Navigation components: `Navigator` components from react-navigation can't be used as JSX elements.
+- **Affected Components**: `NavigationContainer`, `Stack.Navigator`, `Tab.Navigator`, and `TribesStack.Navigator`.
+- **Possible Solution**: Update TypeScript and React Navigation type definitions to be compatible with our current setup.
+- **Priority**: Medium
 
 ## Backend Issues
 
