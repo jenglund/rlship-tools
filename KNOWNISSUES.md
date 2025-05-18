@@ -4,25 +4,23 @@ This document tracks the current known issues in the Tribe project that need to 
 
 ## Frontend Issues
 
-### Mobile App Development Status
-- **Update**: Mobile application has been configured to use Expo 50.0.6 with React 18.2.0. 
-- **Prior Issue**: Initially attempted to configure with Expo 53 but encountered compatibility issues.
-- **Current Status**: Application development is proceeding with Expo 50, which has better compatibility with the project requirements.
+### Web Application Development Status
+- **Update**: Web application has been configured to use React 19.1.0. 
+- **Current Status**: Application development is proceeding with React 19, which provides modern features and performance improvements.
 - **Priority**: Medium
 
 ### Webpack Dev Server Deprecation Warnings
-- **Issue**: When running the web application with Expo, several deprecation warnings appear related to webpack-dev-server:
+- **Issue**: When running the web application, some deprecation warnings may appear related to webpack-dev-server:
   - `[DEP_WEBPACK_DEV_SERVER_CONSTRUCTOR]`: Using 'compiler' as first argument is deprecated
   - `[DEP_WEBPACK_DEV_SERVER_LISTEN]`: 'listen' method is deprecated
   - `[DEP_WEBPACK_DEV_SERVER_CLOSE]`: 'close' method is deprecated
-- **Status**: These warnings don't affect functionality and will be automatically resolved when Expo updates its webpack configuration in a future release.
+- **Status**: These warnings don't affect functionality and will be automatically resolved when webpack updates in a future release.
 - **Resolution Decision**: We've decided to accept these deprecation warnings rather than implement custom workarounds that may introduce other issues.
 - **Priority**: Low
 
-### TypeScript Errors in Navigation Components
-- **Issue**: The App.tsx file has TypeScript errors related to React Navigation components: `Navigator` components from react-navigation can't be used as JSX elements.
-- **Affected Components**: `NavigationContainer`, `Stack.Navigator`, `Tab.Navigator`, and `TribesStack.Navigator`.
-- **Possible Solution**: Update TypeScript and React Navigation type definitions to be compatible with our current setup.
+### TypeScript Integration
+- **Issue**: The project currently uses JavaScript and needs TypeScript integration for better type safety.
+- **Possible Solution**: Set up TypeScript and add type definitions for React 19 components.
 - **Priority**: Medium
 
 ## Backend Issues

@@ -4,7 +4,7 @@ This document provides an overview of the current status of the Tribe project.
 
 ## Overview
 
-We have shifted our frontend development strategy from an Expo-based mobile app to a React 19-based web application. This decision was made to accelerate development and avoid compatibility issues encountered with Expo.
+We are developing the Tribe application as a React 19-based web application. This modern approach allows us to leverage the latest React features and optimizations.
 
 The backend remains stable with all tests passing.
 
