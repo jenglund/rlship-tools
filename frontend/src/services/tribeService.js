@@ -1,57 +1,121 @@
-// Mock data for tribes
-const MOCK_TRIBES = [
-  {
-    id: 1,
-    name: 'Family',
-    description: 'Family activities and planning',
-    memberCount: 4,
-    createdAt: '2023-05-15'
-  },
-  {
-    id: 2,
-    name: 'Friends',
-    description: 'Weekend plans with friends',
-    memberCount: 6,
-    createdAt: '2023-06-21'
-  },
-  {
-    id: 3,
-    name: 'Book Club',
-    description: 'Monthly book discussions',
-    memberCount: 8,
-    createdAt: '2023-07-10'
-  },
-  {
-    id: 4,
-    name: 'Hiking Group',
-    description: 'Outdoor adventures',
-    memberCount: 5,
-    createdAt: '2023-08-03'
-  }
-];
+import axios from 'axios';
+import authService from './authService';
+import config from '../config';
 
-// Get all tribes for a user
-export const getUserTribes = (userId) => {
-  // In a real implementation, this would be a fetch call to the API
-  return new Promise((resolve) => {
-    // Simulate API delay
-    setTimeout(() => {
-      resolve(MOCK_TRIBES);
-    }, 500);
-  });
+const API_URL = config.API_URL;
+
+// Helper function to get the authorization header
+const getAuthHeader = () => {
+  const user = authService.getCurrentUser();
+  return user ? { Authorization: `Bearer ${user.token}` } : {};
 };
 
-// Get a single tribe by ID
-export const getTribeById = (tribeId) => {
-  return new Promise((resolve, reject) => {
-    // Simulate API delay
-    setTimeout(() => {
-      const tribe = MOCK_TRIBES.find(tribe => tribe.id === parseInt(tribeId));
-      if (tribe) {
-        resolve(tribe);
-      } else {
-        reject(new Error('Tribe not found'));
-      }
-    }, 500);
-  });
-}; 
+const tribeService = {
+  // Get all tribes for the current user
+  getUserTribes: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/tribes/my`, {
+        headers: getAuthHeader()
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error('Error fetching user tribes:', error);
+      throw error;
+    }
+  },
+
+  // Get a single tribe by ID
+  getTribeById: async (tribeId) => {
+    try {
+      const response = await axios.get(`${API_URL}/tribes/${tribeId}`, {
+        headers: getAuthHeader()
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error(`Error fetching tribe ${tribeId}:`, error);
+      throw error;
+    }
+  },
+
+  // Create a new tribe
+  createTribe: async (tribeData) => {
+    try {
+      const response = await axios.post(`${API_URL}/tribes`, tribeData, {
+        headers: getAuthHeader()
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error('Error creating tribe:', error);
+      throw error;
+    }
+  },
+
+  // Update a tribe
+  updateTribe: async (tribeId, tribeData) => {
+    try {
+      const response = await axios.put(`${API_URL}/tribes/${tribeId}`, tribeData, {
+        headers: getAuthHeader()
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error(`Error updating tribe ${tribeId}:`, error);
+      throw error;
+    }
+  },
+
+  // Delete a tribe
+  deleteTribe: async (tribeId) => {
+    try {
+      await axios.delete(`${API_URL}/tribes/${tribeId}`, {
+        headers: getAuthHeader()
+      });
+      return true;
+    } catch (error) {
+      console.error(`Error deleting tribe ${tribeId}:`, error);
+      throw error;
+    }
+  },
+
+  // Get all members of a tribe
+  getTribeMembers: async (tribeId) => {
+    try {
+      const response = await axios.get(`${API_URL}/tribes/${tribeId}/members`, {
+        headers: getAuthHeader()
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error(`Error fetching members for tribe ${tribeId}:`, error);
+      throw error;
+    }
+  },
+
+  // Add a member to a tribe
+  addTribeMember: async (tribeId, userId) => {
+    try {
+      const response = await axios.post(
+        `${API_URL}/tribes/${tribeId}/members`,
+        { user_id: userId },
+        { headers: getAuthHeader() }
+      );
+      return response.data.data;
+    } catch (error) {
+      console.error(`Error adding member to tribe ${tribeId}:`, error);
+      throw error;
+    }
+  },
+
+  // Remove a member from a tribe
+  removeTribeMember: async (tribeId, userId) => {
+    try {
+      await axios.delete(`${API_URL}/tribes/${tribeId}/members/${userId}`, {
+        headers: getAuthHeader()
+      });
+      return true;
+    } catch (error) {
+      console.error(`Error removing member from tribe ${tribeId}:`, error);
+      throw error;
+    }
+  }
+};
+
+export default tribeService; 

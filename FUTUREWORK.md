@@ -2,6 +2,98 @@
 
 This document outlines the roadmap for future development of the Tribe project, including planned features, implementation details, and testing strategies.
 
+## Authentication and Tribe Management Implementation Plan
+
+### Overview
+This implementation plan outlines the steps needed to connect the frontend and backend for basic user authentication, user registration, and tribe management features.
+
+### User Flow
+1. **Authentication Flow**
+   - When a user attempts to log in, we collect their email
+   - If the email exists in our system, log the user in
+   - If the email doesn't exist, prompt for additional information (display name, etc.)
+   - Create a new user account with the provided information
+   - Log the new user in
+
+2. **Tribe Management Flow**
+   - After login, user sees a list of tribes they belong to (empty for new users)
+   - User can create a new tribe by clicking a "Create Tribe" button
+   - When creating a tribe, prompt for tribe name
+   - After tribe creation, user is automatically added as a member
+   - Display the tribe overview page showing all members 
+   - Add ability to delete tribes with confirmation prompt
+   - After deletion, return to the tribes list screen
+
+### Implementation Tasks
+
+#### Backend Tasks
+1. **Authentication Endpoints**
+   - Implement `/api/auth/check-email` endpoint to verify if an email exists
+   - Create `/api/auth/register` endpoint for new user registration
+   - Implement `/api/auth/login` endpoint for user login
+   - Add proper validation for user input
+
+2. **User Management**
+   - Implement user service for creating and managing users
+   - Add validation for required user fields (email, display name)
+   - Create repository functions for user operations
+
+3. **Tribe Management Endpoints**
+   - Implement `/api/tribes` endpoint with GET (list) and POST (create) methods
+   - Create `/api/tribes/:id` endpoint with GET (details) and DELETE methods
+   - Ensure proper authentication and authorization checks
+
+4. **Error Handling**
+   - Implement consistent error responses
+   - Add validation error handling
+   - Create middleware for authentication verification
+
+#### Frontend Tasks
+1. **Authentication Components**
+   - Update `LoginScreen` to handle email input
+   - Create `RegistrationScreen` for new user information collection
+   - Implement `AuthService` for API communication
+   - Update `AuthContext` to manage user state
+
+2. **Tribe Management Components**
+   - Enhance `TribesListScreen` to display user's tribes
+   - Add "Create Tribe" button and associated modal/form
+   - Create `TribeDetailScreen` to show tribe members
+   - Implement delete functionality with confirmation dialog
+   - Add proper navigation between screens
+
+3. **Services and API Integration**
+   - Enhance `tribeService.js` to communicate with backend API
+   - Create `userService.js` for user-related API calls
+   - Implement proper error handling and loading states
+
+4. **UI Improvements**
+   - Add form validation for user inputs
+   - Implement loading indicators during API calls
+   - Create error notifications for failed operations
+   - Add confirmation dialogs for destructive actions
+
+### Testing Strategy
+1. **Unit Tests**
+   - Test user registration and login logic
+   - Test tribe creation and deletion functionality
+   - Verify proper state management
+
+2. **Integration Tests**
+   - Test API integration with backend
+   - Verify proper error handling
+
+3. **E2E Tests**
+   - Test complete user flows from login to tribe management
+
+### Implementation Order
+1. Backend authentication endpoints
+2. Frontend authentication components
+3. Backend tribe management endpoints
+4. Frontend tribe management components
+5. Error handling and validation
+6. Testing and refinement
+
 ## User Story Implementation Plans
 
 ### User Story #1: Basic Authentication and Tribe Viewing Flow
@@ -73,12 +165,19 @@ As a user, I want to land on a welcome page for Tribe, have the ability to log i
    - Improve API documentation
    - **NEW**: Add endpoints to support the authentication and tribe viewing flow
 
-3. **Improve Test Coverage**
+3. **Authentication Implementation**
+   - Replace development authentication with proper Firebase authentication
+   - Set up Firebase project with appropriate security rules
+   - Configure Firebase authentication for both web and mobile clients
+   - Implement proper error handling for authentication failures
+   - Add user session management and token refresh functionality
+
+4. **Improve Test Coverage**
    - Fix skipped tests in List Repository
    - Increase service layer test coverage (currently at 78.6%)
    - Add tests for sync-related models (currently 0% coverage)
 
-4. **Advanced Features**
+5. **Advanced Features**
    - Implement per-tribe display names
    - Enhance list synchronization with external sources (Google Maps)
    - Support for advanced interest indicators and scheduling

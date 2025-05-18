@@ -14,6 +14,11 @@ import (
 	"google.golang.org/api/option"
 )
 
+// AuthMiddleware defines the interface for authentication middleware
+type AuthMiddleware interface {
+	AuthMiddleware() gin.HandlerFunc
+}
+
 // RepositoryProvider defines the interface for accessing repositories
 type RepositoryProvider interface {
 	DB() *sql.DB
@@ -74,10 +79,18 @@ func (fa *FirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 // RequireAuth returns a middleware that requires Firebase authentication
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, exists := c.Get("firebase_uid"); !exists {
+		uid, exists := c.Get("firebase_uid")
+		fmt.Printf("RequireAuth middleware: firebase_uid exists=%v, value=%v\n", exists, uid)
+
+		userId, userIdExists := c.Get("user_id")
+		fmt.Printf("RequireAuth middleware: user_id exists=%v, value=%v\n", userIdExists, userId)
+
+		if !exists {
+			fmt.Printf("RequireAuth middleware: Authentication failed, aborting\n")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
+		fmt.Printf("RequireAuth middleware: Authentication successful, continuing\n")
 		c.Next()
 	}
 }

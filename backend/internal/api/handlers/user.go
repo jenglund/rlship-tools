@@ -31,6 +31,9 @@ func (h *UserHandler) RegisterRoutes(r *gin.RouterGroup) {
 	{
 		// Public routes
 		users.POST("/auth", h.AuthenticateUser)
+		users.POST("/check-email", h.CheckEmailExists)
+		users.POST("/register", h.RegisterUser)
+		users.POST("/login", h.LoginUser)
 
 		// Protected routes
 		auth := users.Use(middleware.RequireAuth())
@@ -90,6 +93,97 @@ func (h *UserHandler) AuthenticateUser(c *gin.Context) {
 		response.GinInternalError(c, err)
 		return
 	}
+
+	response.GinSuccess(c, user)
+}
+
+// CheckEmailRequest represents the email check request
+type CheckEmailRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// CheckEmailResponse represents the email check response
+type CheckEmailResponse struct {
+	Exists bool `json:"exists"`
+}
+
+// CheckEmailExists checks if an email already exists in the system
+func (h *UserHandler) CheckEmailExists(c *gin.Context) {
+	var req CheckEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.GinBadRequest(c, "Invalid request body")
+		return
+	}
+
+	// Check if user exists
+	user, err := h.repos.GetUserRepository().GetByEmail(req.Email)
+	exists := err == nil && user != nil
+
+	response.GinSuccess(c, CheckEmailResponse{Exists: exists})
+}
+
+// RegisterRequest represents the user registration request
+type RegisterRequest struct {
+	Email     string `json:"email" binding:"required,email"`
+	Name      string `json:"name" binding:"required"`
+	AvatarURL string `json:"avatar_url"`
+	Provider  string `json:"provider" binding:"required"`
+}
+
+// RegisterUser handles new user registration
+func (h *UserHandler) RegisterUser(c *gin.Context) {
+	var req RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.GinBadRequest(c, "Invalid request body")
+		return
+	}
+
+	// Check if user already exists
+	existingUser, _ := h.repos.GetUserRepository().GetByEmail(req.Email)
+	if existingUser != nil {
+		response.GinBadRequest(c, "User with this email already exists")
+		return
+	}
+
+	// Create new user
+	user := &models.User{
+		ID:        uuid.New(),
+		Email:     req.Email,
+		Name:      req.Name,
+		AvatarURL: req.AvatarURL,
+		Provider:  models.AuthProvider(req.Provider),
+	}
+
+	if err := h.repos.GetUserRepository().Create(user); err != nil {
+		response.GinInternalError(c, err)
+		return
+	}
+
+	response.GinCreated(c, user)
+}
+
+// LoginRequest represents the login request
+type LoginRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// LoginUser handles user login
+func (h *UserHandler) LoginUser(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.GinBadRequest(c, "Invalid request body")
+		return
+	}
+
+	// Find user by email
+	user, err := h.repos.GetUserRepository().GetByEmail(req.Email)
+	if err != nil || user == nil {
+		response.GinNotFound(c, "User not found")
+		return
+	}
+
+	// In a real application, we would check credentials here
+	// For this demo, we'll simply return the user
 
 	response.GinSuccess(c, user)
 }

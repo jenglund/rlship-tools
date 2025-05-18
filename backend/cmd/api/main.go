@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -58,23 +59,45 @@ func setupApp(cfg *config.Config) (*gin.Engine, error) {
 	// Initialize repositories
 	repos := postgres.NewRepositories(db)
 
-	// Initialize Firebase Auth
-	firebaseAuth, err := middleware.NewFirebaseAuth(cfg.Firebase.CredentialsFile)
-	if err != nil {
-		if closeErr := db.Close(); closeErr != nil {
-			log.Printf("Error closing database during Firebase Auth setup error: %v", closeErr)
+	// Check for development mode
+	environment := os.Getenv("ENVIRONMENT")
+	isDevelopment := environment == "development"
+
+	// Check if Firebase credentials file exists
+	_, err = os.Stat(cfg.Firebase.CredentialsFile)
+	credentialsFileExists := err == nil
+
+	// Initialize Authentication middleware
+	var authMiddleware middleware.AuthMiddleware
+
+	if isDevelopment || !credentialsFileExists {
+		if !credentialsFileExists {
+			log.Printf("Warning: Firebase credentials file not found at %s", cfg.Firebase.CredentialsFile)
 		}
-		return nil, fmt.Errorf("error initializing Firebase Auth: %w", err)
+		log.Printf("Using development authentication mode with dev user email pattern")
+		devAuth := middleware.NewDevFirebaseAuth()
+		devAuth.SetRepositoryProvider(repos)
+		authMiddleware = devAuth
+	} else {
+		// Initialize Firebase Auth for production
+		firebaseAuth, err := middleware.NewFirebaseAuth(cfg.Firebase.CredentialsFile)
+		if err != nil {
+			if closeErr := db.Close(); closeErr != nil {
+				log.Printf("Error closing database during Firebase Auth setup error: %v", closeErr)
+			}
+			return nil, fmt.Errorf("error initializing Firebase Auth: %w", err)
+		}
+		authMiddleware = firebaseAuth
 	}
 
 	// Initialize and configure Gin router
-	router := setupRouter(repos, firebaseAuth)
+	router := setupRouter(repos, authMiddleware)
 
 	return router, nil
 }
 
 // setupRouter creates and configures the Gin router with all routes and middlewares
-func setupRouter(repos *postgres.Repositories, firebaseAuth *middleware.FirebaseAuth) *gin.Engine {
+func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMiddleware) *gin.Engine {
 	// Initialize Gin router
 	router := gin.Default()
 
@@ -84,8 +107,8 @@ func setupRouter(repos *postgres.Repositories, firebaseAuth *middleware.Firebase
 	// API routes
 	api := router.Group("/api")
 	{
-		// Add Firebase Auth middleware to all API routes
-		api.Use(firebaseAuth.AuthMiddleware())
+		// Add Auth middleware to all API routes
+		api.Use(authMiddleware.AuthMiddleware())
 
 		// Initialize and register handlers
 		userHandler := handlers.NewUserHandler(repos)

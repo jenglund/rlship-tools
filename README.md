@@ -29,6 +29,27 @@ npm install
 npm start
 ```
 
+### Development Authentication
+
+During development, the backend supports a simplified authentication flow that doesn't require Firebase credentials. To use this:
+
+1. Set the environment variable `ENVIRONMENT=development` or ensure the Firebase credentials file doesn't exist
+2. The server will automatically enable development authentication mode
+3. Use dev user accounts with email addresses matching the pattern `dev_user[0-9]+@gonetribal.com`
+
+You can authenticate in one of two ways:
+- Include a header `X-Dev-Email: dev_user1@gonetribal.com` in your requests
+- Send a token in the format `dev:dev_user1@gonetribal.com` in the Authorization header
+
+Example:
+```bash
+# Using X-Dev-Email header
+curl -H "X-Dev-Email: dev_user1@gonetribal.com" http://localhost:8080/api/users/me
+
+# Using Authorization header
+curl -H "Authorization: Bearer dev:dev_user1@gonetribal.com" http://localhost:8080/api/users/me
+```
+
 ## Testing
 
 ```bash
