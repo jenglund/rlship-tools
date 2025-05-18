@@ -1,13 +1,14 @@
-import { ExpoConfig, ConfigContext } from 'expo/config';
+import { ExpoConfig } from '@expo/config-types';
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
-  ...config,
+export default (): ExpoConfig => ({
   name: 'RLShip Tools',
   slug: 'rlship-tools',
   version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'light',
+  sdkVersion: '53.0.0',
+  newArchEnabled: true,
   splash: {
     image: './assets/splash.png',
     resizeMode: 'contain',
@@ -25,7 +26,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff'
     },
-    package: 'com.yourdomain.rlshiptools'
+    package: 'com.yourdomain.rlshiptools',
+    edgeToEdgeEnabled: true,
   },
   web: {
     favicon: './assets/favicon.png',
