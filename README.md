@@ -55,6 +55,17 @@ This approach simplifies testing and development. Once we reach production, we'l
 
 ## Known Issues
 
+### Current Linting Issues
+- **`govet shadow` errors**: The linter has identified 69 instances of variable shadowing across the backend codebase. This occurs when a variable declared in an inner scope has the same name as a variable in an outer scope, potentially leading to unintentional behavior or bugs.
+    - **Affected Areas**:
+        - Test files (e.g., `internal/api/handlers/*_test.go`, `internal/repository/postgres/*_test.go`, `internal/testutil/db_test.go`)
+        - Application logic files (e.g., `internal/api/handlers/tribe.go`, `internal/api/service/sync.go`, `internal/repository/postgres/*.go`)
+    - **Commonly Shadowed Variables**: `err`, `mockService`, `router`, `items`.
+    - **Resolution Plan**:
+        1. Prioritize fixing shadow errors in test files.
+        2. Carefully fix shadow errors in application logic files, ensuring no behavioral changes.
+        3. Rename inner variables or refactor code to avoid shadowing.
+
 ### Fixed Issues
 - ✅ Activity Sharing Issues:
   - Fixed deduplication logic in GetSharedActivities
@@ -237,7 +248,8 @@ We've also improved cmd/api package coverage from 0% to 50% by refactoring the c
 
 The primary focus now is on improving test coverage and implementing remaining critical features. Our priorities are:
 
-1. **Test Coverage Improvements**:
+1. **Resolve all `govet shadow` linting issues.**
+2. **Test Coverage Improvements**:
    - Current overall coverage: 73.4%
      - handlers: 83.3% (exceeds 80% target, up from 81.8%)
      - repository: 72.6% (below target)
@@ -252,7 +264,7 @@ The primary focus now is on improving test coverage and implementing remaining c
        - Sync-related models (all at 0% coverage) - needs tests
        - ActivityPhoto validation (0% coverage) - needs tests
 
-2. **Input Validation and Error Handling**:
+3. **Input Validation and Error Handling**:
    - ✅ Add proper permission checks to prevent unauthorized tribe updates
    - ✅ Add optimistic concurrency control with version field validation
    - ✅ Add comprehensive request validation for UpdateTribe fields
@@ -261,36 +273,38 @@ The primary focus now is on improving test coverage and implementing remaining c
    - Add transaction boundaries for multi-step operations
    - Improve error responses with detailed information
 
-3. **Database Schema Improvements**:
+4. **Database Schema Improvements**:
    - Add unique constraint for tribe names
    - Add additional indexes for query performance
    - Add comprehensive validation at the database level
    - Ensure all references are properly constrained
 
-4. **Feature Implementation**:
+5. **Feature Implementation**:
    - Complete activity management functionality
    - Enhance list sharing and synchronization features
    - Implement robust tribe membership management
    - Support per-tribe display names
 
-5. **Performance Optimizations**:
+6. **Performance Optimizations**:
    - Add query performance monitoring
    - Optimize database queries for list and activity operations
    - Consider caching frequently accessed data
    - Implement batched operations where appropriate
 
-6. **API Documentation**:
+7. **API Documentation**:
    - Document all API endpoints comprehensively
    - Add schema validation examples
    - Create testing examples for each endpoint
    - Implement API versioning strategy
 
-7. **Fixed List Sharing Implementation Issues**:
+8. **Fixed List Sharing Implementation Issues**:
    - ✅ Implemented basic tests for ShareWithTribe, GetListShares, and GetSharedLists functionality
    - Identified and documented issues with sharing record updating patterns
    - Implemented soft-delete based approach for record updates that avoids primary key violations
    - Skipped some advanced test cases (update existing shares, version handling) that require further investigation
    - Added transaction-based approach to ensure database consistency during share operations
+
+9. **Review and potentially enhance `golangci-lint` configuration in CI**: Ensure consistent linter versions and explore stricter linting rules once current issues are resolved.
 
 ## Service Layer Improvement Action Plan
 

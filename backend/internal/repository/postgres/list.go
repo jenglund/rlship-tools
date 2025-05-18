@@ -211,14 +211,13 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	for rows.Next() {
 		item := &models.ListItem{}
 		var metadata []byte
-		err := rows.Scan(
+		if err := rows.Scan(
 			&item.ID, &item.ListID, &item.Name, &item.Description,
 			&metadata, &item.ExternalID,
 			&item.Weight, &item.LastChosen, &item.ChosenCount,
 			&item.Latitude, &item.Longitude, &item.Address,
 			&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-		)
-		if err != nil {
+		); err != nil {
 			return fmt.Errorf("error scanning list item: %w", err)
 		}
 
@@ -252,14 +251,13 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	var owners []*models.ListOwner
 	for rows.Next() {
 		owner := &models.ListOwner{}
-		err := rows.Scan(
+		if err := rows.Scan(
 			&owner.ListID,
 			&owner.OwnerID,
 			&owner.OwnerType,
 			&owner.CreatedAt,
 			&owner.DeletedAt,
-		)
-		if err != nil {
+		); err != nil {
 			return fmt.Errorf("error scanning list owner: %w", err)
 		}
 		owners = append(owners, owner)
@@ -471,8 +469,8 @@ func (r *listRepository) Update(list *models.List) error {
 		}
 
 		// Validate list
-		if err := list.Validate(); err != nil {
-			return fmt.Errorf("list validation failed: %w", err)
+		if validateErr := list.Validate(); err != nil {
+			return fmt.Errorf("list validation failed: %w", validateErr)
 		}
 
 		// Update list
@@ -838,14 +836,13 @@ func (r *listRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) 
 	for rows.Next() {
 		item := &models.ListItem{}
 		var metadata []byte
-		err := rows.Scan(
+		if err := rows.Scan(
 			&item.ID, &item.ListID, &item.Name, &item.Description,
 			&metadata, &item.ExternalID,
 			&item.Weight, &item.LastChosen, &item.ChosenCount,
 			&item.Latitude, &item.Longitude, &item.Address,
 			&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 
@@ -897,15 +894,14 @@ func (r *listRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[strin
 		var metadata []byte
 		var defaultWeight float64
 		var cooldownDays *int
-		err := rows.Scan(
+		if err := rows.Scan(
 			&item.ID, &item.ListID, &item.Name, &item.Description,
 			&metadata, &item.ExternalID,
 			&item.Weight, &item.LastChosen, &item.ChosenCount,
 			&item.Latitude, &item.Longitude, &item.Address,
 			&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
 			&defaultWeight, &cooldownDays,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 
@@ -1019,14 +1015,13 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 				Items:  []*models.ListItem{},
 				Owners: []*models.ListOwner{},
 			}
-			err := rows.Scan(
+			if err := rows.Scan(
 				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
 				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
 				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
 				&list.OwnerID, &list.OwnerType,
 				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning list: %w", err)
 			}
 
@@ -1040,85 +1035,18 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 		// Load items and owners separately for each list to avoid parse errors
 		for _, list := range lists {
 			// Get items
-			itemsQuery := `
-				SELECT id, list_id, name, description, weight, 
-					chosen_count, last_chosen, metadata, external_id,
-					latitude, longitude, address, seasonal, 
-					season_begin, season_end, cooldown,
-					created_at, updated_at, deleted_at
-				FROM list_items
-				WHERE list_id = $1 AND deleted_at IS NULL
-				ORDER BY created_at ASC`
-
-			itemRows, err := tx.Query(itemsQuery, list.ID)
+			items, err := r.GetItems(list.ID)
 			if err != nil {
-				return fmt.Errorf("error getting list items: %w", err)
+				return fmt.Errorf("error loading items for list %s: %w", list.ID, err)
 			}
-			defer safeClose(itemRows)
-
-			for itemRows.Next() {
-				item := &models.ListItem{}
-				var seasonal bool
-				var seasonBegin, seasonEnd sql.NullString
-				var cooldown, latitude, longitude sql.NullFloat64
-				var address sql.NullString
-
-				err := itemRows.Scan(
-					&item.ID, &item.ListID, &item.Name, &item.Description, &item.Weight,
-					&item.ChosenCount, &item.LastChosen, &item.Metadata, &item.ExternalID,
-					&latitude, &longitude, &address, &seasonal,
-					&seasonBegin, &seasonEnd, &cooldown,
-					&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-				)
-				if err != nil {
-					return fmt.Errorf("error scanning list item: %w", err)
-				}
-
-				// Set nullable fields
-				if latitude.Valid {
-					item.Latitude = &latitude.Float64
-				}
-				if longitude.Valid {
-					item.Longitude = &longitude.Float64
-				}
-				if address.Valid {
-					item.Address = &address.String
-				}
-
-				list.Items = append(list.Items, item)
-			}
-
-			if err = itemRows.Err(); err != nil {
-				return fmt.Errorf("error iterating list items: %w", err)
-			}
+			list.Items = items
 
 			// Get owners
-			ownersQuery := `
-				SELECT list_id, owner_id, owner_type, created_at, updated_at
-				FROM list_owners
-				WHERE list_id = $1 AND deleted_at IS NULL`
-
-			ownerRows, err := tx.Query(ownersQuery, list.ID)
+			owners, err := r.GetOwners(list.ID)
 			if err != nil {
-				return fmt.Errorf("error getting list owners: %w", err)
+				return fmt.Errorf("error loading owners for list %s: %w", list.ID, err)
 			}
-			defer safeClose(ownerRows)
-
-			for ownerRows.Next() {
-				owner := &models.ListOwner{}
-				err := ownerRows.Scan(
-					&owner.ListID, &owner.OwnerID, &owner.OwnerType,
-					&owner.CreatedAt, &owner.UpdatedAt,
-				)
-				if err != nil {
-					return fmt.Errorf("error scanning list owner: %w", err)
-				}
-				list.Owners = append(list.Owners, owner)
-			}
-
-			if err = ownerRows.Err(); err != nil {
-				return fmt.Errorf("error iterating list owners: %w", err)
-			}
+			list.Owners = owners
 		}
 
 		return nil
@@ -1360,14 +1288,13 @@ func (r *listRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error
 		owners = make([]*models.ListOwner, 0)
 		for rows.Next() {
 			owner := &models.ListOwner{}
-			err := rows.Scan(
+			if err := rows.Scan(
 				&owner.ListID,
 				&owner.OwnerID,
 				&owner.OwnerType,
 				&owner.CreatedAt,
 				&owner.UpdatedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning list owner: %w", err)
 			}
 			owners = append(owners, owner)
@@ -1650,7 +1577,7 @@ func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
-			SELECT list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at, version
+			SELECT list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at
 			FROM list_sharing
 			WHERE list_id = $1 AND deleted_at IS NULL
 			ORDER BY created_at DESC`
@@ -1671,7 +1598,6 @@ func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 				&share.UpdatedAt,
 				&share.ExpiresAt,
 				&share.DeletedAt,
-				&share.Version,
 			)
 			if err != nil {
 				return fmt.Errorf("error scanning list share: %w", err)
@@ -1774,7 +1700,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		var listIDs []uuid.UUID
 		for rows.Next() {
 			list := &models.List{}
-			err := rows.Scan(
+			if err := rows.Scan(
 				&list.ID,
 				&list.Type,
 				&list.Name,
@@ -1791,8 +1717,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 				&list.OwnerType,
 				&list.CreatedAt,
 				&list.UpdatedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning list: %w", err)
 			}
 
@@ -1831,14 +1756,13 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 		for itemRows.Next() {
 			item := &models.ListItem{}
 			var metadata []byte
-			err := itemRows.Scan(
+			if err := itemRows.Scan(
 				&item.ID, &item.ListID, &item.Name, &item.Description,
 				&metadata, &item.ExternalID,
 				&item.Weight, &item.LastChosen, &item.ChosenCount,
 				&item.Latitude, &item.Longitude, &item.Address,
 				&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning list item: %w", err)
 			}
 
@@ -1870,14 +1794,13 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 
 		for ownerRows.Next() {
 			owner := &models.ListOwner{}
-			err := ownerRows.Scan(
+			if err := ownerRows.Scan(
 				&owner.ListID,
 				&owner.OwnerID,
 				&owner.OwnerType,
 				&owner.CreatedAt,
 				&owner.DeletedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning list owner: %w", err)
 			}
 			ownersByListID[owner.ListID] = append(ownersByListID[owner.ListID], owner)

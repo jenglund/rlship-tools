@@ -1017,8 +1017,9 @@ func TestUpdateTribe(t *testing.T) {
 					Success bool          `json:"success"`
 					Data    *models.Tribe `json:"data"`
 				}
-				err = json.Unmarshal(w.Body.Bytes(), &response)
-				require.NoError(t, err)
+				// Use a different err variable for unmarshal here to avoid conflict with outer scope
+				unmarshalRespErr := json.Unmarshal(w.Body.Bytes(), &response)
+				require.NoError(t, unmarshalRespErr)
 				assert.NotNil(t, response.Data)
 				assert.Equal(t, "Complete Update", response.Data.Name)
 				assert.Equal(t, models.TribeTypeFamily, response.Data.Type)
@@ -1026,11 +1027,11 @@ func TestUpdateTribe(t *testing.T) {
 				assert.Equal(t, models.VisibilityShared, response.Data.Visibility)
 
 				// Check metadata
-				metadataJSON, err := json.Marshal(response.Data.Metadata)
-				require.NoError(t, err)
+				metadataJSON, marshalErr := json.Marshal(response.Data.Metadata)
+				require.NoError(t, marshalErr)
 				var metadata map[string]interface{}
-				err = json.Unmarshal(metadataJSON, &metadata)
-				require.NoError(t, err)
+				unmarshalMetaErr := json.Unmarshal(metadataJSON, &metadata)
+				require.NoError(t, unmarshalMetaErr)
 				assert.Equal(t, "value", metadata["key"])
 			},
 		},
@@ -1542,16 +1543,16 @@ func TestUpdateTribeDatabaseError(t *testing.T) {
 
 	// Add a custom handler for the update endpoint
 	router.PUT("/api/tribes/tribes/:id", func(c *gin.Context) {
-		id, err := uuid.Parse(c.Param("id"))
-		if err != nil {
-			response.GinBadRequest(c, "Invalid tribe ID")
+		id, parseIDErr := uuid.Parse(c.Param("id"))
+		if parseIDErr != nil {
+			response.GinBadRequest(c, fmt.Sprintf("Invalid tribe ID: %v", parseIDErr))
 			return
 		}
 
 		// Only respond to our test tribe
 		if id == tribe.ID {
 			var req UpdateTribeRequest
-			if err := c.ShouldBindJSON(&req); err != nil {
+			if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
 				response.GinBadRequest(c, "Invalid request body")
 				return
 			}

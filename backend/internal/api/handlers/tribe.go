@@ -138,27 +138,27 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	}
 
 	// Validate the tribe
-	if err := tribe.Validate(); err != nil {
-		response.GinBadRequest(c, err.Error())
+	if validationErr := tribe.Validate(); validationErr != nil {
+		response.GinBadRequest(c, validationErr.Error())
 		return
 	}
 
 	// Create tribe and add member in a transaction
-	if err := h.repos.Tribes.Create(tribe); err != nil {
+	if createErr := h.repos.Tribes.Create(tribe); createErr != nil {
 		// Check for duplicate tribe name error
-		if strings.Contains(err.Error(), "duplicate key value violates unique constraint") &&
-			strings.Contains(err.Error(), "idx_unique_tribe_name") {
+		if strings.Contains(createErr.Error(), "duplicate key value violates unique constraint") &&
+			strings.Contains(createErr.Error(), "idx_unique_tribe_name") {
 			response.GinBadRequest(c, "A tribe with this name already exists")
 			return
 		}
-		fmt.Printf("DEBUG: Failed to create tribe: %v\n", err)
-		response.GinBadRequest(c, fmt.Sprintf("Failed to create tribe: %v", err))
+		fmt.Printf("DEBUG: Failed to create tribe: %v\n", createErr)
+		response.GinBadRequest(c, fmt.Sprintf("Failed to create tribe: %v", createErr))
 		return
 	}
 
 	// Add the creator as the first member
-	if err := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, nil); err != nil {
-		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", err)
+	if addMemberErr := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, nil); addMemberErr != nil {
+		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", addMemberErr)
 
 		// Try to clean up the tribe if we couldn't add the member
 		deleteErr := h.repos.Tribes.Delete(tribe.ID)
@@ -166,7 +166,7 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 			fmt.Printf("DEBUG: Failed to clean up tribe after error: %v\n", deleteErr)
 		}
 
-		response.GinInternalError(c, err)
+		response.GinInternalError(c, addMemberErr)
 		return
 	}
 
@@ -406,8 +406,8 @@ func (h *TribeHandler) UpdateTribe(c *gin.Context) {
 	}
 
 	var req UpdateTribeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.GinBadRequest(c, "Invalid request body")
+	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
+		response.GinBadRequest(c, fmt.Sprintf("Invalid request body: %v", bindErr))
 		return
 	}
 

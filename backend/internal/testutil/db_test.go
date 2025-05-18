@@ -185,8 +185,8 @@ func TestDatabaseOperations(t *testing.T) {
 		done := make(chan bool)
 		for i := 0; i < 10; i++ {
 			go func(val int) {
-				_, err := db.Exec("INSERT INTO concurrent_test (value) VALUES ($1)", val)
-				assert.NoError(t, err)
+				_, execErr := db.Exec("INSERT INTO concurrent_test (value) VALUES ($1)", val)
+				assert.NoError(t, execErr)
 				done <- true
 			}(i)
 		}
@@ -449,8 +449,8 @@ func TestDatabaseErrors(t *testing.T) {
 
 				maxRetries := 3
 				for retry := 0; retry < maxRetries; retry++ {
-					tx, err := db.Begin()
-					require.NoError(t, err)
+					tx, txErr := db.Begin()
+					require.NoError(t, txErr)
 
 					_, err = tx.Exec("INSERT INTO concurrent_write_test (value) VALUES ($1)", fmt.Sprintf("value-%d", val))
 					if err != nil {

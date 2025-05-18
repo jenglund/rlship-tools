@@ -125,8 +125,8 @@ func (s *SyncService) UpdateSyncStatus(ctx context.Context, listID uuid.UUID, ne
 	}
 
 	// Validate the state transition
-	if err := models.ValidateTransition(list.SyncStatus, newStatus, action); err != nil {
-		return fmt.Errorf("%w: %s", models.ErrInvalidSyncTransition, err.Error())
+	if transitionErr := models.ValidateTransition(list.SyncStatus, newStatus, action); transitionErr != nil {
+		return fmt.Errorf("%w: %s", models.ErrInvalidSyncTransition, transitionErr.Error())
 	}
 
 	// Update sync status
@@ -147,8 +147,8 @@ func (s *SyncService) UpdateSyncStatus(ctx context.Context, listID uuid.UUID, ne
 		list.LastSyncAt = &now
 	}
 
-	if err := list.Validate(); err != nil {
-		return fmt.Errorf("%w: %v", models.ErrInvalidSyncConfig, err)
+	if validateErr := list.Validate(); validateErr != nil {
+		return fmt.Errorf("%w: %v", models.ErrInvalidSyncConfig, validateErr)
 	}
 
 	err = s.listRepo.Update(list)
@@ -160,8 +160,8 @@ func (s *SyncService) UpdateSyncStatus(ctx context.Context, listID uuid.UUID, ne
 				return fmt.Errorf("failed to get latest list state: %w", err)
 			}
 			// Validate the transition with the latest state
-			if err := models.ValidateTransition(list.SyncStatus, newStatus, action); err != nil {
-				return fmt.Errorf("%w: %s", models.ErrInvalidSyncTransition, err.Error())
+			if retryTransitionErr := models.ValidateTransition(list.SyncStatus, newStatus, action); retryTransitionErr != nil {
+				return fmt.Errorf("%w: %s", models.ErrInvalidSyncTransition, retryTransitionErr.Error())
 			}
 			// Update the list with the new status
 			list.SyncStatus = newStatus
@@ -178,8 +178,8 @@ func (s *SyncService) UpdateSyncStatus(ctx context.Context, listID uuid.UUID, ne
 				list.SyncConfig.LastSyncAt = &now
 				list.LastSyncAt = &now
 			}
-			if err := list.Validate(); err != nil {
-				return fmt.Errorf("%w: %v", models.ErrInvalidSyncConfig, err)
+			if retryValidateErr := list.Validate(); retryValidateErr != nil {
+				return fmt.Errorf("%w: %v", models.ErrInvalidSyncConfig, retryValidateErr)
 			}
 			err = s.listRepo.Update(list)
 			if err != nil {

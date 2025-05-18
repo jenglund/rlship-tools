@@ -784,15 +784,15 @@ func TestListSharedActivities(t *testing.T) {
 						return
 					}
 
-					uid, err := uuid.Parse(userID)
-					if err != nil {
-						response.GinInternalError(c, err)
+					uid, parseErr := uuid.Parse(userID)
+					if parseErr != nil {
+						response.GinInternalError(c, parseErr)
 						return
 					}
 
 					// Get user's tribes
-					tribes, err := repos.Tribes.GetUserTribes(uid)
-					if err != nil {
+					tribes, getTribesErr := repos.Tribes.GetUserTribes(uid)
+					if getTribesErr != nil {
 						response.GinSuccess(c, []*models.Activity{})
 						return
 					}
@@ -808,8 +808,8 @@ func TestListSharedActivities(t *testing.T) {
 							continue // Skip this tribe as if an error occurred
 						}
 
-						activities, err := repos.Activities.GetSharedActivities(tribe.ID)
-						if err != nil {
+						activities, getActivitiesErr := repos.Activities.GetSharedActivities(tribe.ID)
+						if getActivitiesErr != nil {
 							continue
 						}
 
@@ -853,10 +853,10 @@ func TestListSharedActivities(t *testing.T) {
 						return
 					}
 
-					uid, err := uuid.Parse(userID)
-					if err != nil {
-						fmt.Printf("Error parsing user ID (%s): %v\n", userID, err)
-						response.GinInternalError(c, err)
+					uid, parseErr := uuid.Parse(userID)
+					if parseErr != nil {
+						fmt.Printf("Error parsing user ID (%s): %v\n", userID, parseErr)
+						response.GinInternalError(c, parseErr)
 						return
 					}
 
@@ -890,15 +890,15 @@ func TestListSharedActivities(t *testing.T) {
 						return
 					}
 
-					uid, err := uuid.Parse(userID)
-					if err != nil {
-						response.GinInternalError(c, err)
+					uid, parseErr := uuid.Parse(userID)
+					if parseErr != nil {
+						response.GinInternalError(c, parseErr)
 						return
 					}
 
 					// Get user's tribes successfully
-					tribes, err := repos.Tribes.GetUserTribes(uid)
-					if err != nil {
+					tribes, getTribesErr := repos.Tribes.GetUserTribes(uid)
+					if getTribesErr != nil {
 						response.GinSuccess(c, []*models.Activity{})
 						return
 					}

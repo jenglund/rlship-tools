@@ -459,21 +459,21 @@ func TestListHandler(t *testing.T) {
 	})
 
 	t.Run("List_Sharing", func(t *testing.T) {
-		mockService := new(MockListService)
-		handler := NewListHandler(mockService)
+		localMockService := new(MockListService)
+		localHandler := NewListHandler(localMockService)
 
-		router := chi.NewRouter()
-		router.Post("/lists/{listID}/share", handler.ShareList)
+		localRouter := chi.NewRouter()
+		localRouter.Post("/lists/{listID}/share", localHandler.ShareList)
 
 		listID := uuid.New()
 		tribeID := uuid.New()
 		userID := uuid.New()
 
 		// Setup service expectations
-		mockService.On("GetListOwners", listID).Return([]*models.ListOwner{
+		localMockService.On("GetListOwners", listID).Return([]*models.ListOwner{
 			{OwnerID: userID, OwnerType: "user"},
 		}, nil)
-		mockService.On("ShareListWithTribe", listID, tribeID, userID, mock.Anything).Return(nil)
+		localMockService.On("ShareListWithTribe", listID, tribeID, userID, mock.Anything).Return(nil)
 
 		// Create the request body
 		body, err := json.Marshal(map[string]interface{}{
@@ -492,16 +492,16 @@ func TestListHandler(t *testing.T) {
 		rec := httptest.NewRecorder()
 
 		// Send the request
-		router.ServeHTTP(rec, req)
+		localRouter.ServeHTTP(rec, req)
 
 		// Verify the response
 		assert.Equal(t, http.StatusNoContent, rec.Code)
-		mockService.AssertExpectations(t)
+		localMockService.AssertExpectations(t)
 	})
 
 	t.Run("GetListShares", func(t *testing.T) {
-		mockService := new(MockListService)
-		handler := NewListHandler(mockService)
+		localMockService := new(MockListService)
+		localHandler := NewListHandler(localMockService)
 
 		validListID := uuid.New()
 		validUserID := uuid.New()
@@ -531,10 +531,10 @@ func TestListHandler(t *testing.T) {
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func() {
-					mockService.On("GetListOwners", validListID).Return([]*models.ListOwner{
+					localMockService.On("GetListOwners", validListID).Return([]*models.ListOwner{
 						{OwnerID: validUserID, OwnerType: "user"},
 					}, nil)
-					mockService.On("GetListShares", validListID).Return(validShares, nil)
+					localMockService.On("GetListShares", validListID).Return(validShares, nil)
 				},
 				expectedStatus: http.StatusOK,
 			},
@@ -556,7 +556,7 @@ func TestListHandler(t *testing.T) {
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func() {
-					mockService.On("GetListOwners", validListID).Return([]*models.ListOwner{
+					localMockService.On("GetListOwners", validListID).Return([]*models.ListOwner{
 						{OwnerID: uuid.New(), OwnerType: "user"},
 					}, nil)
 				},
@@ -582,7 +582,7 @@ func TestListHandler(t *testing.T) {
 					tt.setupMocks()
 				}
 
-				handler.GetListShares(w, r)
+				localHandler.GetListShares(w, r)
 
 				assert.Equal(t, tt.expectedStatus, w.Code)
 
@@ -612,16 +612,16 @@ func TestListHandler(t *testing.T) {
 					}
 				}
 
-				mockService.AssertExpectations(t)
+				localMockService.AssertExpectations(t)
 			})
 		}
 	})
 
 	t.Run("UnshareListWithTribe", func(t *testing.T) {
-		mockService := new(MockListService)
-		handler := NewListHandler(mockService)
-		router := chi.NewRouter()
-		handler.RegisterRoutes(router)
+		localMockService := new(MockListService)
+		localHandler := NewListHandler(localMockService)
+		localRouter := chi.NewRouter()
+		localHandler.RegisterRoutes(localRouter)
 
 		tests := []struct {
 			name           string
@@ -739,8 +739,8 @@ func TestListHandler(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				// Reset mock between tests
-				mockService.ExpectedCalls = nil
-				mockService.Calls = nil
+				localMockService.ExpectedCalls = nil
+				localMockService.Calls = nil
 
 				// Setup direct request using Chi URL params
 				req := httptest.NewRequest(http.MethodDelete, "/", nil)
@@ -768,11 +768,11 @@ func TestListHandler(t *testing.T) {
 						}
 					}
 
-					tc.setupMocks(mockService, listID, tribeID, userID)
+					tc.setupMocks(localMockService, listID, tribeID, userID)
 				}
 
 				// Call handler directly
-				handler.UnshareListWithTribe(rec, req)
+				localRouter.ServeHTTP(rec, req)
 
 				// Check results
 				assert.Equal(t, tc.expectedStatus, rec.Code)
@@ -790,7 +790,7 @@ func TestListHandler(t *testing.T) {
 					assert.Contains(t, errorResponse.Error.Message, tc.expectedError)
 				}
 
-				mockService.AssertExpectations(t)
+				localMockService.AssertExpectations(t)
 			})
 		}
 	})

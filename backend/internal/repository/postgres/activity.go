@@ -245,7 +245,7 @@ func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error)
 		for rows.Next() {
 			activity := &models.Activity{}
 			var metadata []byte
-			err := rows.Scan(
+			if err := rows.Scan(
 				&activity.ID,
 				&activity.Type,
 				&activity.Name,
@@ -255,22 +255,22 @@ func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error)
 				&activity.CreatedAt,
 				&activity.UpdatedAt,
 				&activity.DeletedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning activity row: %w", err)
 			}
 
-			// Convert metadata
-			activity.Metadata, err = convertMetadata(metadata)
-			if err != nil {
-				return fmt.Errorf("error converting metadata: %w", err)
+			var metadataMap map[string]interface{}
+			metadataMap, metadataErr := convertMetadata(metadata)
+			if metadataErr != nil {
+				return fmt.Errorf("error converting metadata: %w", metadataErr)
 			}
+			activity.Metadata = metadataMap
 
 			activities = append(activities, activity)
 		}
 
-		if err = rows.Err(); err != nil {
-			return fmt.Errorf("error iterating activity rows: %w", err)
+		if rowErr := rows.Err(); rowErr != nil {
+			return fmt.Errorf("error iterating activity rows: %w", rowErr)
 		}
 
 		return nil
@@ -337,21 +337,21 @@ func (r *ActivityRepository) GetOwners(activityID uuid.UUID) ([]*models.Activity
 	var owners []*models.ActivityOwner
 	for rows.Next() {
 		owner := &models.ActivityOwner{}
-		err := rows.Scan(
+		scanErr := rows.Scan(
 			&owner.ActivityID,
 			&owner.OwnerID,
 			&owner.OwnerType,
 			&owner.CreatedAt,
 			&owner.DeletedAt,
 		)
-		if err != nil {
-			return nil, fmt.Errorf("error scanning activity owner row: %w", err)
+		if scanErr != nil {
+			return nil, fmt.Errorf("error scanning activity owner row: %w", scanErr)
 		}
 		owners = append(owners, owner)
 	}
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating activity owner rows: %w", err)
+	if rowErr := rows.Err(); rowErr != nil {
+		return nil, fmt.Errorf("error iterating activity owner rows: %w", rowErr)
 	}
 
 	return owners, nil
@@ -379,7 +379,7 @@ func (r *ActivityRepository) GetUserActivities(userID uuid.UUID) ([]*models.Acti
 	for rows.Next() {
 		activity := &models.Activity{}
 		var metadataBytes []byte
-		err := rows.Scan(
+		if err := rows.Scan(
 			&activity.ID,
 			&activity.Type,
 			&activity.Name,
@@ -389,14 +389,13 @@ func (r *ActivityRepository) GetUserActivities(userID uuid.UUID) ([]*models.Acti
 			&activity.CreatedAt,
 			&activity.UpdatedAt,
 			&activity.DeletedAt,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, fmt.Errorf("error scanning activity row: %w", err)
 		}
 
-		metadata, err := convertMetadata(metadataBytes)
-		if err != nil {
-			return nil, err
+		metadata, metadataErr := convertMetadata(metadataBytes)
+		if metadataErr != nil {
+			return nil, metadataErr
 		}
 		activity.Metadata = metadata
 
@@ -432,7 +431,7 @@ func (r *ActivityRepository) GetTribeActivities(tribeID uuid.UUID) ([]*models.Ac
 	for rows.Next() {
 		activity := &models.Activity{}
 		var metadataBytes []byte
-		err := rows.Scan(
+		if err := rows.Scan(
 			&activity.ID,
 			&activity.Type,
 			&activity.Name,
@@ -442,14 +441,13 @@ func (r *ActivityRepository) GetTribeActivities(tribeID uuid.UUID) ([]*models.Ac
 			&activity.CreatedAt,
 			&activity.UpdatedAt,
 			&activity.DeletedAt,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, fmt.Errorf("error scanning activity row: %w", err)
 		}
 
-		metadata, err := convertMetadata(metadataBytes)
-		if err != nil {
-			return nil, err
+		metadata, metadataErr := convertMetadata(metadataBytes)
+		if metadataErr != nil {
+			return nil, metadataErr
 		}
 		activity.Metadata = metadata
 
@@ -634,25 +632,24 @@ func (r *ActivityRepository) GetSharedActivities(tribeID uuid.UUID) ([]*models.A
 		activities = make([]*models.Activity, 0)
 		for rows.Next() {
 			activity := &models.Activity{}
-			var metadata []byte
-			err := rows.Scan(
+			var metadataBytes []byte
+			if err := rows.Scan(
 				&activity.ID,
 				&activity.UserID,
 				&activity.Type,
 				&activity.Name,
 				&activity.Description,
 				&activity.Visibility,
-				&metadata,
+				&metadataBytes,
 				&activity.CreatedAt,
 				&activity.UpdatedAt,
 				&activity.DeletedAt,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("error scanning activity row: %w", err)
 			}
 
 			// Convert metadata
-			activity.Metadata, err = convertMetadata(metadata)
+			activity.Metadata, err = convertMetadata(metadataBytes)
 			if err != nil {
 				return fmt.Errorf("error converting metadata: %w", err)
 			}
