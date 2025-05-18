@@ -1577,7 +1577,7 @@ func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
-			SELECT list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at
+			SELECT list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at, version
 			FROM list_sharing
 			WHERE list_id = $1 AND deleted_at IS NULL
 			ORDER BY created_at DESC`
@@ -1598,6 +1598,7 @@ func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 				&share.UpdatedAt,
 				&share.ExpiresAt,
 				&share.DeletedAt,
+				&share.Version,
 			)
 			if err != nil {
 				return fmt.Errorf("error scanning list share: %w", err)

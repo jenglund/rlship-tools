@@ -66,8 +66,10 @@ func (h *ListHandler) RegisterRoutes(r chi.Router) {
 		r.Delete("/{listID}/share/{tribeID}", h.UnshareList)
 		r.Get("/shared/{tribeID}", h.GetSharedLists)
 
-		// New handler
-		r.Get("/{listID}/shares", h.GetListShares)
+		// New handlers
+		r.Get("/{id}/shares", h.GetListShares)
+		r.Post("/{id}/share/{tribeId}", h.ShareListWithTribe)
+		r.Delete("/{id}/share/{tribeId}", h.UnshareListWithTribe)
 	})
 }
 

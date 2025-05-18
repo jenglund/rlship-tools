@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -742,7 +741,7 @@ func TestListHandler(t *testing.T) {
 				localMockService.ExpectedCalls = nil
 				localMockService.Calls = nil
 
-				// Setup direct request using Chi URL params
+				// Setup direct request
 				req := httptest.NewRequest(http.MethodDelete, "/", nil)
 				rec := httptest.NewRecorder()
 
@@ -771,8 +770,8 @@ func TestListHandler(t *testing.T) {
 					tc.setupMocks(localMockService, listID, tribeID, userID)
 				}
 
-				// Call handler directly
-				localRouter.ServeHTTP(rec, req)
+				// Call handler directly instead of using router
+				localHandler.UnshareListWithTribe(rec, req)
 
 				// Check results
 				assert.Equal(t, tc.expectedStatus, rec.Code)
@@ -817,6 +816,232 @@ func TestListHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 		mockService.AssertExpectations(t)
+	})
+
+	t.Run("ShareListWithTribe", func(t *testing.T) {
+		mockService := new(MockListService)
+		handler := NewListHandler(mockService)
+
+		tests := []struct {
+			name           string
+			listID         string
+			tribeID        string
+			requestBody    string
+			setupAuth      func(*http.Request)
+			setupMocks     func(*MockListService, uuid.UUID, uuid.UUID, uuid.UUID, *time.Time)
+			expectedStatus int
+			expectedError  string
+		}{
+			{
+				name:        "success with no expiration",
+				listID:      uuid.New().String(),
+				tribeID:     uuid.New().String(),
+				requestBody: `{}`,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
+					mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(nil)
+				},
+				expectedStatus: http.StatusNoContent,
+			},
+			{
+				name:        "success with expiration",
+				listID:      uuid.New().String(),
+				tribeID:     uuid.New().String(),
+				requestBody: `{"expires_at": "2030-01-01T00:00:00Z"}`,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
+					mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(nil)
+				},
+				expectedStatus: http.StatusNoContent,
+			},
+			{
+				name:           "invalid list ID",
+				listID:         "invalid-id",
+				tribeID:        uuid.New().String(),
+				requestBody:    `{}`,
+				expectedStatus: http.StatusBadRequest,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				expectedError: "invalid list ID",
+			},
+			{
+				name:           "invalid tribe ID",
+				listID:         uuid.New().String(),
+				tribeID:        "invalid-id",
+				requestBody:    `{}`,
+				expectedStatus: http.StatusBadRequest,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				expectedError: "invalid tribe ID",
+			},
+			{
+				name:           "invalid request body",
+				listID:         uuid.New().String(),
+				tribeID:        uuid.New().String(),
+				requestBody:    `{invalid json`,
+				expectedStatus: http.StatusBadRequest,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				expectedError: "invalid request body",
+			},
+			{
+				name:           "missing user ID in context",
+				listID:         uuid.New().String(),
+				tribeID:        uuid.New().String(),
+				requestBody:    `{}`,
+				expectedStatus: http.StatusUnauthorized,
+				setupAuth:      func(r *http.Request) {}, // No user ID in context
+				expectedError:  "user not authenticated",
+			},
+			{
+				name:           "invalid user ID type in context",
+				listID:         uuid.New().String(),
+				tribeID:        uuid.New().String(),
+				requestBody:    `{}`,
+				expectedStatus: http.StatusUnauthorized,
+				setupAuth: func(r *http.Request) {
+					ctx := context.WithValue(r.Context(), userIDKey, "not-a-uuid")
+					*r = *r.WithContext(ctx)
+				},
+				expectedError: "invalid user authentication",
+			},
+			{
+				name:           "service returns not found error",
+				listID:         uuid.New().String(),
+				tribeID:        uuid.New().String(),
+				requestBody:    `{}`,
+				expectedStatus: http.StatusNotFound,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
+					mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(models.ErrNotFound)
+				},
+				expectedError: "not found",
+			},
+			{
+				name:           "service returns forbidden error",
+				listID:         uuid.New().String(),
+				tribeID:        uuid.New().String(),
+				requestBody:    `{}`,
+				expectedStatus: http.StatusForbidden,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
+					mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(models.ErrForbidden)
+				},
+				expectedError: "forbidden",
+			},
+			{
+				name:           "service returns internal server error",
+				listID:         uuid.New().String(),
+				tribeID:        uuid.New().String(),
+				requestBody:    `{}`,
+				expectedStatus: http.StatusInternalServerError,
+				setupAuth: func(r *http.Request) {
+					userID := uuid.New()
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					*r = *r.WithContext(ctx)
+				},
+				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
+					mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(fmt.Errorf("database error"))
+				},
+				expectedError: "database error",
+			},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				// Reset mock between tests
+				mockService.ExpectedCalls = nil
+				mockService.Calls = nil
+
+				// Import strings package at the top of the file
+				req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader([]byte(tc.requestBody)))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+
+				// Setup Chi route context with URL params
+				rctx := chi.NewRouteContext()
+				rctx.URLParams.Add("id", tc.listID)
+				rctx.URLParams.Add("tribeId", tc.tribeID)
+				req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+				// Setup authentication if provided
+				if tc.setupAuth != nil {
+					tc.setupAuth(req)
+				}
+
+				// Setup mocks if provided
+				if tc.setupMocks != nil {
+					listID, _ := uuid.Parse(tc.listID)
+					tribeID, _ := uuid.Parse(tc.tribeID)
+					userID := uuid.UUID{}
+					var expiresAt *time.Time
+
+					if userIDVal := req.Context().Value(userIDKey); userIDVal != nil {
+						if id, ok := userIDVal.(uuid.UUID); ok {
+							userID = id
+						}
+					}
+
+					// Parse request body to extract expiresAt if valid JSON
+					if tc.requestBody != "" && tc.requestBody != "{invalid json" {
+						var body struct {
+							ExpiresAt *time.Time `json:"expires_at"`
+						}
+						if err := json.Unmarshal([]byte(tc.requestBody), &body); err == nil {
+							expiresAt = body.ExpiresAt
+						}
+					}
+
+					tc.setupMocks(mockService, listID, tribeID, userID, expiresAt)
+				}
+
+				// Call handler directly
+				handler.ShareListWithTribe(rec, req)
+
+				// Check results
+				assert.Equal(t, tc.expectedStatus, rec.Code)
+
+				// Check error message in the response if expected
+				if tc.expectedError != "" {
+					var errorResponse struct {
+						Success bool `json:"success"`
+						Error   struct {
+							Message string `json:"message"`
+						} `json:"error"`
+					}
+					err := json.NewDecoder(rec.Body).Decode(&errorResponse)
+					require.NoError(t, err)
+					assert.Contains(t, errorResponse.Error.Message, tc.expectedError)
+				}
+
+				mockService.AssertExpectations(t)
+			})
+		}
 	})
 }
 
@@ -1585,232 +1810,6 @@ func TestListHandler_GetSharedLists(t *testing.T) {
 				require.NoError(t, err)
 				assert.False(t, response.Success)
 				assert.Equal(t, tt.expectedError, response.Error.Message)
-			}
-
-			mockService.AssertExpectations(t)
-		})
-	}
-}
-
-func TestListHandler_ShareListWithTribe(t *testing.T) {
-	mockService := new(MockListService)
-	handler := NewListHandler(mockService)
-
-	tests := []struct {
-		name           string
-		listID         string
-		tribeID        string
-		requestBody    string
-		setupAuth      func(*http.Request)
-		setupMocks     func(*MockListService, uuid.UUID, uuid.UUID, uuid.UUID, *time.Time)
-		expectedStatus int
-		expectedError  string
-	}{
-		{
-			name:        "success with no expiration",
-			listID:      uuid.New().String(),
-			tribeID:     uuid.New().String(),
-			requestBody: `{}`,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
-				mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(nil)
-			},
-			expectedStatus: http.StatusNoContent,
-		},
-		{
-			name:        "success with expiration",
-			listID:      uuid.New().String(),
-			tribeID:     uuid.New().String(),
-			requestBody: `{"expires_at": "2030-01-01T00:00:00Z"}`,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
-				mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(nil)
-			},
-			expectedStatus: http.StatusNoContent,
-		},
-		{
-			name:           "invalid list ID",
-			listID:         "invalid-id",
-			tribeID:        uuid.New().String(),
-			requestBody:    `{}`,
-			expectedStatus: http.StatusBadRequest,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			expectedError: "invalid list ID",
-		},
-		{
-			name:           "invalid tribe ID",
-			listID:         uuid.New().String(),
-			tribeID:        "invalid-id",
-			requestBody:    `{}`,
-			expectedStatus: http.StatusBadRequest,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			expectedError: "invalid tribe ID",
-		},
-		{
-			name:           "invalid request body",
-			listID:         uuid.New().String(),
-			tribeID:        uuid.New().String(),
-			requestBody:    `{invalid json`,
-			expectedStatus: http.StatusBadRequest,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			expectedError: "invalid request body",
-		},
-		{
-			name:           "missing user ID in context",
-			listID:         uuid.New().String(),
-			tribeID:        uuid.New().String(),
-			requestBody:    `{}`,
-			expectedStatus: http.StatusUnauthorized,
-			setupAuth:      func(r *http.Request) {}, // No user ID in context
-			expectedError:  "user not authenticated",
-		},
-		{
-			name:           "invalid user ID type in context",
-			listID:         uuid.New().String(),
-			tribeID:        uuid.New().String(),
-			requestBody:    `{}`,
-			expectedStatus: http.StatusUnauthorized,
-			setupAuth: func(r *http.Request) {
-				ctx := context.WithValue(r.Context(), userIDKey, "not-a-uuid")
-				*r = *r.WithContext(ctx)
-			},
-			expectedError: "invalid user authentication",
-		},
-		{
-			name:           "service returns not found error",
-			listID:         uuid.New().String(),
-			tribeID:        uuid.New().String(),
-			requestBody:    `{}`,
-			expectedStatus: http.StatusNotFound,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
-				mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(models.ErrNotFound)
-			},
-			expectedError: "not found",
-		},
-		{
-			name:           "service returns forbidden error",
-			listID:         uuid.New().String(),
-			tribeID:        uuid.New().String(),
-			requestBody:    `{}`,
-			expectedStatus: http.StatusForbidden,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
-				mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(models.ErrForbidden)
-			},
-			expectedError: "forbidden",
-		},
-		{
-			name:           "service returns internal server error",
-			listID:         uuid.New().String(),
-			tribeID:        uuid.New().String(),
-			requestBody:    `{}`,
-			expectedStatus: http.StatusInternalServerError,
-			setupAuth: func(r *http.Request) {
-				userID := uuid.New()
-				ctx := context.WithValue(r.Context(), userIDKey, userID)
-				*r = *r.WithContext(ctx)
-			},
-			setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
-				mockService.On("ShareListWithTribe", listID, tribeID, userID, expiresAt).Return(fmt.Errorf("database error"))
-			},
-			expectedError: "database error",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			// Reset mock between tests
-			mockService.ExpectedCalls = nil
-			mockService.Calls = nil
-
-			// Setup direct request using Chi URL params
-			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(tc.requestBody))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-
-			// Setup Chi route context with URL params
-			rctx := chi.NewRouteContext()
-			rctx.URLParams.Add("id", tc.listID)
-			rctx.URLParams.Add("tribeId", tc.tribeID)
-			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
-
-			// Setup authentication if provided
-			if tc.setupAuth != nil {
-				tc.setupAuth(req)
-			}
-
-			// Setup mocks if provided
-			if tc.setupMocks != nil {
-				listID, _ := uuid.Parse(tc.listID)
-				tribeID, _ := uuid.Parse(tc.tribeID)
-				userID := uuid.UUID{}
-				var expiresAt *time.Time
-
-				if userIDVal := req.Context().Value(userIDKey); userIDVal != nil {
-					if id, ok := userIDVal.(uuid.UUID); ok {
-						userID = id
-					}
-				}
-
-				// Parse request body to extract expiresAt if valid JSON
-				if tc.requestBody != "" && tc.requestBody != "{invalid json" {
-					var body struct {
-						ExpiresAt *time.Time `json:"expires_at"`
-					}
-					if err := json.Unmarshal([]byte(tc.requestBody), &body); err == nil {
-						expiresAt = body.ExpiresAt
-					}
-				}
-
-				tc.setupMocks(mockService, listID, tribeID, userID, expiresAt)
-			}
-
-			// Call handler directly
-			handler.ShareListWithTribe(rec, req)
-
-			// Check results
-			assert.Equal(t, tc.expectedStatus, rec.Code)
-
-			// Check error message in the response if expected
-			if tc.expectedError != "" {
-				var errorResponse struct {
-					Success bool `json:"success"`
-					Error   struct {
-						Message string `json:"message"`
-					} `json:"error"`
-				}
-				err := json.NewDecoder(rec.Body).Decode(&errorResponse)
-				require.NoError(t, err)
-				assert.Contains(t, errorResponse.Error.Message, tc.expectedError)
 			}
 
 			mockService.AssertExpectations(t)

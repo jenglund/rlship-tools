@@ -174,6 +174,15 @@ When analyzing test failures, follow these best practices:
    - Use `make all` to run both tests and linters in sequence
    - Linting errors on CI indicate that local linting checks were skipped - NEVER skip these checks
 
+7. **Test Integrity and Preservation**:
+   - NEVER disable tests as a way to make the test suite pass
+   - When tests fail, fix the underlying code issue rather than modifying the test to match broken behavior
+   - Disabling tests reduces code coverage and hides potential bugs
+   - If you can't immediately fix a test, add a detailed TODO comment and create an issue to track it
+   - Remember that if tests were passing in previous commits, they can be fixed - focus on what changed
+   - All tests exist for a reason and serve as documentation and validation of expected behavior
+   - When test and code are in conflict, carefully determine which one correctly represents the intended functionality
+
 ## Development Philosophy
 
 1. **Consistent Error Handling Across Layers**:
