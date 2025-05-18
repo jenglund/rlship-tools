@@ -8,13 +8,18 @@
     "test": "echo \"Tests passed!\" && exit 0",
     "lint": "echo \"Lint passed!\" && exit 0"
   },
-  "keywords": ["tribe", "relationships", "planning"],
+  "keywords": [
+    "tribe",
+    "relationships",
+    "planning"
+  ],
   "author": "",
   "license": "ISC",
   "description": "Tribe application for relationship planning",
   "dependencies": {
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
     "@babel/core": "^7.27.1",

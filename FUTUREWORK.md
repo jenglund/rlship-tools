@@ -6,26 +6,59 @@ This document outlines the roadmap for future development of the Tribe project, 
 
 ### User Story #1: Basic Authentication and Tribe Viewing Flow
 
+**User Story Description**:
+As a user, I want to land on a welcome page for Tribe, have the ability to log in, view my tribes, and log out.
+
 **Implementation Plan**:
    
 **Frontend Changes**:
-- Create a SplashScreen component
-- Create a LoginScreen component with dev user login buttons
-- Create a TribesScreen component to list user's tribes
-- Create a TribeDetailsScreen component to show tribe members
-- Implement navigation between these screens
-- Add authentication state management
-- Create comprehensive tests for each component and the full flow
+1. **Splash Screen (Landing Page)**:
+   - Create a responsive welcome page with Tribe branding
+   - Add a prominent login button
+   - Ensure the page loads quickly with optimized assets
+
+2. **Authentication**:
+   - Create an AuthContext for managing authentication state
+   - Implement AuthService for API communication
+   - Build a LoginScreen with four dev user login buttons
+   - Add logout functionality on the tribes list page
+   - (Future) Add OAuth integration for Google login
+
+3. **Tribes List Screen**:
+   - Create a TribesListScreen component to display all tribes a user belongs to
+   - Implement tribe card components with basic tribe information
+   - Add navigation to view individual tribe details
+
+4. **Navigation**:
+   - Set up React Router for navigation between screens
+   - Implement protected routes for authenticated users
+   - Create a navigation layout with consistent UI elements
+
+5. **State Management**:
+   - Use React Context for authentication state
+   - Implement proper loading and error states
+   - Add data fetching hooks for API integration
 
 **Backend Support Needed**:
-- Endpoints for user authentication (using dev users initially)
-- Endpoints to retrieve user's tribes
-- Endpoints to retrieve tribe members
+1. **Authentication Endpoints**:
+   - Implement `/api/auth/login` endpoint for dev user authentication
+   - Create `/api/auth/logout` endpoint
+   - Add authentication middleware for protected routes
 
-**Technical Implementation Details**:
-- Authentication will initially use dev users, but will eventually support Google login
-- UI should be optimized for quick loading, especially the splash screen
-- For now, data can be mocked locally while we implement the API integration
+2. **Tribe Data Endpoints**:
+   - Ensure `/api/tribes` endpoint returns all tribes for the authenticated user
+   - Create `/api/tribes/:id` endpoint for individual tribe details
+
+**Implementation Steps**:
+1. Set up required dependencies (React Router, etc.)
+2. Create authentication context and service
+3. Build splash screen and login components
+4. Implement tribes list view
+5. Add navigation between components
+6. Connect to backend API endpoints
+7. Add proper error handling and loading states
+8. Implement logout functionality
+9. Write tests for all components and flows
 
 ## Backend Development Priorities
 

@@ -1,15 +1,29 @@
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import SplashScreen from './components/SplashScreen';
+import LoginScreen from './components/LoginScreen';
+import TribesListScreen from './components/TribesListScreen';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Welcome to Tribe</h1>
-        <p>
-          A place for groups to share and plan activities together.
-        </p>
-      </header>
-    </div>
+    <Router>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<SplashScreen />} />
+          <Route path="/login" element={<LoginScreen />} />
+          <Route 
+            path="/tribes" 
+            element={
+              <ProtectedRoute>
+                <TribesListScreen />
+              </ProtectedRoute>
+            } 
+          />
+        </Routes>
+      </AuthProvider>
+    </Router>
   );
 }
 
