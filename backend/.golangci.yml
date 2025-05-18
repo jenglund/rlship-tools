@@ -39,7 +39,7 @@ output:
   print-linter-name: true
 
 run:
-  go: "1.21"
+  go: "1.24"
   timeout: 5m
   skip-dirs:
     - vendor 
