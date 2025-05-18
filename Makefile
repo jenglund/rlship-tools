@@ -13,7 +13,7 @@ test-backend:
 
 test-frontend:
 	@echo "Running frontend tests..."
-	cd apps/mobile && npm test -- --coverage
+	cd frontend && npm test -- --coverage
 
 # Linting targets
 lint: lint-backend lint-frontend
@@ -24,7 +24,7 @@ lint-backend:
 
 lint-frontend:
 	@echo "Linting frontend code..."
-	cd apps/mobile && npm run lint
+	cd frontend && npm run lint
 
 # Development targets
 dev: dev-backend dev-frontend
@@ -36,7 +36,7 @@ dev-backend:
 
 dev-frontend:
 	@echo "Starting frontend development server..."
-	cd apps/mobile && npm run web
+	cd frontend && npm start
 
 # Migration targets
 migrate-up:

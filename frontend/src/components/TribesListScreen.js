@@ -164,7 +164,7 @@ const TribesListScreen = () => {
                   {tribe.description && <p>{tribe.description}</p>}
                   <div className="tribe-meta">
                     <small>
-                      {tribe.member_count || 0} member{(tribe.member_count !== 1) ? 's' : ''}
+                      {tribe.members ? tribe.members.length : 0} member{(tribe.members && tribe.members.length !== 1) ? 's' : ''}
                     </small>
                   </div>
                 </div>

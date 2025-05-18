@@ -136,8 +136,8 @@ const TribeDetailScreen = () => {
           <div className="members-list">
             {members.map(member => (
               <div key={member.id} className="member-card">
-                <h3>{member.name}</h3>
-                <p>{member.email}</p>
+                <h3>{member.user.name || member.display_name}</h3>
+                <p>{member.user.email}</p>
               </div>
             ))}
           </div>
