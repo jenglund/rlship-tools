@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Avatar, List, Button, Divider, Text } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types/navigation';
+import { useAuth } from '../contexts/AuthContext';
 
 type Relationship = {
   id: string;
@@ -9,6 +13,9 @@ type Relationship = {
 };
 
 export default function ProfileScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { logout } = useAuth();
+  
   // Example user data - in real app, this would come from your backend
   const [user] = useState({
     name: 'Alex Smith',
@@ -21,6 +28,18 @@ export default function ProfileScreen() {
     { id: '1', name: 'Jordan Lee', avatar: 'https://i.pravatar.cc/150?img=13' },
     { id: '2', name: 'Sam Taylor', avatar: 'https://i.pravatar.cc/150?img=14' },
   ]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Splash' }],
+      });
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
 
   return (
     <ScrollView style={styles.container}>
@@ -83,6 +102,7 @@ export default function ProfileScreen() {
         mode="outlined"
         style={styles.logoutButton}
         textColor="red"
+        onPress={handleLogout}
       >
         Log Out
       </Button>

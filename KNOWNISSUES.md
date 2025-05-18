@@ -10,6 +10,15 @@ This document tracks the current known issues in the Tribe project that need to 
 - **Current Status**: Application development is proceeding with Expo 50, which has better compatibility with the project requirements.
 - **Priority**: Medium
 
+### Webpack Dev Server Deprecation Warnings
+- **Issue**: When running the web application with Expo, several deprecation warnings appear related to webpack-dev-server:
+  - `[DEP_WEBPACK_DEV_SERVER_CONSTRUCTOR]`: Using 'compiler' as first argument is deprecated
+  - `[DEP_WEBPACK_DEV_SERVER_LISTEN]`: 'listen' method is deprecated
+  - `[DEP_WEBPACK_DEV_SERVER_CLOSE]`: 'close' method is deprecated
+- **Status**: These warnings don't affect functionality and will be automatically resolved when Expo updates its webpack configuration in a future release.
+- **Resolution Decision**: We've decided to accept these deprecation warnings rather than implement custom workarounds that may introduce other issues.
+- **Priority**: Low
+
 ### TypeScript Errors in Navigation Components
 - **Issue**: The App.tsx file has TypeScript errors related to React Navigation components: `Navigator` components from react-navigation can't be used as JSX elements.
 - **Affected Components**: `NavigationContainer`, `Stack.Navigator`, `Tab.Navigator`, and `TribesStack.Navigator`.
