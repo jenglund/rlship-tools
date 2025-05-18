@@ -11,17 +11,15 @@ linters:
     - staticcheck
     - unused
     - misspell
-
-settings:
-  govet:
-    enable:
-      - shadow
-  misspell:
-    locale: US
-
-exclusions:
-  rules:
-    - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv|.*Rollback). is not checked"
+  settings:
+    govet:
+      enable:
+        - shadow
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - text: "Error return value of .((os\\.)?std(out|err)\\..*|.*Close|.*Flush|os\\.Remove(All)?|.*printf?|os\\.(Un)?Setenv|.*Rollback). is not checked"
 
 issues:
   max-issues-per-linter: 0
