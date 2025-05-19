@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	firebase "firebase.google.com/go/v4"
@@ -37,6 +38,11 @@ type FirebaseAuth struct {
 
 // NewFirebaseAuth creates a new Firebase authentication middleware
 func NewFirebaseAuth(credentialsFile string) (*FirebaseAuth, error) {
+	// Check if the credentials file exists
+	if _, err := os.Stat(credentialsFile); os.IsNotExist(err) {
+		return nil, fmt.Errorf("firebase credentials file does not exist: %s", credentialsFile)
+	}
+
 	opt := option.WithCredentialsFile(credentialsFile)
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {

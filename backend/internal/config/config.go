@@ -96,6 +96,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshaling config: %w", err)
 	}
 
+	// Check for development mode
+	isDevelopment := os.Getenv("ENVIRONMENT") == "development"
+
 	// Validate required fields
 	if config.Database.Host == "" {
 		return nil, fmt.Errorf("database host is required")
@@ -106,11 +109,23 @@ func Load() (*Config, error) {
 	if config.Database.Name == "" {
 		return nil, fmt.Errorf("database name is required")
 	}
-	if config.Firebase.ProjectID == "" {
-		return nil, fmt.Errorf("firebase project ID is required")
-	}
-	if config.Firebase.CredentialsFile == "" {
-		return nil, fmt.Errorf("firebase credentials file is required")
+
+	// Only validate Firebase configuration in non-development mode
+	if !isDevelopment {
+		if config.Firebase.ProjectID == "" {
+			return nil, fmt.Errorf("firebase project ID is required")
+		}
+		if config.Firebase.CredentialsFile == "" {
+			return nil, fmt.Errorf("firebase credentials file is required")
+		}
+	} else {
+		// Set default values for development mode
+		if config.Firebase.ProjectID == "" {
+			config.Firebase.ProjectID = "dev-project"
+		}
+		if config.Firebase.CredentialsFile == "" {
+			config.Firebase.CredentialsFile = "/tmp/firebase-credentials.json"
+		}
 	}
 
 	// Override with environment variables if present

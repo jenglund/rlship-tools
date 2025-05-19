@@ -32,7 +32,7 @@ dev: dev-backend dev-frontend
 dev-backend:
 	@echo "Starting backend services..."
 	docker-compose up -d postgres redis
-	cd backend && go run cmd/api/main.go
+	cd backend && ENVIRONMENT=development go run cmd/api/main.go
 
 dev-frontend:
 	@echo "Starting frontend development server..."
