@@ -382,6 +382,16 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 		tribes = tribes[start:end]
 	}
 
+	// After pagination, set CurrentUserMembershipType for each tribe (should already be set by repo, but ensure it)
+	for _, tribe := range tribes {
+		for _, member := range tribe.Members {
+			if member.UserID == user.ID {
+				tribe.CurrentUserMembershipType = member.MembershipType
+				break
+			}
+		}
+	}
+
 	log.Printf("ListMyTribes: Returning %d tribes after pagination", len(tribes))
 	response.GinSuccess(c, tribes)
 }
@@ -403,7 +413,6 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 		return
 	}
 
-	// Check if current user is a member of the tribe before returning it
 	userID, err := getUserIDFromContext(c)
 	if err != nil {
 		log.Printf("GetTribe ERROR: Failed to get user ID from context: %v", err)
@@ -413,13 +422,13 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 
 	log.Printf("GetTribe: Checking if user %s is a member of tribe %s", userID, id)
 
-	// Check if user is a member of the tribe
 	isMember := false
+	var currentMembership models.MembershipType
 	for _, member := range tribe.Members {
 		if member.UserID == userID {
 			isMember = true
-			log.Printf("GetTribe: User %s is a member of tribe %s with membership type %s",
-				userID, id, member.MembershipType)
+			currentMembership = member.MembershipType
+			tribe.CurrentUserMembershipType = member.MembershipType
 			break
 		}
 	}
@@ -427,6 +436,19 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 	if !isMember {
 		log.Printf("GetTribe ERROR: User %s is not a member of tribe %s", userID, id)
 		response.GinNotFound(c, "Tribe not found")
+		return
+	}
+
+	if currentMembership == models.MembershipPending {
+		// Only return minimal info and a pending_invitation flag
+		minimal := map[string]interface{}{
+			"id":                           tribe.ID,
+			"name":                         tribe.Name,
+			"type":                         tribe.Type,
+			"pending_invitation":           true,
+			"current_user_membership_type": tribe.CurrentUserMembershipType,
+		}
+		response.GinSuccess(c, minimal)
 		return
 	}
 

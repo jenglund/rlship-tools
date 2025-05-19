@@ -3042,3 +3042,78 @@ func TestRespondToInvitation(t *testing.T) {
 		})
 	}
 }
+
+func TestListMyTribes_CurrentUserMembershipType(t *testing.T) {
+	router, repos, testUser := setupTribeTest(t)
+
+	// Create a tribe and add testUser as pending
+	tribe := &models.Tribe{
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Pending Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
+	}
+	require.NoError(t, repos.Tribes.Create(tribe))
+	require.NoError(t, repos.Tribes.AddMember(tribe.ID, testUser.ID, models.MembershipPending, nil, nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tribes/my", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	found := false
+	for _, tribe := range resp.Data {
+		if tribe["name"] == "Pending Tribe" {
+			assert.Equal(t, "pending", tribe["current_user_membership_type"])
+			found = true
+		}
+	}
+	assert.True(t, found, "Pending tribe should be in the list with correct membership type")
+}
+
+func TestGetTribe_PendingMemberMinimalInfo(t *testing.T) {
+	router, repos, testUser := setupTribeTest(t)
+
+	// Create a tribe and add testUser as pending
+	tribe := &models.Tribe{
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Pending Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
+	}
+	require.NoError(t, repos.Tribes.Create(tribe))
+	require.NoError(t, repos.Tribes.AddMember(tribe.ID, testUser.ID, models.MembershipPending, nil, nil))
+
+	url := "/api/tribes/tribes/" + tribe.ID.String()
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, tribe.ID.String(), resp.Data["id"])
+	assert.Equal(t, tribe.Name, resp.Data["name"])
+	assert.Equal(t, string(models.TribeTypeCustom), resp.Data["type"])
+	assert.Equal(t, true, resp.Data["pending_invitation"])
+	assert.Equal(t, "pending", resp.Data["current_user_membership_type"])
+	assert.Nil(t, resp.Data["members"])
+}

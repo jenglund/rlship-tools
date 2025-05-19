@@ -53,12 +53,13 @@ func (m MembershipType) Validate() error {
 // Tribe represents a group of users who share activities and plans
 type Tribe struct {
 	BaseModel
-	Name        string         `json:"name" db:"name"`
-	Type        TribeType      `json:"type" db:"type"`
-	Description string         `json:"description" db:"description"`
-	Visibility  VisibilityType `json:"visibility" db:"visibility"`
-	Metadata    JSONMap        `json:"metadata,omitempty" db:"metadata"`
-	Members     []*TribeMember `json:"members,omitempty" db:"-"`
+	Name                      string         `json:"name" db:"name"`
+	Type                      TribeType      `json:"type" db:"type"`
+	Description               string         `json:"description" db:"description"`
+	Visibility                VisibilityType `json:"visibility" db:"visibility"`
+	Metadata                  JSONMap        `json:"metadata,omitempty" db:"metadata"`
+	Members                   []*TribeMember `json:"members,omitempty" db:"-"`
+	CurrentUserMembershipType MembershipType `json:"current_user_membership_type,omitempty" db:"-"`
 }
 
 // Validate performs validation on the tribe

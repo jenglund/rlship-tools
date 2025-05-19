@@ -123,13 +123,7 @@ const TribesListScreen = () => {
   
   // Helper function to check if the current user is a pending member of a tribe
   const checkIfPendingMember = (tribe) => {
-    if (!currentUser || !tribe.members) return false;
-    
-    const userMember = tribe.members.find(member => 
-      member.user && member.user.firebase_uid === currentUser.uid
-    );
-    
-    return userMember && userMember.membership_type === 'pending';
+    return tribe.current_user_membership_type === 'pending';
   };
 
   return (

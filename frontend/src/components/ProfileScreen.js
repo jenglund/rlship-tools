@@ -98,7 +98,12 @@ const ProfileScreen = () => {
               {userTribes.map(tribe => (
                 <ListGroup.Item key={tribe.id} className="d-flex justify-content-between align-items-center">
                   <div>
-                    <h5>{tribe.name}</h5>
+                    <h5>
+                      {tribe.name}
+                      {tribe.current_user_membership_type === 'pending' && (
+                        <span className="pending-badge ms-2">PENDING</span>
+                      )}
+                    </h5>
                     <small className="text-muted">Type: {tribe.type}</small>
                     {tribe.description && <p className="mb-0">{tribe.description}</p>}
                   </div>

@@ -57,6 +57,14 @@ const TribeDetailScreen = () => {
         // Get tribe details
         const tribeData = await tribeService.getTribeById(id);
         setTribe(tribeData);
+
+        // If the user is pending, do not fetch members
+        if (tribeData.current_user_membership_type === 'pending' || tribeData.pending_invitation) {
+          setMembers([]);
+          setCurrentUserMember(null);
+          setInviter(null);
+          return;
+        }
         
         // Get tribe members
         const membersData = await tribeService.getTribeMembers(id);
@@ -67,7 +75,6 @@ const TribeDetailScreen = () => {
           const userMember = membersData.find(member => 
             member.user && member.user.firebase_uid === currentUser.uid
           );
-          
           setCurrentUserMember(userMember);
           
           // If the user is a pending member, fetch the inviter's information
@@ -154,14 +161,16 @@ const TribeDetailScreen = () => {
     );
   }
 
-  // If the user is a pending member, show the invitation view
-  if (currentUserMember && currentUserMember.membership_type === 'pending') {
+  // If the user is a pending member, show the invitation view (use new backend contract)
+  if (
+    (tribe.current_user_membership_type === 'pending' || tribe.pending_invitation)
+  ) {
     return (
       <div className="container tribe-detail-container">
         <PendingInvitationView 
           tribe={tribe} 
           invitedBy={inviter}
-          invitedAt={currentUserMember.invited_at}
+          invitedAt={tribe.invited_at || (currentUserMember && currentUserMember.invited_at)}
         />
       </div>
     );

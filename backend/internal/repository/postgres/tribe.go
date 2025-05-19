@@ -1042,6 +1042,9 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 			}
 
 			tribes[i].Members = append(tribes[i].Members, member)
+			if member.UserID == userID {
+				tribes[i].CurrentUserMembershipType = member.MembershipType
+			}
 			memberCount++
 		}
 
