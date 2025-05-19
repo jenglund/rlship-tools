@@ -174,6 +174,22 @@ func SetupTestDB(t *testing.T) *sql.DB {
 
 	// Debug logging
 	t.Logf("Migrations path: %s", migrationsPath)
+	// Check if migrations directory exists and is accessible
+	if _, err := os.Stat(migrationsPath); os.IsNotExist(err) {
+		t.Logf("ERROR: Migrations directory does not exist: %s", migrationsPath)
+		panic(fmt.Sprintf("Migrations directory does not exist: %s", migrationsPath))
+	}
+
+	// List files in migrations directory for debugging
+	migrationDirFiles, err := os.ReadDir(migrationsPath)
+	if err != nil {
+		t.Logf("ERROR: Failed to read migrations directory: %v", err)
+	} else {
+		t.Logf("Found %d files in migrations directory:", len(migrationDirFiles))
+		for _, file := range migrationDirFiles {
+			t.Logf("  - %s", file.Name())
+		}
+	}
 
 	// Build postgres connection URL for migrations
 	host := os.Getenv("POSTGRES_HOST")
@@ -252,22 +268,49 @@ func SetupTestDB(t *testing.T) *sql.DB {
 		// Sort migration files
 		sort.Strings(upMigrations)
 
-		// Execute each migration file
-		for _, fileName := range upMigrations {
-			t.Logf("Executing migration file: %s", fileName)
+		t.Logf("Found %d migration files to execute", len(upMigrations))
 
-			migrationSQL, err := os.ReadFile(filepath.Join(migrationsPath, fileName))
+		// Direct approach: try to execute the schema file directly first
+		schemaFilePath := filepath.Join(migrationsPath, "000001_schema.up.sql")
+		if _, err := os.Stat(schemaFilePath); err == nil {
+			t.Logf("Executing schema file directly: %s", schemaFilePath)
+			schemaSQL, err := os.ReadFile(schemaFilePath)
 			if err != nil {
-				safeClose(db)
-				panic(fmt.Sprintf("Error reading migration file %s: %v", fileName, err))
+				t.Logf("Error reading schema file: %v", err)
+			} else {
+				// Set search_path and execute the schema SQL
+				_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
+					pq.QuoteIdentifier(schemaName), string(schemaSQL)))
+				if err != nil {
+					t.Logf("Error executing schema SQL: %v", err)
+				} else {
+					t.Logf("Successfully executed schema SQL directly")
+					migrationSuccess = true
+				}
 			}
+		}
 
-			// Execute the migration with schema path explicitly set
-			_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-				pq.QuoteIdentifier(schemaName), string(migrationSQL)))
-			if err != nil {
-				t.Logf("Warning: Error executing migration %s: %v", fileName, err)
-				// Continue with other migrations, don't fail completely
+		// If direct execution of schema file failed or wasn't available, try individual migrations
+		if !migrationSuccess {
+			// Execute each migration file
+			for _, fileName := range upMigrations {
+				t.Logf("Executing migration file: %s", fileName)
+
+				migrationSQL, err := os.ReadFile(filepath.Join(migrationsPath, fileName))
+				if err != nil {
+					t.Logf("Error reading migration file %s: %v", fileName, err)
+					continue
+				}
+
+				// Execute the migration with schema path explicitly set
+				_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
+					pq.QuoteIdentifier(schemaName), string(migrationSQL)))
+				if err != nil {
+					t.Logf("Warning: Error executing migration %s: %v", fileName, err)
+					// Continue with other migrations, don't fail completely
+				} else {
+					t.Logf("Successfully executed migration file: %s", fileName)
+				}
 			}
 		}
 		t.Logf("Direct SQL execution completed")
@@ -275,6 +318,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 
 	// Double check essential tables
 	tables := []string{"users", "lists", "list_items", "list_owners", "list_sharing", "list_conflicts"}
+	tablesExist := true
 	for _, table := range tables {
 		var tableExists bool
 		err = db.QueryRow(`
@@ -286,24 +330,45 @@ func SetupTestDB(t *testing.T) *sql.DB {
 
 		if err != nil {
 			t.Logf("Error checking if %s table exists: %v", table, err)
+			tablesExist = false
 		} else {
 			t.Logf("%s table exists: %v", table, tableExists)
-
-			// If table doesn't exist, attempt to create it using SQL from the schema file
 			if !tableExists {
-				t.Logf("Table %s doesn't exist, attempting to create it directly", table)
-				schemaSQL, err := os.ReadFile(filepath.Join(migrationsPath, "000001_schema.up.sql"))
-				if err != nil {
-					t.Logf("Error reading schema SQL file: %v", err)
-					continue
-				}
+				tablesExist = false
+			}
+		}
+	}
 
-				// Execute schema SQL with explicit schema name
-				_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-					pq.QuoteIdentifier(schemaName), string(schemaSQL)))
-				if err != nil {
-					t.Logf("Error executing schema SQL for table %s: %v", table, err)
-				}
+	if !tablesExist {
+		// Last resort: try to create schema directly
+		t.Logf("Some essential tables are missing, executing schema SQL one more time")
+		schemaFilePath := filepath.Join(migrationsPath, "000001_schema.up.sql")
+		schemaSQL, err := os.ReadFile(schemaFilePath)
+		if err != nil {
+			t.Logf("Error reading schema SQL file: %v", err)
+			panic("Failed to create essential database tables")
+		}
+
+		// Execute schema SQL with explicit schema name
+		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
+			pq.QuoteIdentifier(schemaName), string(schemaSQL)))
+		if err != nil {
+			t.Logf("Error executing schema SQL: %v", err)
+			panic("Failed to create essential database tables")
+		}
+
+		// Verify tables one more time
+		for _, table := range tables {
+			var tableExists bool
+			err = db.QueryRow(`
+				SELECT EXISTS (
+					SELECT FROM information_schema.tables 
+					WHERE table_schema = $1
+					AND table_name = $2
+				)`, schemaName, table).Scan(&tableExists)
+			t.Logf("After final attempt, %s table exists: %v", table, tableExists)
+			if !tableExists {
+				panic(fmt.Sprintf("Failed to create table: %s", table))
 			}
 		}
 	}
