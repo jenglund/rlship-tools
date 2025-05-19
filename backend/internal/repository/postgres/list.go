@@ -813,46 +813,86 @@ func (r *listRepository) RemoveItem(listID, itemID uuid.UUID) error {
 	return nil
 }
 
-// GetItems retrieves all items in a list
+// GetItems retrieves all items from a list
 func (r *listRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) {
-	query := `
-		SELECT 
-			id, list_id, name, description,
-			metadata, external_id,
-			weight, last_chosen, chosen_count,
-			latitude, longitude, address,
-			created_at, updated_at, deleted_at
-		FROM list_items
-		WHERE list_id = $1 AND deleted_at IS NULL
-		ORDER BY created_at DESC`
+	// Create a transaction to ensure schema search path is correctly set
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var items []*models.ListItem
 
-	rows, err := r.db.Query(query, listID)
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// First confirm the table exists in this schema
+		var currentSchema string
+		err := tx.QueryRow(`SELECT current_schema()`).Scan(&currentSchema)
+		if err != nil {
+			return fmt.Errorf("error getting current schema: %w", err)
+		}
+
+		var tableExists bool
+		err = tx.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = $1
+				AND table_name = 'list_items'
+			)`, currentSchema).Scan(&tableExists)
+
+		if err != nil {
+			return fmt.Errorf("error checking if list_items table exists: %w", err)
+		}
+
+		if !tableExists {
+			return fmt.Errorf("list_items table does not exist in schema %s", currentSchema)
+		}
+
+		// Now get the items with fully qualified table name
+		query := fmt.Sprintf(`
+			SELECT 
+				id, list_id, name, description,
+				metadata, external_id,
+				weight, last_chosen, chosen_count,
+				latitude, longitude, address,
+				created_at, updated_at, deleted_at
+			FROM %s.list_items
+			WHERE list_id = $1 AND deleted_at IS NULL
+			ORDER BY created_at DESC`, currentSchema)
+
+		rows, err := tx.Query(query, listID)
+		if err != nil {
+			return err
+		}
+		defer safeClose(rows)
+
+		for rows.Next() {
+			item := &models.ListItem{}
+			var metadata []byte
+			if err := rows.Scan(
+				&item.ID, &item.ListID, &item.Name, &item.Description,
+				&metadata, &item.ExternalID,
+				&item.Weight, &item.LastChosen, &item.ChosenCount,
+				&item.Latitude, &item.Longitude, &item.Address,
+				&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
+			); err != nil {
+				return err
+			}
+
+			if len(metadata) > 0 {
+				if err := json.Unmarshal(metadata, &item.Metadata); err != nil {
+					return err
+				}
+			}
+
+			items = append(items, item)
+		}
+
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
-	}
-	defer safeClose(rows)
-
-	var items []*models.ListItem
-	for rows.Next() {
-		item := &models.ListItem{}
-		var metadata []byte
-		if err := rows.Scan(
-			&item.ID, &item.ListID, &item.Name, &item.Description,
-			&metadata, &item.ExternalID,
-			&item.Weight, &item.LastChosen, &item.ChosenCount,
-			&item.Latitude, &item.Longitude, &item.Address,
-			&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		if len(metadata) > 0 {
-			if err := json.Unmarshal(metadata, &item.Metadata); err != nil {
-				return nil, err
-			}
-		}
-
-		items = append(items, item)
 	}
 
 	return items, nil
@@ -992,17 +1032,41 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 	var lists []*models.List
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// First get the lists basic info
-		query := `
+		// Verify current schema and tables
+		var currentSchema string
+		err := tx.QueryRow(`SELECT current_schema()`).Scan(&currentSchema)
+		if err != nil {
+			return fmt.Errorf("error getting current schema: %w", err)
+		}
+
+		// Check if the lists table exists in the current schema
+		var tableExists bool
+		err = tx.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = $1
+				AND table_name = 'lists'
+			)`, currentSchema).Scan(&tableExists)
+
+		if err != nil {
+			return fmt.Errorf("error checking if lists table exists: %w", err)
+		}
+
+		if !tableExists {
+			return fmt.Errorf("lists table does not exist in schema %s", currentSchema)
+		}
+
+		// First get the lists basic info with fully qualified table name
+		query := fmt.Sprintf(`
 			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
 				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
 				l.default_weight, l.max_items, l.cooldown_days,
 				l.owner_id, l.owner_type,
 				l.created_at, l.updated_at, l.deleted_at
-			FROM lists l
+			FROM %s.lists l
 			WHERE l.sync_source = $1
 				AND l.deleted_at IS NULL
-			ORDER BY l.created_at DESC`
+			ORDER BY l.created_at DESC`, currentSchema)
 
 		rows, err := tx.Query(query, source)
 		if err != nil {
@@ -1273,11 +1337,36 @@ func (r *listRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error
 	var owners []*models.ListOwner
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		query := `
+		// Get current schema
+		var currentSchema string
+		err := tx.QueryRow(`SELECT current_schema()`).Scan(&currentSchema)
+		if err != nil {
+			return fmt.Errorf("error getting current schema: %w", err)
+		}
+
+		// Check if the table exists
+		var tableExists bool
+		err = tx.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = $1
+				AND table_name = 'list_owners'
+			)`, currentSchema).Scan(&tableExists)
+
+		if err != nil {
+			return fmt.Errorf("error checking if list_owners table exists: %w", err)
+		}
+
+		if !tableExists {
+			return fmt.Errorf("list_owners table does not exist in schema %s", currentSchema)
+		}
+
+		// Use fully qualified table name
+		query := fmt.Sprintf(`
 			SELECT list_id, owner_id, owner_type, created_at, updated_at
-			FROM list_owners
+			FROM %s.list_owners
 			WHERE list_id = $1 AND deleted_at IS NULL
-			ORDER BY created_at ASC`
+			ORDER BY created_at ASC`, currentSchema)
 
 		rows, err := tx.Query(query, listID)
 		if err != nil {
@@ -1285,7 +1374,6 @@ func (r *listRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error
 		}
 		defer safeClose(rows)
 
-		owners = make([]*models.ListOwner, 0)
 		for rows.Next() {
 			owner := &models.ListOwner{}
 			if err := rows.Scan(

@@ -68,6 +68,34 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			return fmt.Errorf("error setting lock timeout: %w", err)
 		}
 
+		// Get the current search_path and ensure it's correctly set in the transaction
+		var searchPath string
+		err = tm.db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+		if err != nil {
+			safeClose(tx)
+			return fmt.Errorf("error getting current search_path: %w", err)
+		}
+
+		// Set the same search_path in the transaction with LOCAL so it only affects this transaction
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", searchPath))
+		if err != nil {
+			safeClose(tx)
+			return fmt.Errorf("error setting search_path in transaction: %w", err)
+		}
+
+		// Verify search_path was properly set
+		var txSearchPath string
+		err = tx.QueryRowContext(ctx, "SHOW search_path").Scan(&txSearchPath)
+		if err != nil {
+			safeClose(tx)
+			return fmt.Errorf("error verifying search_path in transaction: %w", err)
+		}
+
+		if txSearchPath != searchPath {
+			safeClose(tx)
+			return fmt.Errorf("transaction search_path mismatch: expected %s, got %s", searchPath, txSearchPath)
+		}
+
 		// Execute the transaction function
 		err = fn(tx)
 

@@ -230,4 +230,23 @@ These insights and directives should be applied and followed whenever possible/f
    - Include instructions to "Favor simple approaches over complex ones when editing files"
    - Add "When stuck in an edit loop, stop and describe the exact issue with file/line numbers"
    - Suggest "Use read_file with line numbers when search functions fail to find matches"
-   - Recommend "Make smaller, incremental changes with immediate verification rather than large batches" 
+   - Recommend "Make smaller, incremental changes with immediate verification rather than large batches"
+
+## Database Schema Management in Tests
+
+When running tests that interact with the database, we create isolated test schemas for each test to avoid interference between tests. The schema is created when the test starts and is dropped when the test ends.
+
+Key considerations:
+- Each test gets its own isolated schema named `test_<uuid>`
+- Tables are created using migrations or direct SQL execution
+- The search path is explicitly set to the test schema
+- All database operations should respect the schema setting
+
+If schema issues occur in tests, check these potential causes:
+- Verify migrations are being applied correctly
+- Ensure transaction manager is setting search_path correctly
+- For direct SQL queries, fully qualify table names with schema
+- Use fully qualified table references in critical queries
+- Check that all schemas used in SQL queries are properly escaped
+
+## Additional Notes 
