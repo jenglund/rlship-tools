@@ -37,7 +37,7 @@ func (h *TribeHandler) RegisterRoutes(r *gin.RouterGroup) {
 
 		// Member management
 		tribes.POST("/:id/members", h.AddMember)
-		tribes.DELETE("/:id/members/:userId", h.RemoveMember)
+		tribes.DELETE("/:id/members/:userID", h.RemoveMember)
 		tribes.GET("/:id/members", h.ListMembers)
 
 		// Invitation response
@@ -658,9 +658,9 @@ func (h *TribeHandler) RemoveMember(c *gin.Context) {
 		return
 	}
 
-	userID, err := uuid.Parse(c.Param("userId"))
+	userID, err := uuid.Parse(c.Param("userID"))
 	if err != nil {
-		fmt.Printf("[DEBUG] RemoveMember: Invalid user ID: %v\n", c.Param("userId"))
+		fmt.Printf("[DEBUG] RemoveMember: Invalid user ID: %v\n", c.Param("userID"))
 		response.GinBadRequest(c, "Invalid user ID")
 		return
 	}

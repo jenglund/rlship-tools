@@ -53,6 +53,11 @@ type MockConfig struct {
 // Use MockFirebaseAuth from testutil instead of local definition
 type MockFirebaseAuth = testutil.MockFirebaseAuth
 
+func init() {
+	// Set gin mode to test mode to avoid data races across test functions
+	gin.SetMode(gin.TestMode)
+}
+
 func TestConfigLoading(t *testing.T) {
 	// Save current env and restore after test
 	envBackup := make(map[string]string)
@@ -376,24 +381,23 @@ func testSetupApp(cfg *config.Config) (*gin.Engine, error) {
 }
 
 func TestSetupRouter(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	// gin.SetMode(gin.TestMode) - Removed to avoid data race
 	mockDB := &sql.DB{}
 	repos := postgres.NewRepositories(mockDB)
 	// Pass nil for firebaseAuth to avoid issues with uninitialized struct
 	router := testSetupRouter(repos, nil)
+
+	// Just verify the router was created
 	assert.NotNil(t, router)
 
-	// Instead of trying to test specific routes, which can vary between Gin versions,
-	// let's just make a minimal assertion that we have some routes
+	// Simple verification that routes exist
 	routes := router.Routes()
-	if len(routes) == 0 {
-		t.Fatalf("No routes registered! Registered routes: %+v", routes)
-	}
-	// Debug: print out all routes
+	assert.NotEmpty(t, routes)
+
+	// Log the number of routes instead of checking specific paths
+	// which can change as the API evolves
 	t.Logf("Found %d routes", len(routes))
-	for i, route := range routes {
-		t.Logf("Route %d: %s %s", i, route.Method, route.Path)
-	}
+	assert.Greater(t, len(routes), 0, "No routes were registered")
 }
 
 func TestSetupApp(t *testing.T) {
