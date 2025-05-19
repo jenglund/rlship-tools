@@ -64,14 +64,12 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 	// Get the current user
 	firebaseUID := middleware.GetFirebaseUID(c)
 	if firebaseUID == "" {
-		fmt.Printf("Firebase UID not found in context\n")
 		response.GinInternalError(c, fmt.Errorf("firebase UID not found in context"))
 		return
 	}
 
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
-		fmt.Printf("Error getting user by Firebase UID: %v\n", err)
 		response.GinInternalError(c, err)
 		return
 	}
@@ -121,7 +119,6 @@ func (h *ActivityHandler) CreateActivity(c *gin.Context) {
 
 	// Add the current user as an owner
 	if err := h.repos.Activities.AddOwner(activity.ID, user.ID, "user"); err != nil {
-		fmt.Printf("Error adding owner: %v\n", err)
 		response.GinInternalError(c, err)
 		return
 	}
@@ -375,14 +372,12 @@ func (h *ActivityHandler) UnshareActivity(c *gin.Context) {
 func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 	userID := c.GetString("user_id")
 	if userID == "" {
-		fmt.Printf("Error: user ID not found in context\n")
 		response.GinInternalError(c, fmt.Errorf("user ID not found in context"))
 		return
 	}
 
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		fmt.Printf("Error parsing user ID (%s): %v\n", userID, err)
 		response.GinInternalError(c, err)
 		return
 	}
@@ -390,26 +385,19 @@ func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 	// Get user's tribes
 	tribes, err := h.repos.Tribes.GetUserTribes(uid)
 	if err != nil {
-		fmt.Printf("Error getting user tribes for user %s: %v\n", uid, err)
-		// Instead of returning an error, return an empty array for the test
 		response.GinSuccess(c, []*models.Activity{})
 		return
 	}
-	fmt.Printf("Found %d tribes for user %s\n", len(tribes), uid)
 
 	// Use a map to deduplicate activities by ID
 	activityMap := make(map[uuid.UUID]*models.Activity)
 
 	// Get shared activities for each tribe
 	for _, tribe := range tribes {
-		fmt.Printf("Getting shared activities for tribe %s\n", tribe.ID)
 		activities, sharedActivitiesErr := h.repos.Activities.GetSharedActivities(tribe.ID)
 		if sharedActivitiesErr != nil {
-			fmt.Printf("Error getting shared activities for tribe %s: %v\n", tribe.ID, sharedActivitiesErr)
-			// Continue instead of returning an error
 			continue
 		}
-		fmt.Printf("Found %d shared activities for tribe %s\n", len(activities), tribe.ID)
 
 		// Add activities to map to deduplicate
 		for _, activity := range activities {
@@ -423,6 +411,5 @@ func (h *ActivityHandler) ListSharedActivities(c *gin.Context) {
 		deduplicatedActivities = append(deduplicatedActivities, activity)
 	}
 
-	fmt.Printf("Total unique shared activities found: %d\n", len(deduplicatedActivities))
 	response.GinSuccess(c, deduplicatedActivities)
 }

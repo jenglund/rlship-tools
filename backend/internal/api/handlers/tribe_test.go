@@ -1764,7 +1764,7 @@ func TestAddMember(t *testing.T) {
 			request: AddMemberRequest{
 				UserID: newUser.ID,
 			},
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusNotFound, // 404 for not found
 			validate:   func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {},
 		},
 		{
@@ -1782,7 +1782,7 @@ func TestAddMember(t *testing.T) {
 			request: AddMemberRequest{
 				UserID: uuid.New(), // Random non-existent user ID
 			},
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusBadRequest, // 400 for bad request
 			validate: func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {
 				// Member count should remain unchanged
 				members, err := repos.Tribes.GetMembers(tribeID)
@@ -1885,7 +1885,7 @@ func TestRemoveMember(t *testing.T) {
 			name:       "remove non-existent member",
 			tribeID:    tribe.ID.String(),
 			userID:     nonMember.ID.String(),
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusBadRequest, // 400 for bad request
 		},
 		{
 			name:       "invalid tribe id",
@@ -1903,7 +1903,7 @@ func TestRemoveMember(t *testing.T) {
 			name:       "non-existent tribe",
 			tribeID:    uuid.New().String(),
 			userID:     memberToRemove.ID.String(),
-			wantStatus: http.StatusInternalServerError,
+			wantStatus: http.StatusNotFound, // 404 for not found
 		},
 	}
 

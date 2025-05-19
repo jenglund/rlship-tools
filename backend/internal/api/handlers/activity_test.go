@@ -784,14 +784,8 @@ func TestListSharedActivities(t *testing.T) {
 						return
 					}
 
-					uid, parseErr := uuid.Parse(userID)
-					if parseErr != nil {
-						response.GinInternalError(c, parseErr)
-						return
-					}
-
 					// Get user's tribes
-					tribes, getTribesErr := repos.Tribes.GetUserTribes(uid)
+					tribes, getTribesErr := repos.Tribes.GetUserTribes(uuid.MustParse(userID))
 					if getTribesErr != nil {
 						response.GinSuccess(c, []*models.Activity{})
 						return
@@ -804,7 +798,6 @@ func TestListSharedActivities(t *testing.T) {
 					for _, tribe := range tribes {
 						// Simulate error for tribe1 only
 						if tribe.ID == tribe1.ID {
-							fmt.Printf("Simulating error for tribe %s\n", tribe.ID)
 							continue // Skip this tribe as if an error occurred
 						}
 
@@ -848,21 +841,11 @@ func TestListSharedActivities(t *testing.T) {
 				r.GET("/api/activities/shared", func(c *gin.Context) {
 					userID := c.GetString("user_id")
 					if userID == "" {
-						fmt.Printf("Error: user ID not found in context\n")
 						response.GinInternalError(c, fmt.Errorf("user ID not found in context"))
 						return
 					}
 
-					uid, parseErr := uuid.Parse(userID)
-					if parseErr != nil {
-						fmt.Printf("Error parsing user ID (%s): %v\n", userID, parseErr)
-						response.GinInternalError(c, parseErr)
-						return
-					}
-
 					// Simulate error for GetUserTribes
-					fmt.Printf("Simulating error for GetUserTribes for user %s\n", uid)
-					// Return the error directly to test the error path
 					response.GinInternalError(c, fmt.Errorf("simulated error getting user tribes"))
 				})
 
@@ -890,21 +873,7 @@ func TestListSharedActivities(t *testing.T) {
 						return
 					}
 
-					uid, parseErr := uuid.Parse(userID)
-					if parseErr != nil {
-						response.GinInternalError(c, parseErr)
-						return
-					}
-
-					// Get user's tribes successfully
-					tribes, getTribesErr := repos.Tribes.GetUserTribes(uid)
-					if getTribesErr != nil {
-						response.GinSuccess(c, []*models.Activity{})
-						return
-					}
-
 					// Simulate error for all GetSharedActivities calls
-					fmt.Printf("Simulating error for all GetSharedActivities calls for %d tribes\n", len(tribes))
 					response.GinSuccess(c, []*models.Activity{})
 				})
 

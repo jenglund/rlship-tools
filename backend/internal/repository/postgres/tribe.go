@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -462,11 +461,6 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
-	log.Printf("AddMember repo: Adding user %s to tribe %s with membership type %s", userID, tribeID, memberType)
-	if invitedBy != nil {
-		log.Printf("AddMember repo: Invited by user %s", *invitedBy)
-	}
-
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Check if the columns exist first
 		var hasInvitedBy, hasInvitedAt bool
@@ -476,10 +470,8 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				WHERE table_name = 'tribe_members' AND column_name = 'invited_by'
 		`).Scan(&hasInvitedBy)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to check for invited_by column: %v", err)
 			return fmt.Errorf("error checking for invited_by column: %w", err)
 		}
-		log.Printf("AddMember repo: Has invited_by column: %v", hasInvitedBy)
 
 		err = tx.QueryRow(`
 			SELECT 
@@ -487,55 +479,43 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				WHERE table_name = 'tribe_members' AND column_name = 'invited_at'
 		`).Scan(&hasInvitedAt)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to check for invited_at column: %v", err)
 			return fmt.Errorf("error checking for invited_at column: %w", err)
 		}
-		log.Printf("AddMember repo: Has invited_at column: %v", hasInvitedAt)
 
 		// Check if tribe exists
 		var tribeExists bool
 		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribes WHERE id = $1 AND deleted_at IS NULL)", tribeID).Scan(&tribeExists)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to check if tribe exists: %v", err)
 			return fmt.Errorf("error checking if tribe exists: %w", err)
 		}
 		if !tribeExists {
-			log.Printf("AddMember repo ERROR: Tribe %s does not exist", tribeID)
 			return fmt.Errorf("tribe not found")
 		}
-		log.Printf("AddMember repo: Tribe %s exists", tribeID)
 
 		// Check if user exists
 		var userExists bool
 		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID).Scan(&userExists)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to check if user exists: %v", err)
 			return fmt.Errorf("error checking if user exists: %w", err)
 		}
 		if !userExists {
-			log.Printf("AddMember repo ERROR: User %s does not exist", userID)
 			return fmt.Errorf("user not found")
 		}
-		log.Printf("AddMember repo: User %s exists", userID)
 
 		// Check if user is already a member
 		var memberExists bool
 		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NULL)", tribeID, userID).Scan(&memberExists)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to check if member exists: %v", err)
 			return fmt.Errorf("error checking if member exists: %w", err)
 		}
 		if memberExists {
-			log.Printf("AddMember repo ERROR: User %s is already a member of tribe %s", userID, tribeID)
 			return fmt.Errorf("user is already a member of this tribe")
 		}
-		log.Printf("AddMember repo: User %s is not already a member of tribe %s", userID, tribeID)
 
 		// Get user's name for display_name
 		var displayName sql.NullString
 		err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to get user name: %v", err)
 			return fmt.Errorf("error getting user name: %w", err)
 		}
 
@@ -544,7 +524,6 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 		if displayName.Valid && displayName.String != "" {
 			finalDisplayName = displayName.String
 		}
-		log.Printf("AddMember repo: Using display name: %s", finalDisplayName)
 
 		now := time.Now()
 		id := uuid.New()
@@ -573,7 +552,6 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				invitedBy,
 				now,
 			}
-			log.Printf("AddMember repo: Using query with invited_by and invited_at columns")
 		} else {
 			// Fall back to not using those columns if they don't exist
 			query = `
@@ -593,16 +571,13 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				now,
 				now,
 			}
-			log.Printf("AddMember repo: Using query without invited_by and invited_at columns")
 		}
 
 		_, err = tx.Exec(query, args...)
 		if err != nil {
-			log.Printf("AddMember repo ERROR: Failed to add tribe member: %v", err)
 			return fmt.Errorf("error adding tribe member: %w", err)
 		}
 
-		log.Printf("AddMember repo: Successfully added user %s to tribe %s", userID, tribeID)
 		return nil
 	})
 }
@@ -909,26 +884,6 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 
 // GetUserTribes retrieves all tribes a user is a member of
 func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, error) {
-	log.Printf("GetUserTribes: Starting query for user ID: %s", userID)
-
-	// Start transaction for consistent read
-	tx, err := r.db.Begin()
-	if err != nil {
-		log.Printf("GetUserTribes ERROR: Failed to start transaction: %v", err)
-		return nil, fmt.Errorf("error starting transaction: %w", err)
-	}
-
-	// Defer transaction rollback in case of error
-	txClosed := false
-	defer func() {
-		if !txClosed {
-			log.Printf("GetUserTribes: Rolling back unclosed transaction")
-			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
-				log.Printf("GetUserTribes ERROR: Failed to rollback transaction: %v", err)
-			}
-		}
-	}()
-
 	query := `
 		SELECT DISTINCT t.id, t.name, t.type, t.description, t.visibility,
 			t.metadata, t.created_at, t.updated_at, t.deleted_at, t.version
@@ -938,9 +893,8 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		AND t.deleted_at IS NULL
 		AND tm.deleted_at IS NULL`
 
-	rows, err := tx.Query(query, userID)
+	rows, err := r.db.Query(query, userID)
 	if err != nil {
-		log.Printf("GetUserTribes ERROR: Failed to query tribes: %v", err)
 		return nil, fmt.Errorf("error getting user tribes: %w", err)
 	}
 	defer safeClose(rows)
@@ -963,7 +917,6 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 			&tribe.Version,
 		)
 		if err != nil {
-			log.Printf("GetUserTribes ERROR: Failed to scan tribe row: %v", err)
 			return nil, fmt.Errorf("error scanning user tribe: %w", err)
 		}
 
@@ -971,27 +924,16 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 	}
 
 	if err = rows.Err(); err != nil {
-		log.Printf("GetUserTribes ERROR: Error after iterating rows: %v", err)
 		return nil, fmt.Errorf("error iterating user tribes: %w", err)
 	}
 
-	log.Printf("GetUserTribes: Found %d tribes for user", len(tribes))
-
 	// If no tribes were found, return empty slice
 	if len(tribes) == 0 {
-		// Commit the transaction even if we didn't find any tribes
-		if err := tx.Commit(); err != nil {
-			log.Printf("GetUserTribes ERROR: Failed to commit transaction after finding no tribes: %v", err)
-			return nil, fmt.Errorf("error committing transaction: %w", err)
-		}
-		txClosed = true
 		return tribes, nil
 	}
 
 	// For each tribe, get its members in a separate query to avoid the parse error
 	for i, tribe := range tribes {
-		log.Printf("GetUserTribes: Getting members for tribe ID: %s", tribe.ID)
-
 		membersQuery := `
 			SELECT 
 				tm.id, 
@@ -1011,9 +953,8 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 			WHERE tm.tribe_id = $1
 			AND tm.deleted_at IS NULL`
 
-		memberRows, err := tx.Query(membersQuery, tribe.ID)
+		memberRows, err := r.db.Query(membersQuery, tribe.ID)
 		if err != nil {
-			log.Printf("GetUserTribes ERROR: Failed to query members for tribe %s: %v", tribe.ID, err)
 			return nil, fmt.Errorf("error getting tribe members: %w", err)
 		}
 		defer safeClose(memberRows)
@@ -1037,7 +978,6 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 				&member.Version,
 			)
 			if err != nil {
-				log.Printf("GetUserTribes ERROR: Failed to scan member row: %v", err)
 				return nil, fmt.Errorf("error scanning tribe member: %w", err)
 			}
 
@@ -1049,21 +989,12 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		}
 
 		if err = memberRows.Err(); err != nil {
-			log.Printf("GetUserTribes ERROR: Error after iterating member rows: %v", err)
 			return nil, fmt.Errorf("error iterating tribe members: %w", err)
 		}
 
-		log.Printf("GetUserTribes: Found %d members for tribe %s", memberCount, tribe.ID)
+		safeClose(memberRows)
 	}
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		log.Printf("GetUserTribes ERROR: Failed to commit transaction: %v", err)
-		return nil, fmt.Errorf("error committing transaction: %w", err)
-	}
-	txClosed = true
-
-	log.Printf("GetUserTribes: Successfully completed for user %s with %d tribes", userID, len(tribes))
 	return tribes, nil
 }
 

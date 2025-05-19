@@ -3,7 +3,6 @@ package testutil
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -77,7 +76,6 @@ func cleanupDatabase(dbName string) {
 	// Connect to default postgres database
 	db, err := sql.Open("postgres", getPostgresConnection(""))
 	if err != nil {
-		fmt.Printf("DEBUG: Error connecting to postgres for cleanup: %v\n", err)
 		return // Can't clean up if we can't connect
 	}
 	defer safeClose(db)
@@ -104,15 +102,11 @@ func cleanupDatabase(dbName string) {
 	for i := 0; i < maxRetries; i++ {
 		_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(dbName)))
 		if err == nil {
-			fmt.Printf("DEBUG: Successfully dropped database %s\n", dbName)
 			break
 		}
 
 		if i < maxRetries-1 {
 			time.Sleep(100 * time.Millisecond)
-			fmt.Printf("DEBUG: Retrying database drop for %s, attempt %d\n", dbName, i+2)
-		} else {
-			fmt.Printf("DEBUG: Failed to drop database %s after %d attempts: %v\n", dbName, maxRetries, err)
 		}
 	}
 }
@@ -133,12 +127,12 @@ func safeClose(c interface{}) {
 		// migrate.Close() returns (error, int)
 		err, _ = v.Close()
 	default:
-		log.Printf("Unknown closer type: %T", v)
+		// Remove or comment out log.Printf("Error closing resource: %v", err) in safeClose to silence noisy output during tests.
 		return
 	}
 
 	if err != nil {
-		log.Printf("Error closing resource: %v", err)
+		// Remove or comment out log.Printf("Error closing resource: %v", err) in safeClose to silence noisy output during tests.
 	}
 }
 
@@ -146,11 +140,8 @@ func safeClose(c interface{}) {
 func SetupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	fmt.Printf("DEBUG: Setting up test database\n")
-
 	// Create a unique test database name
 	dbName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
-	fmt.Printf("DEBUG: Test database name: %s\n", dbName)
 
 	// Validate database name
 	if strings.Contains(dbName, "/") || strings.Contains(dbName, "\\") || strings.Contains(currentTestDBName, "/") || strings.Contains(currentTestDBName, "\\") {
@@ -196,15 +187,12 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	}()
 
 	// Run migrations
-	fmt.Printf("DEBUG: Running migrations\n")
-
 	// Get the absolute path to the migrations directory
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("Could not get current file path")
 	}
 	migrationsPath := filepath.Join(filepath.Dir(filename), "..", "..", "migrations")
-	fmt.Printf("DEBUG: Migrations path: %s\n", migrationsPath)
 
 	// Build postgres connection URL for migrations
 	host := os.Getenv("POSTGRES_HOST")
@@ -263,8 +251,6 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	if dirty {
 		panic(fmt.Sprintf("Database is in a dirty state after migrations (version %d)", version))
 	}
-
-	fmt.Printf("DEBUG: Final migration version: %d, dirty: %v\n", version, dirty)
 
 	// Mark setup as successful
 	setupSuccess = true

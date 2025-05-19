@@ -54,14 +54,12 @@ func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 		AvatarURL:   fmt.Sprintf("https://example.com/avatars/%s.jpg", uuid.New().String()),
 	}
 
-	fmt.Printf("DEBUG: Creating test user: %+v\n", user)
 	_, err = tx.Exec(`
 		INSERT INTO users (id, firebase_uid, provider, email, name, avatar_url)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, user.ID, user.FirebaseUID, user.Provider, user.Email, user.Name, user.AvatarURL)
 
 	if err != nil {
-		fmt.Printf("DEBUG: Error creating test user: %v\n", err)
 		t.Fatalf("Error creating test user: %v", err)
 	}
 

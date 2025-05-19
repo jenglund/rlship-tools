@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -61,7 +60,6 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 
 	// Validate request body
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Printf("DEBUG: Failed to bind JSON: %v\n", err)
 		response.GinBadRequest(c, fmt.Sprintf("Invalid request body: %v", err))
 		return
 	}
@@ -155,21 +153,13 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 			response.GinBadRequest(c, "A tribe with this name already exists")
 			return
 		}
-		fmt.Printf("DEBUG: Failed to create tribe: %v\n", createErr)
 		response.GinBadRequest(c, fmt.Sprintf("Failed to create tribe: %v", createErr))
 		return
 	}
 
 	// Add the creator as the first member
 	if addMemberErr := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, &userID); addMemberErr != nil {
-		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", addMemberErr)
-
 		// Try to clean up the tribe if we couldn't add the member
-		deleteErr := h.repos.Tribes.Delete(tribe.ID)
-		if deleteErr != nil {
-			fmt.Printf("DEBUG: Failed to clean up tribe after error: %v\n", deleteErr)
-		}
-
 		response.GinInternalError(c, addMemberErr)
 		return
 	}
@@ -177,7 +167,6 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	// Get the updated tribe with members
 	tribe, err = h.repos.Tribes.GetByID(tribe.ID)
 	if err != nil {
-		fmt.Printf("DEBUG: Failed to get updated tribe: %v\n", err)
 		response.GinInternalError(c, err)
 		return
 	}
@@ -259,17 +248,14 @@ func (h *TribeHandler) ListTribes(c *gin.Context) {
 
 	// Fetch tribes based on filter
 	if tribeType != "" {
-		fmt.Printf("DEBUG: Filtering tribes by type: %s\n", tribeType)
 		tribes, err = h.repos.Tribes.GetByType(models.TribeType(tribeType), offset, limit)
 		if err != nil {
-			fmt.Printf("DEBUG: Error getting tribes by type: %v\n", err)
 			response.GinInternalError(c, err)
 			return
 		}
 	} else {
 		tribes, err = h.repos.Tribes.List(offset, limit)
 		if err != nil {
-			fmt.Printf("DEBUG: Error listing tribes: %v\n", err)
 			response.GinInternalError(c, err)
 			return
 		}
@@ -329,34 +315,25 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 	}
 
 	firebaseUID := middleware.GetFirebaseUID(c)
-	log.Printf("ListMyTribes: Getting user by Firebase UID: %s", firebaseUID)
 
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
-		log.Printf("ListMyTribes ERROR: Failed to get user by Firebase UID %s: %v", firebaseUID, err)
 		response.GinNotFound(c, "User not found")
 		return
 	}
-
-	log.Printf("ListMyTribes: Found user with ID: %s", user.ID)
 
 	// Calculate offset
 	offset := (page - 1) * limit
 
 	// Get user tribes, filtering by type if specified
-	log.Printf("ListMyTribes: Getting tribes for user ID: %s", user.ID)
 	tribes, err := h.repos.Tribes.GetUserTribes(user.ID)
 	if err != nil {
-		log.Printf("ListMyTribes ERROR: Failed to get user tribes: %v", err)
 		response.GinInternalError(c, err)
 		return
 	}
 
-	log.Printf("ListMyTribes: Found %d tribes for user", len(tribes))
-
 	// If type filter is specified, filter the results
 	if tribeType != "" {
-		log.Printf("ListMyTribes: Filtering tribes by type: %s", tribeType)
 		filteredTribes := make([]*models.Tribe, 0)
 		for _, tribe := range tribes {
 			if tribe.Type == models.TribeType(tribeType) {
@@ -364,7 +341,6 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 			}
 		}
 		tribes = filteredTribes
-		log.Printf("ListMyTribes: %d tribes remain after filtering", len(tribes))
 	}
 
 	// Apply pagination to the results (since GetUserTribes doesn't support pagination directly)
@@ -392,7 +368,6 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 		}
 	}
 
-	log.Printf("ListMyTribes: Returning %d tribes after pagination", len(tribes))
 	response.GinSuccess(c, tribes)
 }
 
@@ -400,27 +375,21 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 func (h *TribeHandler) GetTribe(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		log.Printf("GetTribe ERROR: Invalid tribe ID format: %s - %v", c.Param("id"), err)
 		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
-	log.Printf("GetTribe: Looking up tribe with ID: %s", id)
 	tribe, err := h.repos.Tribes.GetByID(id)
 	if err != nil {
-		log.Printf("GetTribe ERROR: Failed to find tribe with ID %s: %v", id, err)
 		response.GinNotFound(c, "Tribe not found")
 		return
 	}
 
 	userID, err := getUserIDFromContext(c)
 	if err != nil {
-		log.Printf("GetTribe ERROR: Failed to get user ID from context: %v", err)
 		response.GinUnauthorized(c, "Authentication required")
 		return
 	}
-
-	log.Printf("GetTribe: Checking if user %s is a member of tribe %s", userID, id)
 
 	isMember := false
 	var currentMembership models.MembershipType
@@ -434,7 +403,6 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 	}
 
 	if !isMember {
-		log.Printf("GetTribe ERROR: User %s is not a member of tribe %s", userID, id)
 		response.GinNotFound(c, "Tribe not found")
 		return
 	}
@@ -452,7 +420,6 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 		return
 	}
 
-	log.Printf("GetTribe: Successfully retrieved tribe %s for user %s", id, userID)
 	response.GinSuccess(c, tribe)
 }
 
@@ -498,7 +465,6 @@ func (h *TribeHandler) UpdateTribe(c *gin.Context) {
 		case string:
 			userID, err = uuid.Parse(id)
 			if err != nil {
-				fmt.Printf("DEBUG: Failed to parse user ID string: %v\n", err)
 				response.GinInternalError(c, fmt.Errorf("failed to parse user ID"))
 				return
 			}
@@ -616,19 +582,15 @@ type AddMemberRequest struct {
 func (h *TribeHandler) AddMember(c *gin.Context) {
 	tribeID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		log.Printf("AddMember ERROR: Invalid tribe ID format: %s - %v", c.Param("id"), err)
 		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	var req AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("AddMember ERROR: Invalid request body: %v", err)
 		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
-
-	log.Printf("AddMember: Adding user %s to tribe %s", req.UserID, tribeID)
 
 	// Get the current user as the inviter
 	inviterID := c.GetString("user_id")
@@ -637,54 +599,39 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 		uid, err := uuid.Parse(inviterID)
 		if err == nil {
 			inviter = &uid
-			log.Printf("AddMember: Inviter user ID: %s", *inviter)
-		} else {
-			log.Printf("AddMember WARNING: Failed to parse inviter ID: %v", err)
 		}
-	} else {
-		log.Printf("AddMember WARNING: No inviter ID found in context")
 	}
 
 	// Check if user is already a member of the tribe
 	members, err := h.repos.Tribes.GetMembers(tribeID)
 	if err != nil {
 		if err.Error() == "tribe not found" {
-			log.Printf("AddMember ERROR: Tribe not found: %s", tribeID)
 			response.GinNotFound(c, "Tribe not found")
 			return
 		}
-		log.Printf("AddMember ERROR: Failed to get tribe members: %v", err)
 		response.GinInternalError(c, err)
 		return
 	}
 
-	log.Printf("AddMember: Retrieved %d members for tribe %s", len(members), tribeID)
-
 	for _, member := range members {
 		if member.UserID == req.UserID {
-			log.Printf("AddMember ERROR: User %s is already a member of tribe %s", req.UserID, tribeID)
 			response.GinBadRequest(c, "User is already a member of this tribe")
 			return
 		}
 	}
 
 	// Verify that the user exists
-	user, err := h.repos.Users.GetByID(req.UserID)
-	if err != nil {
-		log.Printf("AddMember ERROR: Failed to find user %s: %v", req.UserID, err)
+	if _, err := h.repos.Users.GetByID(req.UserID); err != nil {
 		response.GinBadRequest(c, "User not found")
 		return
 	}
-	log.Printf("AddMember: Found user %s (%s)", user.ID, user.Email)
 
 	// Add the user as a pending member
 	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
-		log.Printf("AddMember ERROR: Failed to add member to tribe: %v", err)
 		response.GinInternalError(c, err)
 		return
 	}
 
-	log.Printf("AddMember: Successfully added user %s to tribe %s as pending member", req.UserID, tribeID)
 	response.GinNoContent(c)
 }
 
@@ -728,7 +675,6 @@ func (h *TribeHandler) ListMembers(c *gin.Context) {
 			response.GinNotFound(c, "Tribe not found")
 			return
 		}
-		fmt.Printf("DEBUG: Error getting tribe members: %v\n", err)
 		response.GinInternalError(c, err)
 		return
 	}
