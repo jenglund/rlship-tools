@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import tribeService from '../services/tribeService';
+import InviteMemberModal from './InviteMemberModal';
+import PendingInvitationView from './PendingInvitationView';
+import { useAuth } from '../contexts/AuthContext';
 
 const DeleteConfirmationModal = ({ show, onClose, onConfirm, tribeName }) => {
   if (!show) return null;
@@ -34,12 +37,16 @@ const DeleteConfirmationModal = ({ show, onClose, onConfirm, tribeName }) => {
 const TribeDetailScreen = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   
   const [tribe, setTribe] = useState(null);
   const [members, setMembers] = useState([]);
+  const [currentUserMember, setCurrentUserMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviter, setInviter] = useState(null);
 
   useEffect(() => {
     const fetchTribeData = async () => {
@@ -54,6 +61,27 @@ const TribeDetailScreen = () => {
         // Get tribe members
         const membersData = await tribeService.getTribeMembers(id);
         setMembers(membersData);
+        
+        // Find the current user's membership
+        if (currentUser) {
+          const userMember = membersData.find(member => 
+            member.user && member.user.firebase_uid === currentUser.uid
+          );
+          
+          setCurrentUserMember(userMember);
+          
+          // If the user is a pending member, fetch the inviter's information
+          if (userMember && userMember.membership_type === 'pending' && userMember.invited_by) {
+            // Find the inviter in the members list
+            const inviterMember = membersData.find(member => 
+              member.user_id === userMember.invited_by
+            );
+            
+            if (inviterMember) {
+              setInviter(inviterMember.user);
+            }
+          }
+        }
       } catch (err) {
         console.error('Error fetching tribe data:', err);
         setError('Failed to load tribe information');
@@ -63,7 +91,7 @@ const TribeDetailScreen = () => {
     };
 
     fetchTribeData();
-  }, [id]);
+  }, [id, currentUser]);
 
   const handleDeleteClick = () => {
     setShowDeleteModal(true);
@@ -82,6 +110,33 @@ const TribeDetailScreen = () => {
 
   const handleBackClick = () => {
     navigate('/tribes');
+  };
+
+  const handleInviteClick = () => {
+    setShowInviteModal(true);
+  };
+
+  const handleInviteMember = async (email) => {
+    try {
+      // In a real application, you would:
+      // 1. Search for a user by email
+      // 2. Get their ID
+      // 3. Add them to the tribe
+      // For now, we'll assume a dummy ID for demonstration
+      const dummyUserId = "00000000-0000-0000-0000-000000000000"; // Replace with actual API call
+      
+      // Add the user to the tribe
+      await tribeService.addTribeMember(id, dummyUserId);
+      
+      // Refresh the member list
+      const membersData = await tribeService.getTribeMembers(id);
+      setMembers(membersData);
+      
+      return dummyUserId;
+    } catch (err) {
+      console.error('Error inviting member:', err);
+      throw err;
+    }
   };
 
   if (loading) {
@@ -110,6 +165,20 @@ const TribeDetailScreen = () => {
     );
   }
 
+  // If the user is a pending member, show the invitation view
+  if (currentUserMember && currentUserMember.membership_type === 'pending') {
+    return (
+      <div className="container tribe-detail-container">
+        <PendingInvitationView 
+          tribe={tribe} 
+          invitedBy={inviter}
+          invitedAt={currentUserMember.invited_at}
+        />
+      </div>
+    );
+  }
+
+  // Otherwise show the regular tribe view
   return (
     <div className="container tribe-detail-container">
       <div className="tribe-header">
@@ -117,9 +186,14 @@ const TribeDetailScreen = () => {
           &larr; Back
         </button>
         <h1>{tribe.name}</h1>
-        <button className="btn btn-danger" onClick={handleDeleteClick}>
-          Delete Tribe
-        </button>
+        <div className="tribe-actions">
+          <button className="btn btn-primary" onClick={handleInviteClick}>
+            Invite Member
+          </button>
+          <button className="btn btn-danger" onClick={handleDeleteClick}>
+            Delete Tribe
+          </button>
+        </div>
       </div>
 
       {tribe.description && (
@@ -136,8 +210,13 @@ const TribeDetailScreen = () => {
           <div className="members-list">
             {members.map(member => (
               <div key={member.id} className="member-card">
-                <h3>{member.user.name || member.display_name}</h3>
-                <p>{member.user.email}</p>
+                <div className="member-info">
+                  <h3>{member.user.name || member.display_name}</h3>
+                  <p>{member.user.email}</p>
+                  {member.membership_type === 'pending' && (
+                    <span className="badge pending-badge">Pending</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -149,6 +228,13 @@ const TribeDetailScreen = () => {
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleDeleteConfirm}
         tribeName={tribe.name}
+      />
+
+      <InviteMemberModal
+        show={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onInvite={handleInviteMember}
+        tribeId={id}
       />
     </div>
   );

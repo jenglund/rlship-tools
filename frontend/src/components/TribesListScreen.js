@@ -120,6 +120,17 @@ const TribesListScreen = () => {
   const handleTribeClick = (tribeId) => {
     navigate(`/tribes/${tribeId}`);
   };
+  
+  // Helper function to check if the current user is a pending member of a tribe
+  const checkIfPendingMember = (tribe) => {
+    if (!currentUser || !tribe.members) return false;
+    
+    const userMember = tribe.members.find(member => 
+      member.user && member.user.firebase_uid === currentUser.uid
+    );
+    
+    return userMember && userMember.membership_type === 'pending';
+  };
 
   return (
     <div className="container tribes-container">
@@ -154,21 +165,27 @@ const TribesListScreen = () => {
             </div>
           ) : (
             <div className="tribes-list">
-              {tribes.map(tribe => (
-                <div 
-                  key={tribe.id} 
-                  className="tribe-card"
-                  onClick={() => handleTribeClick(tribe.id)}
-                >
-                  <h3>{tribe.name}</h3>
-                  {tribe.description && <p>{tribe.description}</p>}
-                  <div className="tribe-meta">
-                    <small>
-                      {tribe.members ? tribe.members.length : 0} member{(tribe.members && tribe.members.length !== 1) ? 's' : ''}
-                    </small>
+              {tribes.map(tribe => {
+                const isPending = checkIfPendingMember(tribe);
+                return (
+                  <div 
+                    key={tribe.id} 
+                    className={`tribe-card ${isPending ? 'pending-tribe' : ''}`}
+                    onClick={() => handleTribeClick(tribe.id)}
+                  >
+                    <h3>
+                      {tribe.name}
+                      {isPending && <span className="pending-badge">PENDING</span>}
+                    </h3>
+                    {tribe.description && <p>{tribe.description}</p>}
+                    <div className="tribe-meta">
+                      <small>
+                        {tribe.members ? tribe.members.length : 0} member{(tribe.members && tribe.members.length !== 1) ? 's' : ''}
+                      </small>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>

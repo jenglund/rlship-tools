@@ -1,0 +1,2 @@
+-- No action needs to be taken for the down migration since these columns
+-- are part of the original schema and should remain 

@@ -259,6 +259,43 @@ func TestTribeMember_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid pending member",
+			tm: TribeMember{
+				BaseModel: BaseModel{
+					ID:        validID,
+					CreatedAt: now,
+					UpdatedAt: now,
+					Version:   1,
+				},
+				TribeID:        uuid.New(),
+				UserID:         uuid.New(),
+				MembershipType: MembershipPending,
+				DisplayName:    "Test Pending Member",
+				InvitedBy:      &validID,
+				InvitedAt:      &now,
+			},
+			wantErr: false,
+		},
+		{
+			name: "pending member with expiry (not required but allowed)",
+			tm: TribeMember{
+				BaseModel: BaseModel{
+					ID:        validID,
+					CreatedAt: now,
+					UpdatedAt: now,
+					Version:   1,
+				},
+				TribeID:        uuid.New(),
+				UserID:         uuid.New(),
+				MembershipType: MembershipPending,
+				DisplayName:    "Test Pending Member with Expiry",
+				ExpiresAt:      &future, // Not required for pending members, but allowed
+				InvitedBy:      &validID,
+				InvitedAt:      &now,
+			},
+			wantErr: false,
+		},
+		{
 			name: "full member with expiry (not required but allowed)",
 			tm: TribeMember{
 				BaseModel: BaseModel{

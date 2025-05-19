@@ -107,9 +107,29 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 
 	// Get members directly instead of using getMembersWithTx
 	membersQuery := `
-		SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
-			   tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
-			   u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
+		SELECT 
+			tm.id, 
+			tm.tribe_id, 
+			tm.user_id, 
+			tm.membership_type, 
+			COALESCE(tm.display_name, 'Member') as display_name, 
+			tm.expires_at, 
+			tm.invited_by,
+			tm.invited_at,
+			tm.metadata, 
+			tm.created_at, 
+			tm.updated_at, 
+			tm.deleted_at,
+			tm.version,
+			u.id as user_id,
+			u.firebase_uid, 
+			u.provider, 
+			u.email, 
+			u.name, 
+			u.avatar_url, 
+			u.last_login, 
+			u.created_at as user_created_at, 
+			u.updated_at as user_updated_at
 		FROM tribe_members tm
 		JOIN users u ON u.id = tm.user_id
 		WHERE tm.tribe_id = $1 AND tm.deleted_at IS NULL
@@ -124,8 +144,18 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 	var members []*models.TribeMember
 	for memberRows.Next() {
 		member := &models.TribeMember{
-			User: &models.User{},
+			Metadata: models.JSONMap{},
 		}
+		user := &models.User{}
+
+		var firebaseUID, provider, email, name, avatarURL sql.NullString
+		var lastLogin sql.NullTime
+		var userCreatedAt, userUpdatedAt time.Time
+		var version int
+		var userID uuid.UUID
+		var invitedBy sql.NullString
+		var invitedAt sql.NullTime
+
 		err := memberRows.Scan(
 			&member.ID,
 			&member.TribeID,
@@ -133,23 +163,74 @@ func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 			&member.MembershipType,
 			&member.DisplayName,
 			&member.ExpiresAt,
+			&invitedBy,
+			&invitedAt,
 			&member.Metadata,
 			&member.CreatedAt,
 			&member.UpdatedAt,
 			&member.DeletedAt,
-			&member.User.FirebaseUID,
-			&member.User.Provider,
-			&member.User.Email,
-			&member.User.Name,
-			&member.User.AvatarURL,
-			&member.User.LastLogin,
-			&member.User.CreatedAt,
-			&member.User.UpdatedAt,
+			&version,
+			&userID,
+			&firebaseUID,
+			&provider,
+			&email,
+			&name,
+			&avatarURL,
+			&lastLogin,
+			&userCreatedAt,
+			&userUpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error scanning tribe member row: %w", err)
 		}
-		member.User.ID = member.UserID
+
+		member.Version = version
+
+		// Handle invited_by as UUID
+		if invitedBy.Valid {
+			inviterID, err := uuid.Parse(invitedBy.String)
+			if err == nil {
+				member.InvitedBy = &inviterID
+			}
+		}
+
+		// Handle invited_at
+		if invitedAt.Valid {
+			member.InvitedAt = &invitedAt.Time
+		}
+
+		// Only set user properties if they're not null
+		if firebaseUID.Valid {
+			user.FirebaseUID = firebaseUID.String
+		}
+		if provider.Valid {
+			user.Provider = models.AuthProvider(provider.String)
+		}
+		if email.Valid {
+			user.Email = email.String
+		}
+		if name.Valid {
+			user.Name = name.String
+		}
+		if avatarURL.Valid {
+			user.AvatarURL = avatarURL.String
+		}
+		if lastLogin.Valid {
+			user.LastLogin = &lastLogin.Time
+		}
+
+		user.ID = userID // Use the explicitly retrieved user ID
+		user.CreatedAt = userCreatedAt
+		user.UpdatedAt = userUpdatedAt
+
+		// Ensure user.ID is set properly
+		if user.ID == uuid.Nil {
+			user.ID = member.UserID
+		}
+
+		// Attach the user object to the member
+		member.User = user
+
 		members = append(members, member)
 	}
 
@@ -377,57 +458,98 @@ func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 
 // AddMember adds a user to a tribe
 func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models.MembershipType, expiresAt *time.Time, invitedBy *uuid.UUID) error {
-	// Start transaction
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer safeClose(tx)
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	// Get user's name for display_name
-	var displayName sql.NullString
-	err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
-	if err != nil {
-		return fmt.Errorf("error getting user name: %w", err)
-	}
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Check if the columns exist first
+		var hasInvitedBy, hasInvitedAt bool
+		err := tx.QueryRow(`
+			SELECT 
+				COUNT(*) > 0 FROM information_schema.columns 
+				WHERE table_name = 'tribe_members' AND column_name = 'invited_by'
+		`).Scan(&hasInvitedBy)
+		if err != nil {
+			return fmt.Errorf("error checking for invited_by column: %w", err)
+		}
 
-	// Use displayName if valid, otherwise use a default name
-	finalDisplayName := "Member"
-	if displayName.Valid && displayName.String != "" {
-		finalDisplayName = displayName.String
-	}
+		err = tx.QueryRow(`
+			SELECT 
+				COUNT(*) > 0 FROM information_schema.columns 
+				WHERE table_name = 'tribe_members' AND column_name = 'invited_at'
+		`).Scan(&hasInvitedAt)
+		if err != nil {
+			return fmt.Errorf("error checking for invited_at column: %w", err)
+		}
 
-	query := `
-		INSERT INTO tribe_members (
-			id, tribe_id, user_id, membership_type, display_name,
-			expires_at, metadata, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		// Get user's name for display_name
+		var displayName sql.NullString
+		err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
+		if err != nil {
+			return fmt.Errorf("error getting user name: %w", err)
+		}
 
-	now := time.Now()
-	id := uuid.New()
+		// Use displayName if valid, otherwise use a default name
+		finalDisplayName := "Member"
+		if displayName.Valid && displayName.String != "" {
+			finalDisplayName = displayName.String
+		}
 
-	_, err = tx.Exec(
-		query,
-		id,
-		tribeID,
-		userID,
-		memberType,
-		finalDisplayName,
-		expiresAt,
-		models.JSONMap{},
-		now,
-		now,
-	)
-	if err != nil {
-		return fmt.Errorf("error adding tribe member: %w", err)
-	}
+		now := time.Now()
+		id := uuid.New()
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
+		var query string
+		var args []interface{}
 
-	return nil
+		if hasInvitedBy && hasInvitedAt {
+			// Use the columns if they exist
+			query = `
+				INSERT INTO tribe_members (
+					id, tribe_id, user_id, membership_type, display_name,
+					expires_at, metadata, created_at, updated_at, invited_by, invited_at
+				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+
+			args = []interface{}{
+				id,
+				tribeID,
+				userID,
+				memberType,
+				finalDisplayName,
+				expiresAt,
+				models.JSONMap{},
+				now,
+				now,
+				invitedBy,
+				now,
+			}
+		} else {
+			// Fall back to not using those columns if they don't exist
+			query = `
+				INSERT INTO tribe_members (
+					id, tribe_id, user_id, membership_type, display_name,
+					expires_at, metadata, created_at, updated_at
+				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+
+			args = []interface{}{
+				id,
+				tribeID,
+				userID,
+				memberType,
+				finalDisplayName,
+				expiresAt,
+				models.JSONMap{},
+				now,
+				now,
+			}
+		}
+
+		_, err = tx.Exec(query, args...)
+		if err != nil {
+			return fmt.Errorf("error adding tribe member: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // UpdateMember updates a member's type and expiration
@@ -527,9 +649,29 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 
 	// Get members directly with a query similar to other methods
 	membersQuery := `
-		SELECT tm.id, tm.tribe_id, tm.user_id, tm.membership_type, COALESCE(tm.display_name, 'Member') as display_name, 
-			   tm.expires_at, tm.metadata, tm.created_at, tm.updated_at, tm.deleted_at,
-			   u.firebase_uid, u.provider, u.email, u.name, u.avatar_url, u.last_login, u.created_at, u.updated_at
+		SELECT 
+			tm.id, 
+			tm.tribe_id, 
+			tm.user_id, 
+			tm.membership_type, 
+			COALESCE(tm.display_name, 'Member') as display_name, 
+			tm.expires_at, 
+			tm.invited_by,
+			tm.invited_at,
+			tm.metadata, 
+			tm.created_at, 
+			tm.updated_at, 
+			tm.deleted_at,
+			tm.version,
+			u.id as user_id,
+			u.firebase_uid, 
+			u.provider, 
+			u.email, 
+			u.name, 
+			u.avatar_url, 
+			u.last_login, 
+			u.created_at as user_created_at, 
+			u.updated_at as user_updated_at
 		FROM tribe_members tm
 		JOIN users u ON u.id = tm.user_id
 		WHERE tm.tribe_id = $1 AND tm.deleted_at IS NULL
@@ -544,8 +686,18 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 	var members []*models.TribeMember
 	for memberRows.Next() {
 		member := &models.TribeMember{
-			User: &models.User{},
+			Metadata: models.JSONMap{},
 		}
+		user := &models.User{}
+
+		var firebaseUID, provider, email, name, avatarURL sql.NullString
+		var lastLogin sql.NullTime
+		var userCreatedAt, userUpdatedAt time.Time
+		var version int
+		var userID uuid.UUID
+		var invitedBy sql.NullString
+		var invitedAt sql.NullTime
+
 		err := memberRows.Scan(
 			&member.ID,
 			&member.TribeID,
@@ -553,32 +705,82 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 			&member.MembershipType,
 			&member.DisplayName,
 			&member.ExpiresAt,
+			&invitedBy,
+			&invitedAt,
 			&member.Metadata,
 			&member.CreatedAt,
 			&member.UpdatedAt,
 			&member.DeletedAt,
-			&member.User.FirebaseUID,
-			&member.User.Provider,
-			&member.User.Email,
-			&member.User.Name,
-			&member.User.AvatarURL,
-			&member.User.LastLogin,
-			&member.User.CreatedAt,
-			&member.User.UpdatedAt,
+			&version,
+			&userID,
+			&firebaseUID,
+			&provider,
+			&email,
+			&name,
+			&avatarURL,
+			&lastLogin,
+			&userCreatedAt,
+			&userUpdatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning tribe member row: %w", err)
+			return nil, fmt.Errorf("error scanning tribe member: %w", err)
 		}
-		member.User.ID = member.UserID
+
+		member.Version = version
+
+		// Handle invited_by as UUID
+		if invitedBy.Valid {
+			inviterID, err := uuid.Parse(invitedBy.String)
+			if err == nil {
+				member.InvitedBy = &inviterID
+			}
+		}
+
+		// Handle invited_at
+		if invitedAt.Valid {
+			member.InvitedAt = &invitedAt.Time
+		}
+
+		// Only set user properties if they're not null
+		if firebaseUID.Valid {
+			user.FirebaseUID = firebaseUID.String
+		}
+		if provider.Valid {
+			user.Provider = models.AuthProvider(provider.String)
+		}
+		if email.Valid {
+			user.Email = email.String
+		}
+		if name.Valid {
+			user.Name = name.String
+		}
+		if avatarURL.Valid {
+			user.AvatarURL = avatarURL.String
+		}
+		if lastLogin.Valid {
+			user.LastLogin = &lastLogin.Time
+		}
+
+		user.ID = userID // Use the explicitly retrieved user ID
+		user.CreatedAt = userCreatedAt
+		user.UpdatedAt = userUpdatedAt
+
+		// Ensure user.ID is set properly
+		if user.ID == uuid.Nil {
+			user.ID = member.UserID
+		}
+
+		// Attach the user object to the member
+		member.User = user
+
 		members = append(members, member)
 	}
 
 	if err = memberRows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating tribe member rows: %w", err)
+		return nil, fmt.Errorf("error iterating tribe members: %w", err)
 	}
 
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
+	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("error committing transaction: %w", err)
 	}
 
@@ -597,8 +799,8 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 	query := `
 		SELECT 
 			id, tribe_id, user_id, membership_type,
-			display_name, expires_at, metadata,
-			created_at, updated_at, deleted_at
+			display_name, expires_at, invited_by, invited_at, metadata,
+			created_at, updated_at, deleted_at, version
 		FROM tribe_members
 		WHERE membership_type = 'guest'
 		AND expires_at < NOW()
@@ -613,6 +815,8 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 	var members []*models.TribeMember
 	for rows.Next() {
 		member := &models.TribeMember{}
+		var version int
+
 		err := rows.Scan(
 			&member.ID,
 			&member.TribeID,
@@ -620,14 +824,19 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 			&member.MembershipType,
 			&member.DisplayName,
 			&member.ExpiresAt,
+			&member.InvitedBy,
+			&member.InvitedAt,
 			&member.Metadata,
 			&member.CreatedAt,
 			&member.UpdatedAt,
 			&member.DeletedAt,
+			&version,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error scanning expired guest membership: %w", err)
 		}
+
+		member.Version = version
 		members = append(members, member)
 	}
 
@@ -703,9 +912,20 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 	// For each tribe, get its members in a separate query to avoid the parse error
 	for i, tribe := range tribes {
 		membersQuery := `
-			SELECT tm.id, tm.user_id, tm.tribe_id, COALESCE(tm.display_name, 'Member') as display_name, 
-				   tm.membership_type, tm.metadata, tm.expires_at,
-				   tm.created_at, tm.updated_at, tm.deleted_at, tm.version
+			SELECT 
+				tm.id, 
+				tm.user_id, 
+				tm.tribe_id, 
+				COALESCE(tm.display_name, 'Member') as display_name, 
+				tm.membership_type, 
+				tm.invited_by,
+				tm.invited_at,
+				tm.metadata, 
+				tm.expires_at,
+				tm.created_at, 
+				tm.updated_at, 
+				tm.deleted_at, 
+				tm.version
 			FROM tribe_members tm
 			WHERE tm.tribe_id = $1
 			AND tm.deleted_at IS NULL`
@@ -718,13 +938,14 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 
 		for memberRows.Next() {
 			member := &models.TribeMember{}
-
 			err := memberRows.Scan(
 				&member.ID,
 				&member.UserID,
 				&member.TribeID,
 				&member.DisplayName,
 				&member.MembershipType,
+				&member.InvitedBy,
+				&member.InvitedAt,
 				&member.Metadata,
 				&member.ExpiresAt,
 				&member.CreatedAt,
@@ -733,7 +954,6 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 				&member.Version,
 			)
 			if err != nil {
-				safeClose(memberRows)
 				return nil, fmt.Errorf("error scanning tribe member: %w", err)
 			}
 
@@ -743,10 +963,10 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		if err = memberRows.Err(); err != nil {
 			return nil, fmt.Errorf("error iterating tribe members: %w", err)
 		}
-		safeClose(memberRows)
 	}
 
-	if err = tx.Commit(); err != nil {
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("error committing transaction: %w", err)
 	}
 

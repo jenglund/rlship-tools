@@ -152,12 +152,67 @@ As a user, I want to land on a welcome page for Tribe, have the ability to log i
 8. Implement logout functionality
 9. Write tests for all components and flows
 
+## Tribe Membership Status Implementation
+
+### Overview
+Recently implemented a "pending" status for tribe members who have been invited but not yet accepted their invitation. This involved:
+
+1. **Model Updates**
+   - Added `MembershipPending` constant to the membership types
+   - Updated validation logic to handle pending members appropriately
+   - Expanded test coverage for the new status
+
+2. **Repository Layer**
+   - Updated `AddMember` method to add members with pending status by default
+   - Implemented functionality in `UpdateMember` to change status when invitation is accepted/rejected
+
+3. **Handler Layer**
+   - Created `RespondToInvitation` handler to process invitation responses
+   - Updated existing member-related handlers to account for pending status
+
+### Future Improvements
+1. **Test Coverage Expansion**
+   - Add more comprehensive tests for the membership status transitions
+   - Improve repository mock test coverage (currently at 0% for many methods)
+   - Ensure edge cases are properly tested (e.g., trying to downgrade a full member to pending)
+
+2. **User Experience Enhancements**
+   - Implement notifications for pending invitations
+   - Add ability to see pending invitations on user dashboard
+   - Create invitation email functionality
+
+3. **Security Improvements**
+   - Add rate limiting for invitation responses
+   - Implement expiration for pending invitations
+   - Add audit logging for membership status changes
+
+4. **Frontend Integration**
+   - Create UI components for displaying and managing invitations
+   - Implement invitation acceptance/rejection flows
+   - Show pending status in tribe member lists
+
+### Implementation Timeline
+1. Short-term (1-2 weeks):
+   - Complete test coverage improvements
+   - Fix any remaining bugs in the invitation flow
+
+2. Medium-term (2-4 weeks):
+   - Implement frontend components for invitation management
+   - Add notification system for pending invitations
+
+3. Long-term (1-2 months):
+   - Add invitation expiration functionality
+   - Implement email notifications for invitations
+   - Create comprehensive audit logging
+
 ## Backend Development Priorities
 
 1. **Enhance Database Operations**
    - Add transaction boundaries for multi-step operations
    - Improve error handling and reporting
    - Add database constraints (unique tribe names, etc.)
+   - Improve handling of database connections in tests to eliminate warning messages
+   - Add better transaction management to prevent "transaction already committed" warnings
 
 2. **API Enhancements**
    - Implement comprehensive request validation
@@ -176,6 +231,8 @@ As a user, I want to land on a welcome page for Tribe, have the ability to log i
    - Fix skipped tests in List Repository
    - Increase service layer test coverage (currently at 78.6%)
    - Add tests for sync-related models (currently 0% coverage)
+   - Address transaction-related test issues that cause some tests to be skipped
+   - Improve the database test utilities to better handle connection lifecycle
 
 5. **Advanced Features**
    - Implement per-tribe display names

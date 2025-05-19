@@ -115,6 +115,31 @@ const tribeService = {
       console.error(`Error removing member from tribe ${tribeId}:`, error);
       throw error;
     }
+  },
+
+  // Respond to a tribe invitation (accept or reject)
+  respondToInvitation: async (tribeId, action) => {
+    try {
+      const response = await axios.post(
+        `${API_URL}/tribes/${tribeId}/respond`,
+        { action },
+        { headers: getAuthHeader() }
+      );
+      return response.data.data;
+    } catch (error) {
+      console.error(`Error responding to invitation for tribe ${tribeId}:`, error);
+      throw error;
+    }
+  },
+
+  // Accept a tribe invitation
+  acceptInvitation: async (tribeId) => {
+    return tribeService.respondToInvitation(tribeId, 'accept');
+  },
+
+  // Reject a tribe invitation
+  rejectInvitation: async (tribeId) => {
+    return tribeService.respondToInvitation(tribeId, 'reject');
   }
 };
 

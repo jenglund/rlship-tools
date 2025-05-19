@@ -44,3 +44,32 @@ This document tracks the current known issues in the Tribe project that need to 
   - `TestListRepository_GetListShares/multiple_versions`
 - **Status**: To be addressed in future test coverage improvements
 - **Priority**: Medium 
+
+### Mock Repository Coverage Gaps
+- The mock tribe repository implementation in `internal/testutil/mock_repositories.go` has several methods with 0% coverage:
+  - `AddMember`, `UpdateMember`, `RemoveMember`, `GetMembers`, `GetUserTribes`, `GetExpiredGuestMemberships`
+  - `ShareWithTribe`, `UnshareWithTribe`
+- **Resolution Plan**: Add tests that use these mock methods to improve coverage.
+- **Priority**: Medium
+
+### Repository Method Coverage Improvements
+- Several repository methods have coverage below 80%:
+  - `GetSharedTribes` (0.0%)
+  - `GetByID` (30.6%)
+  - `List` (64.1%)
+- **Resolution Plan**: Expand tests to cover more edge cases and error conditions.
+- **Priority**: Medium 
+
+### Database Test Warning Messages
+- **Issue**: The backend tests produce several warning messages:
+  - `Error closing resource: sql: transaction has already been committed or rolled back`
+  - `Error closing resource: all expectations were already fulfilled, call to database Close was not expected`
+- **Status**: These warnings are informational and don't affect test functionality or results.
+- **Priority**: Low
+
+## Recently Fixed Issues
+
+### Data Race in Database Tests
+- **Issue**: There was a data race in the `TestDatabaseErrors/concurrent_database_operations` test due to improper mutex usage.
+- **Resolution**: Fixed by improving the concurrent database operations test to use proper synchronization and thread-safe patterns.
+- **Fixed Date**: May 18, 2025 

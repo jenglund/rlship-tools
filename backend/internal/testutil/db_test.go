@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -439,47 +440,59 @@ func TestDatabaseErrors(t *testing.T) {
 		`)
 		require.NoError(t, err)
 
-		// Run concurrent writes with transaction retries
+		// Run concurrent writes
 		const numGoroutines = 10
-		done := make(chan bool, numGoroutines)
+		var wg sync.WaitGroup
+		var errorsMu sync.Mutex
+		errors := make([]string, 0)
 
 		for i := 0; i < numGoroutines; i++ {
-			go func(val int) {
-				defer func() { done <- true }()
+			wg.Add(1)
+			i := i // Create a new i for each goroutine
 
-				maxRetries := 3
-				for retry := 0; retry < maxRetries; retry++ {
-					tx, txErr := db.Begin()
-					require.NoError(t, txErr)
+			go func() {
+				defer wg.Done()
 
-					_, err = tx.Exec("INSERT INTO concurrent_write_test (value) VALUES ($1)", fmt.Sprintf("value-%d", val))
-					if err != nil {
-						safeClose(tx)
-						if retry < maxRetries-1 {
-							time.Sleep(10 * time.Millisecond)
-							continue
-						}
-						t.Errorf("Failed to insert after %d retries: %v", maxRetries, err)
-						return
-					}
-
-					err = tx.Commit()
-					if err != nil {
-						if retry < maxRetries-1 {
-							time.Sleep(10 * time.Millisecond)
-							continue
-						}
-						t.Errorf("Failed to commit after %d retries: %v", maxRetries, err)
-						return
-					}
-					break
+				// Use a separate connection for each goroutine to avoid interference
+				connStr := getPostgresConnection(currentTestDBName)
+				connDB, err := sql.Open("postgres", connStr)
+				if err != nil {
+					errorsMu.Lock()
+					errors = append(errors, fmt.Sprintf("Failed to open DB connection: %v", err))
+					errorsMu.Unlock()
+					return
 				}
-			}(i)
+				defer safeClose(connDB)
+
+				// Execute insert with retries
+				var success bool
+				for retry := 0; retry < 3; retry++ {
+					_, err := connDB.Exec("INSERT INTO concurrent_write_test (value) VALUES ($1)", fmt.Sprintf("value-%d", i))
+					if err == nil {
+						success = true
+						break
+					}
+
+					// Wait before retrying
+					time.Sleep(10 * time.Millisecond)
+				}
+
+				if !success {
+					errorsMu.Lock()
+					errors = append(errors, fmt.Sprintf("Failed to insert value-%d after retries", i))
+					errorsMu.Unlock()
+				}
+			}()
 		}
 
 		// Wait for all goroutines to complete
-		for i := 0; i < numGoroutines; i++ {
-			<-done
+		wg.Wait()
+
+		// Check for errors
+		if len(errors) > 0 {
+			for _, err := range errors {
+				t.Error(err)
+			}
 		}
 
 		// Verify all insertions

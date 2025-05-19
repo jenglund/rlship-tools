@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -45,6 +46,35 @@ func defaultConfigLoader() (*config.Config, error) {
 	return config.Load()
 }
 
+// findMigrationsPath finds the migrations directory by trying several possible locations
+func findMigrationsPath() (string, error) {
+	// Get current working directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("error getting working directory: %v", err)
+	}
+	log.Printf("Current working directory: %s", wd)
+
+	// Try various possible locations
+	possiblePaths := []string{
+		filepath.Join(wd, "migrations"),         // If we're in backend/
+		filepath.Join(wd, "../../migrations"),   // If we're in backend/cmd/migrate/
+		filepath.Join(wd, "../migrations"),      // If we're in backend/cmd/
+		filepath.Join(wd, "backend/migrations"), // If we're in project root
+	}
+
+	for _, path := range possiblePaths {
+		// Check if directory exists
+		if _, err := os.Stat(path); err == nil {
+			// Found the directory
+			log.Printf("Found migrations at: %s", path)
+			return fmt.Sprintf("file://%s", path), nil
+		}
+	}
+
+	return "", fmt.Errorf("could not find migrations directory in any expected location")
+}
+
 // runMigrations handles the migration logic
 func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoader) error {
 	if len(args) < 2 {
@@ -80,7 +110,14 @@ func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoa
 		factory = defaultMigrateFactory
 	}
 
-	m, err := factory("file://migrations", cfg.Database.URL)
+	// Find the migrations path
+	migrationsPath, err := findMigrationsPath()
+	if err != nil {
+		return fmt.Errorf("error finding migrations path: %v", err)
+	}
+	log.Printf("Using migrations path: %s", migrationsPath)
+
+	m, err := factory(migrationsPath, cfg.Database.URL)
 	if err != nil {
 		return fmt.Errorf("error creating migrate instance: %v", err)
 	}

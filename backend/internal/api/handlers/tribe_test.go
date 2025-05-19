@@ -1737,7 +1737,7 @@ func TestAddMember(t *testing.T) {
 				for _, member := range members {
 					if member.UserID == newUser.ID {
 						found = true
-						assert.Equal(t, models.MembershipFull, member.MembershipType, "Membership level should match")
+						assert.Equal(t, models.MembershipPending, member.MembershipType, "Membership level should match")
 						break
 					}
 				}
@@ -2098,7 +2098,7 @@ func TestListMembers(t *testing.T) {
 			name:           "error - tribe not found",
 			tribeID:        uuid.New(), // Random non-existent UUID
 			usesMock:       false,
-			wantStatusCode: http.StatusInternalServerError, // Because GetMembers returns internal error for non-existent tribe
+			wantStatusCode: http.StatusNotFound, // Changed from http.StatusInternalServerError
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
 				var response struct {
 					Success bool `json:"success"`
@@ -2110,8 +2110,8 @@ func TestListMembers(t *testing.T) {
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 				assert.False(t, response.Success, "Response should indicate failure")
-				assert.Equal(t, "INTERNAL_ERROR", response.Error.Code, "Error code should be INTERNAL_ERROR")
-				assert.NotEmpty(t, response.Error.Message, "Error message should be set")
+				assert.Equal(t, "NOT_FOUND", response.Error.Code, "Error code should be NOT_FOUND")
+				assert.Equal(t, "Tribe not found", response.Error.Message, "Error message should indicate tribe not found")
 			},
 		},
 	}
@@ -2826,6 +2826,218 @@ func TestCreateTribeDatabaseErrors(t *testing.T) {
 			// Run additional validations if provided
 			if tt.validate != nil {
 				tt.validate(t, w.Body.Bytes())
+			}
+		})
+	}
+}
+
+func TestRespondToInvitation(t *testing.T) {
+	_, repos, testUser := setupTribeTest(t)
+
+	// Create test tribe
+	tribe := &models.Tribe{
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Test Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
+	}
+	err := repos.Tribes.Create(tribe)
+	require.NoError(t, err)
+
+	// Add another user in pending status
+	pendingUser := testutil.CreateTestUser(t, repos.DB())
+	err = repos.Tribes.AddMember(tribe.ID, pendingUser.ID, models.MembershipPending, nil, &testUser.ID)
+	require.NoError(t, err)
+
+	// Add regular full member
+	fullMember := testutil.CreateTestUser(t, repos.DB())
+	err = repos.Tribes.AddMember(tribe.ID, fullMember.ID, models.MembershipFull, nil, &testUser.ID)
+	require.NoError(t, err)
+
+	// Add another pending member (for additional test cases)
+	anotherPendingUser := testutil.CreateTestUser(t, repos.DB())
+	err = repos.Tribes.AddMember(tribe.ID, anotherPendingUser.ID, models.MembershipPending, nil, &testUser.ID)
+	require.NoError(t, err)
+
+	// Create a new tribe for invalid test cases
+	anotherTribe := &models.Tribe{
+		BaseModel: models.BaseModel{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Version:   1,
+		},
+		Name:       "Another Tribe",
+		Type:       models.TribeTypeCustom,
+		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{},
+	}
+	err = repos.Tribes.Create(anotherTribe)
+	require.NoError(t, err)
+
+	// Set up mock Firebase auth for different users
+	validAuthSetupForPendingUser := func(c *gin.Context) {
+		c.Set("firebase_uid", pendingUser.FirebaseUID)
+		c.Set("user_id", pendingUser.ID.String())
+	}
+
+	validAuthSetupForFullMember := func(c *gin.Context) {
+		c.Set("firebase_uid", fullMember.FirebaseUID)
+		c.Set("user_id", fullMember.ID.String())
+	}
+
+	validAuthSetupForNonMember := func(c *gin.Context) {
+		c.Set("firebase_uid", "non-member-uid")
+		// No user ID set
+	}
+
+	// Setup required helper function for another pending user
+	validAuthSetupForAnotherPendingUser := func(c *gin.Context) {
+		c.Set("firebase_uid", anotherPendingUser.FirebaseUID)
+		c.Set("user_id", anotherPendingUser.ID.String())
+	}
+
+	tests := []struct {
+		name           string
+		tribeID        string
+		requestBody    map[string]string
+		authSetup      func(c *gin.Context)
+		wantStatus     int
+		wantMembership models.MembershipType
+		wantRemoved    bool
+	}{
+		{
+			name:           "accept invitation",
+			tribeID:        tribe.ID.String(),
+			requestBody:    map[string]string{"action": "accept"},
+			authSetup:      validAuthSetupForPendingUser,
+			wantStatus:     http.StatusOK,
+			wantMembership: models.MembershipFull,
+			wantRemoved:    false,
+		},
+		{
+			name:        "reject invitation",
+			tribeID:     tribe.ID.String(),
+			requestBody: map[string]string{"action": "reject"},
+			authSetup:   validAuthSetupForAnotherPendingUser,
+			wantStatus:  http.StatusOK,
+			wantRemoved: true,
+		},
+		{
+			name:        "user is not a member",
+			tribeID:     tribe.ID.String(),
+			requestBody: map[string]string{"action": "accept"},
+			authSetup:   validAuthSetupForNonMember,
+			wantStatus:  http.StatusNotFound, // because user won't be found
+			wantRemoved: false,
+		},
+		{
+			name:        "user is already a full member",
+			tribeID:     tribe.ID.String(),
+			requestBody: map[string]string{"action": "accept"},
+			authSetup:   validAuthSetupForFullMember,
+			wantStatus:  http.StatusBadRequest, // because membership not pending
+			wantRemoved: false,
+		},
+		{
+			name:        "invalid tribe ID",
+			tribeID:     "invalid-uuid",
+			requestBody: map[string]string{"action": "accept"},
+			authSetup:   validAuthSetupForPendingUser,
+			wantStatus:  http.StatusBadRequest,
+			wantRemoved: false,
+		},
+		{
+			name:        "tribe does not exist",
+			tribeID:     uuid.New().String(),
+			requestBody: map[string]string{"action": "accept"},
+			authSetup:   validAuthSetupForPendingUser,
+			wantStatus:  http.StatusInternalServerError, // because GetMembers will error
+			wantRemoved: false,
+		},
+		{
+			name:        "invalid action",
+			tribeID:     tribe.ID.String(),
+			requestBody: map[string]string{"action": "invalid"},
+			authSetup:   validAuthSetupForPendingUser,
+			wantStatus:  http.StatusBadRequest,
+			wantRemoved: false,
+		},
+		{
+			name:        "missing action",
+			tribeID:     tribe.ID.String(),
+			requestBody: map[string]string{},
+			authSetup:   validAuthSetupForPendingUser,
+			wantStatus:  http.StatusBadRequest,
+			wantRemoved: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a request with the test data
+			reqBody, err := json.Marshal(tt.requestBody)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/tribes/tribes/"+tt.tribeID+"/respond", bytes.NewBuffer(reqBody))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			// Create a context for this test with the auth setup
+			c, _ := gin.CreateTestContext(w)
+			c.Request = req
+			c.Params = gin.Params{
+				gin.Param{Key: "id", Value: tt.tribeID},
+			}
+			tt.authSetup(c)
+
+			// Call the handler directly
+			h := &TribeHandler{repos: repos}
+			h.RespondToInvitation(c)
+
+			// Verify the response
+			assert.Equal(t, tt.wantStatus, w.Code)
+
+			if tt.wantStatus == http.StatusOK {
+				// Verify that action was properly applied
+				members, err := repos.Tribes.GetMembers(uuid.MustParse(tt.tribeID))
+				require.NoError(t, err)
+
+				// Get member's ID from auth context
+				userIDStr, exists := c.Get("user_id")
+				require.True(t, exists)
+
+				userID, err := uuid.Parse(userIDStr.(string))
+				require.NoError(t, err)
+
+				if tt.wantRemoved {
+					// Check member was removed
+					memberFound := false
+					for _, member := range members {
+						if member.UserID == userID {
+							memberFound = true
+							break
+						}
+					}
+					assert.False(t, memberFound, "Member should have been removed")
+				} else {
+					// Check member has correct membership type
+					memberFound := false
+					for _, member := range members {
+						if member.UserID == userID {
+							memberFound = true
+							assert.Equal(t, tt.wantMembership, member.MembershipType)
+							break
+						}
+					}
+					assert.True(t, memberFound, "Member should still exist")
+				}
 			}
 		})
 	}

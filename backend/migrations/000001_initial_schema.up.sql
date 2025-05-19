@@ -22,7 +22,7 @@ CREATE TYPE sync_status AS ENUM ('none', 'pending', 'synced', 'conflict');
 CREATE TYPE sync_source AS ENUM ('none', 'google_maps', 'manual', 'imported', '', 'unknown_source');
 CREATE TYPE activity_type AS ENUM ('location', 'interest', 'list', 'custom', 'activity', 'event');
 CREATE TYPE owner_type AS ENUM ('user', 'tribe');
-CREATE TYPE membership_type AS ENUM ('full', 'limited', 'guest');
+CREATE TYPE membership_type AS ENUM ('full', 'limited', 'guest', 'pending');
 
 -- Create users table
 CREATE TABLE users (
@@ -64,6 +64,8 @@ CREATE TABLE tribe_members (
     membership_type membership_type NOT NULL DEFAULT 'full',
     display_name TEXT NOT NULL DEFAULT 'Member',
     expires_at TIMESTAMP WITH TIME ZONE,
+    invited_by UUID REFERENCES users(id),
+    invited_at TIMESTAMP WITH TIME ZONE,
     metadata JSONB NOT NULL DEFAULT '{}' CHECK (metadata IS NOT NULL AND metadata != 'null'::jsonb),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -210,6 +212,19 @@ CREATE TABLE sync_conflicts (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create list_conflicts table
+CREATE TABLE list_conflicts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    list_id UUID NOT NULL REFERENCES lists(id),
+    type TEXT NOT NULL,
+    local_data JSONB NOT NULL,
+    remote_data JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
 -- Create indexes
 CREATE INDEX idx_users_firebase_uid ON users(firebase_uid);
 CREATE INDEX idx_users_email ON users(email);
@@ -225,6 +240,7 @@ CREATE INDEX idx_activity_photos_activity_id ON activity_photos(activity_id);
 CREATE INDEX idx_activity_shares_activity_id ON activity_shares(activity_id);
 CREATE INDEX idx_list_sharing_list_id ON list_sharing(list_id);
 CREATE INDEX idx_sync_conflicts_list_id ON sync_conflicts(list_id);
+CREATE INDEX idx_list_conflicts_list_id ON list_conflicts(list_id);
 
 -- Create test database role if it doesn't exist
 DO $$
@@ -321,14 +337,22 @@ CREATE TRIGGER increment_list_sharing_version
     FOR EACH ROW
     EXECUTE FUNCTION increment_version();
 
--- Create list owner validation function and trigger
+CREATE TRIGGER update_list_conflicts_updated_at
+    BEFORE UPDATE ON list_conflicts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 CREATE OR REPLACE FUNCTION validate_list_owner()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.owner_type = 'user' AND NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
-        RAISE EXCEPTION 'User with ID % does not exist', NEW.owner_id;
-    ELSIF NEW.owner_type = 'tribe' AND NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
-        RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
+    IF NEW.owner_type = 'user' THEN
+        IF NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
+            RAISE EXCEPTION 'User with ID % does not exist', NEW.owner_id;
+        END IF;
+    ELSIF NEW.owner_type = 'tribe' THEN
+        IF NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
+            RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -339,14 +363,17 @@ CREATE TRIGGER validate_list_owner_trigger
     FOR EACH ROW
     EXECUTE FUNCTION validate_list_owner();
 
--- Create activity owner validation function and trigger
 CREATE OR REPLACE FUNCTION validate_activity_owner()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.owner_type = 'user' AND NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
-        RAISE EXCEPTION 'User with ID % does not exist', NEW.owner_id;
-    ELSIF NEW.owner_type = 'tribe' AND NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
-        RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
+    IF NEW.owner_type = 'user' THEN
+        IF NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.owner_id) THEN
+            RAISE EXCEPTION 'User with ID % does not exist', NEW.owner_id;
+        END IF;
+    ELSIF NEW.owner_type = 'tribe' THEN
+        IF NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
+            RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -357,7 +384,6 @@ CREATE TRIGGER validate_activity_owner_trigger
     FOR EACH ROW
     EXECUTE FUNCTION validate_activity_owner();
 
--- Create updated_at trigger for activity_owners
 CREATE TRIGGER update_activity_owners_updated_at
     BEFORE UPDATE ON activity_owners
     FOR EACH ROW

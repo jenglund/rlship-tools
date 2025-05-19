@@ -38,11 +38,12 @@ const (
 	MembershipFull    MembershipType = "full"    // Full member with all privileges
 	MembershipLimited MembershipType = "limited" // Limited access member
 	MembershipGuest   MembershipType = "guest"   // Temporary guest access
+	MembershipPending MembershipType = "pending" // Invited but not yet accepted
 )
 
 func (m MembershipType) Validate() error {
 	switch m {
-	case MembershipFull, MembershipLimited, MembershipGuest:
+	case MembershipFull, MembershipLimited, MembershipGuest, MembershipPending:
 		return nil
 	default:
 		return fmt.Errorf("%w: invalid membership type: %s", ErrInvalidInput, m)
@@ -122,6 +123,8 @@ type TribeMember struct {
 	MembershipType MembershipType `json:"membership_type" db:"membership_type"`
 	DisplayName    string         `json:"display_name" db:"display_name"`
 	ExpiresAt      *time.Time     `json:"expires_at,omitempty" db:"expires_at"`
+	InvitedBy      *uuid.UUID     `json:"invited_by,omitempty" db:"invited_by"`
+	InvitedAt      *time.Time     `json:"invited_at,omitempty" db:"invited_at"`
 	Metadata       JSONMap        `json:"metadata,omitempty" db:"metadata"`
 	User           *User          `json:"user,omitempty" db:"-"`
 }

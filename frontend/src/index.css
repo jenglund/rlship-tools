@@ -254,25 +254,27 @@ code {
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.5);
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   z-index: 1000;
 }
 
 .modal-content {
   background-color: white;
   border-radius: 0.5rem;
-  width: 90%;
+  padding: 1rem;
   max-width: 500px;
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  width: 100%;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
 }
 
 .modal-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 1rem;
+  align-items: center;
   border-bottom: 1px solid #e9ecef;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
 }
 
 .modal-header h3 {
@@ -285,11 +287,11 @@ code {
 
 .modal-footer {
   display: flex;
-  align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-  padding: 1rem;
   border-top: 1px solid #e9ecef;
+  padding-top: 1rem;
+  margin-top: 1rem;
 }
 
 .close-btn {
@@ -297,24 +299,30 @@ code {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
+  color: #6c757d;
+}
+
+.close-btn:hover {
+  color: #343a40;
 }
 
 .alert {
-  padding: 1rem;
+  padding: 0.75rem 1.25rem;
   margin-bottom: 1rem;
+  border: 1px solid transparent;
   border-radius: 0.25rem;
 }
 
 .alert-danger {
-  background-color: #f8d7da;
   color: #721c24;
-  border: 1px solid #f5c6cb;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
 }
 
-.alert-warning {
-  background-color: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffeeba;
+.alert-success {
+  color: #155724;
+  background-color: #d4edda;
+  border-color: #c3e6cb;
 }
 
 .splash-container {
@@ -344,4 +352,75 @@ code {
 .tribe-card p {
   margin-bottom: 1rem;
   color: #666;
+}
+
+/* Pending tribe styles */
+.pending-tribe {
+  border-left: 4px solid #ffc107;
+}
+
+.pending-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: bold;
+  background-color: #ffc107;
+  color: #212529;
+  border-radius: 0.25rem;
+  vertical-align: middle;
+}
+
+.tribe-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Pending invitation view styles */
+.pending-invitation-container {
+  background-color: white;
+  border-radius: 0.5rem;
+  padding: 2rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  max-width: 600px;
+  margin: 2rem auto;
+}
+
+.invitation-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.invitation-details {
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 0.25rem;
+}
+
+.invitation-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.abuse-report-btn {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+/* Member info styles */
+.member-info {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.member-info h3 {
+  margin-bottom: 0.25rem;
+}
+
+.member-info p {
+  margin-bottom: 0.5rem;
+  color: #6c757d;
 } 

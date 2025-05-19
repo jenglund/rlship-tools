@@ -39,6 +39,9 @@ func (h *TribeHandler) RegisterRoutes(r *gin.RouterGroup) {
 		tribes.POST("/:id/members", h.AddMember)
 		tribes.DELETE("/:id/members/:userId", h.RemoveMember)
 		tribes.GET("/:id/members", h.ListMembers)
+
+		// Invitation response
+		tribes.POST("/:id/respond", h.RespondToInvitation)
 	}
 }
 
@@ -567,7 +570,8 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 		}
 	}
 
-	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipFull, nil, inviter); err != nil {
+	// Add the user as a pending member
+	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
 		response.GinInternalError(c, err)
 		return
 	}
@@ -605,11 +609,115 @@ func (h *TribeHandler) ListMembers(c *gin.Context) {
 		return
 	}
 
+	// Check if the request includes the include_users query parameter
+	includeUsers := c.Query("include_users") == "true"
+
+	// Get the members
+	members, err := h.repos.Tribes.GetMembers(tribeID)
+	if err != nil {
+		if err.Error() == "tribe not found" {
+			response.GinNotFound(c, "Tribe not found")
+			return
+		}
+		fmt.Printf("DEBUG: Error getting tribe members: %v\n", err)
+		response.GinInternalError(c, err)
+		return
+	}
+
+	// If include_users flag is not set, remove sensitive user data
+	if !includeUsers {
+		// Create a response with limited user info
+		for i := range members {
+			if members[i].User != nil {
+				// Create a copy with minimal information
+				members[i].User = &models.User{
+					ID:        members[i].User.ID,
+					Name:      members[i].User.Name,
+					AvatarURL: members[i].User.AvatarURL,
+				}
+			}
+		}
+	}
+
+	response.GinSuccess(c, members)
+}
+
+// InvitationResponse represents the response to a tribe invitation
+type InvitationResponse struct {
+	Action string `json:"action" binding:"required"` // "accept" or "reject"
+}
+
+// RespondToInvitation handles a user's response to a tribe invitation
+func (h *TribeHandler) RespondToInvitation(c *gin.Context) {
+	tribeID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.GinBadRequest(c, "Invalid tribe ID")
+		return
+	}
+
+	var req InvitationResponse
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.GinBadRequest(c, "Invalid request body")
+		return
+	}
+
+	// Validate the action
+	if req.Action != "accept" && req.Action != "reject" {
+		response.GinBadRequest(c, "Action must be either 'accept' or 'reject'")
+		return
+	}
+
+	// Get current user
+	firebaseUID := middleware.GetFirebaseUID(c)
+	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
+	if err != nil {
+		response.GinNotFound(c, "User not found")
+		return
+	}
+
+	// Check if user is a pending member of the tribe
 	members, err := h.repos.Tribes.GetMembers(tribeID)
 	if err != nil {
 		response.GinInternalError(c, err)
 		return
 	}
 
-	response.GinSuccess(c, members)
+	var isMember bool
+	var isPending bool
+
+	for _, member := range members {
+		if member.UserID == user.ID {
+			isMember = true
+			isPending = member.MembershipType == models.MembershipPending
+			break
+		}
+	}
+
+	if !isMember {
+		response.GinForbidden(c, "You are not a member of this tribe")
+		return
+	}
+
+	if !isPending {
+		response.GinBadRequest(c, "Your membership is not in pending state")
+		return
+	}
+
+	if req.Action == "accept" {
+		// Update membership type to full
+		err = h.repos.Tribes.UpdateMember(tribeID, user.ID, models.MembershipFull, nil)
+		if err != nil {
+			response.GinInternalError(c, err)
+			return
+		}
+		response.GinSuccess(c, gin.H{"message": "Invitation accepted"})
+	} else {
+		// Remove user from tribe
+		err = h.repos.Tribes.RemoveMember(tribeID, user.ID)
+		if err != nil {
+			response.GinInternalError(c, err)
+			return
+		}
+		response.GinSuccess(c, gin.H{"message": "Invitation rejected"})
+	}
 }
