@@ -279,6 +279,7 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	// Store current schema name for cleanup - with mutex protection
 	currentDBMutex.Lock()
 	currentTestDBName = schemaName
+	fmt.Printf("SetupTestDB: Setting current test schema to %s\n", schemaName)
 	currentDBMutex.Unlock()
 
 	// Connect to existing database
@@ -322,10 +323,23 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	}
 
 	// Set search path to our test schema
-	_, err = db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+	_, err = db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error setting search path: %v", err))
+	}
+
+	// Verify search path was properly set
+	var searchPath string
+	err = db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+	if err != nil {
+		safeClose(db)
+		panic(fmt.Sprintf("Error verifying search path: %v", err))
+	}
+	t.Logf("Initial search_path set to: %s", searchPath)
+	if !strings.Contains(searchPath, schemaName) {
+		safeClose(db)
+		panic(fmt.Sprintf("Failed to set correct search path: expected %s in %s", schemaName, searchPath))
 	}
 
 	// Run migrations
@@ -347,6 +361,18 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	if err := runMigrations(t, dbName, schemaName, migrationsPath); err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error running migrations: %v", err))
+	}
+
+	// After migrations, verify schema is still correctly set
+	err = db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+	if err != nil {
+		safeClose(db)
+		panic(fmt.Sprintf("Error verifying search path after migrations: %v", err))
+	}
+	t.Logf("Post-migration search_path: %s", searchPath)
+	if !strings.Contains(searchPath, schemaName) {
+		safeClose(db)
+		panic(fmt.Sprintf("Search path lost after migrations: expected %s in %s", schemaName, searchPath))
 	}
 
 	// Create wrapped DB with schema handling
@@ -562,18 +588,37 @@ func UnwrapDB(db *SchemaDB) *sql.DB {
 
 	// Lock to prevent concurrent schema changes
 	db.mu.Lock()
+	// Store the schema name in the global variable so it can be retrieved when needed
+	// This must be done BEFORE calling db.DB.ExecContext to avoid race conditions
+	currentDBMutex.Lock()
+	schemaName := db.schemaName
+	currentTestDBName = schemaName
+	currentDBMutex.Unlock()
+
 	// Set search path on the DB connection
-	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
 	db.mu.Unlock()
 
 	if err != nil {
 		// Log the error but continue
 		log.Printf("Warning: Failed to set search path in UnwrapDB: %v", err)
-	}
+	} else {
+		log.Printf("UnwrapDB: Set current schema to %s", schemaName)
 
-	// Store the schema name in the global variable so it can be retrieved when needed
-	currentTestDBName = db.schemaName
-	log.Printf("UnwrapDB: Set current schema to %s", db.schemaName)
+		// Debug verify the search_path was set correctly
+		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer verifyCancel()
+
+		var actualPath string
+		err = db.DB.QueryRowContext(verifyCtx, "SHOW search_path").Scan(&actualPath)
+		if err != nil {
+			log.Printf("Warning: Failed to verify search_path in UnwrapDB: %v", err)
+		} else if !strings.Contains(actualPath, schemaName) {
+			log.Printf("Warning: Schema mismatch after UnwrapDB: got %s, expected %s", actualPath, schemaName)
+		} else {
+			log.Printf("UnwrapDB: Verified search_path contains %s: %s", schemaName, actualPath)
+		}
+	}
 
 	return db.DB
 }

@@ -107,7 +107,8 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		// 2. Otherwise, get the current search_path from the connection
 		if testSchema != "" {
 			// We're running in a test, set the test schema
-			_, err = tx.ExecContext(configCtx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(testSchema)))
+			// Be more explicit with search_path to avoid public schema being included first
+			_, err = tx.ExecContext(configCtx, fmt.Sprintf("SET LOCAL search_path TO %s, public", pq.QuoteIdentifier(testSchema)))
 			if err != nil {
 				configCancel()
 				safeClose(tx)

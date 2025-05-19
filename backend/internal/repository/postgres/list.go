@@ -199,6 +199,11 @@ func (r *ListRepository) validateAndSetOwners(list *models.List) error {
 
 // loadListData loads all related data for a list
 func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("loadListData: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
+
 	// Load items
 	itemsQuery := `
 		SELECT id, list_id, name, description,
@@ -246,7 +251,7 @@ func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
 
 	// Load owners
 	ownersQuery := `
-		SELECT list_id, owner_id, owner_type, created_at, deleted_at
+		SELECT list_id, owner_id, owner_type, created_at, updated_at, deleted_at
 		FROM list_owners
 		WHERE list_id = $1 AND deleted_at IS NULL`
 
@@ -264,6 +269,7 @@ func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
 			&owner.OwnerID,
 			&owner.OwnerType,
 			&owner.CreatedAt,
+			&owner.UpdatedAt,
 			&owner.DeletedAt,
 		); err != nil {
 			return fmt.Errorf("error scanning list owner: %w", err)
@@ -277,7 +283,7 @@ func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
 
 	// Load shares
 	sharesQuery := `
-		SELECT list_id, tribe_id, expires_at, created_at, updated_at, deleted_at
+		SELECT list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at, version
 		FROM list_sharing
 		WHERE list_id = $1 AND deleted_at IS NULL`
 
@@ -293,10 +299,12 @@ func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
 		err := rows.Scan(
 			&share.ListID,
 			&share.TribeID,
-			&share.ExpiresAt,
+			&share.UserID,
 			&share.CreatedAt,
 			&share.UpdatedAt,
+			&share.ExpiresAt,
 			&share.DeletedAt,
+			&share.Version,
 		)
 		if err != nil {
 			return fmt.Errorf("error scanning list share: %w", err)
@@ -1481,6 +1489,11 @@ func (r *ListRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) 
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
 
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("GetUserLists: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
+
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
 			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
@@ -1537,7 +1550,13 @@ func (r *ListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
 
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("GetTribeLists: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
+
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Fix the parentheses in the query to properly group conditions
 		query := `
 			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
 				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
@@ -1546,8 +1565,8 @@ func (r *ListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error
 			FROM lists l
 			LEFT JOIN list_owners lo ON l.id = lo.list_id
 			LEFT JOIN list_sharing ls ON l.id = ls.list_id
-			WHERE (lo.owner_id = $1 AND lo.owner_type = 'tribe' AND lo.deleted_at IS NULL)
-				OR (ls.tribe_id = $1 AND ls.deleted_at IS NULL)
+			WHERE ((lo.owner_id = $1 AND lo.owner_type = 'tribe' AND lo.deleted_at IS NULL)
+				OR (ls.tribe_id = $1 AND ls.deleted_at IS NULL))
 				AND l.deleted_at IS NULL
 			ORDER BY l.created_at DESC`
 
@@ -1592,22 +1611,16 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
-	fmt.Printf("ShareWithTribe: Using schema %s\n", testutil.GetCurrentTestSchema())
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("ShareWithTribe: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Validate share
 		if err := share.Validate(); err != nil {
 			fmt.Printf("ShareWithTribe: Validation failed: %v\n", err)
 			return err
-		}
-
-		// Debug the search path
-		var searchPath string
-		err := tx.QueryRow("SHOW search_path").Scan(&searchPath)
-		if err != nil {
-			fmt.Printf("Error getting search_path in ShareWithTribe: %v\n", err)
-		} else {
-			fmt.Printf("ShareWithTribe: Current search_path: %s\n", searchPath)
 		}
 
 		// Check if list exists and is not deleted
@@ -1617,7 +1630,7 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 			WHERE id = $1 AND deleted_at IS NULL`
 
 		var exists bool
-		err = tx.QueryRow(query, share.ListID).Scan(&exists)
+		err := tx.QueryRow(query, share.ListID).Scan(&exists)
 		if err == sql.ErrNoRows {
 			fmt.Printf("ShareWithTribe: List not found: %s\n", share.ListID)
 			return models.ErrNotFound
@@ -1717,6 +1730,11 @@ func (r *ListRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("UnshareWithTribe: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
+
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Mark the share record as deleted
 		shareQuery := `
@@ -1757,6 +1775,11 @@ func (r *ListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var shares []*models.ListShare
+
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("GetListShares: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
@@ -1804,6 +1827,11 @@ func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
+
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("GetSharedLists: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
@@ -1963,7 +1991,7 @@ func (r *ListRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 
 		// Load owners
 		ownersQuery := `
-			SELECT list_id, owner_id, owner_type, created_at, deleted_at
+			SELECT list_id, owner_id, owner_type, created_at, updated_at, deleted_at
 			FROM list_owners
 			WHERE list_id = ANY($1) AND deleted_at IS NULL`
 
@@ -1983,6 +2011,7 @@ func (r *ListRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 				&owner.OwnerID,
 				&owner.OwnerType,
 				&owner.CreatedAt,
+				&owner.UpdatedAt,
 				&owner.DeletedAt,
 			); err != nil {
 				return fmt.Errorf("error scanning list owner: %w", err)
@@ -2043,6 +2072,11 @@ func (r *ListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, err
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var tribes []*models.Tribe
+
+	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("GetSharedTribes: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+	}
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
