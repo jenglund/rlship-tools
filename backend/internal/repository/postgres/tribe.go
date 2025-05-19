@@ -12,15 +12,16 @@ import (
 
 // TribeRepository implements models.TribeRepository using PostgreSQL
 type TribeRepository struct {
-	db *sql.DB
+	BaseRepository
 	tm *TransactionManager
 }
 
 // NewTribeRepository creates a new PostgreSQL tribe repository
-func NewTribeRepository(db *sql.DB) *TribeRepository {
+func NewTribeRepository(db interface{}) models.TribeRepository {
+	baseRepo := NewBaseRepository(db)
 	return &TribeRepository{
-		db: db,
-		tm: NewTransactionManager(db),
+		BaseRepository: baseRepo,
+		tm:             NewTransactionManager(baseRepo.GetQueryDB()),
 	}
 }
 
@@ -69,7 +70,7 @@ func (r *TribeRepository) Create(tribe *models.Tribe) error {
 // GetByID retrieves a tribe by its ID
 func (r *TribeRepository) GetByID(id uuid.UUID) (*models.Tribe, error) {
 	// Start transaction for consistent read
-	tx, err := r.db.Begin()
+	tx, err := r.GetQueryDB().Begin()
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
@@ -297,7 +298,7 @@ func (r *TribeRepository) Update(tribe *models.Tribe) error {
 // Delete soft-deletes a tribe and its members
 func (r *TribeRepository) Delete(id uuid.UUID) error {
 	// Start transaction
-	tx, err := r.db.Begin()
+	tx, err := r.GetQueryDB().Begin()
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %w", err)
 	}
@@ -347,7 +348,7 @@ func (r *TribeRepository) Delete(id uuid.UUID) error {
 // List retrieves all tribes
 func (r *TribeRepository) List(offset, limit int) ([]*models.Tribe, error) {
 	// Start transaction for consistent read
-	tx, err := r.db.Begin()
+	tx, err := r.GetQueryDB().Begin()
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
@@ -625,7 +626,7 @@ func (r *TribeRepository) UpdateMember(tribeID, userID uuid.UUID, memberType mod
 // RemoveMember removes a user from a tribe
 func (r *TribeRepository) RemoveMember(tribeID, userID uuid.UUID) error {
 	// Start transaction
-	tx, err := r.db.Begin()
+	tx, err := r.GetQueryDB().Begin()
 	if err != nil {
 		return fmt.Errorf("error starting transaction: %w", err)
 	}
@@ -661,7 +662,7 @@ func (r *TribeRepository) RemoveMember(tribeID, userID uuid.UUID) error {
 // GetMembers retrieves all members of a tribe
 func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, error) {
 	// Start transaction for consistent read
-	tx, err := r.db.Begin()
+	tx, err := r.GetQueryDB().Begin()
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
@@ -820,7 +821,7 @@ func (r *TribeRepository) GetMembers(tribeID uuid.UUID) ([]*models.TribeMember, 
 // GetExpiredGuestMemberships retrieves all expired guest memberships
 func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, error) {
 	// Start transaction for consistent read
-	tx, err := r.db.Begin()
+	tx, err := r.GetQueryDB().Begin()
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
@@ -893,7 +894,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 		AND t.deleted_at IS NULL
 		AND tm.deleted_at IS NULL`
 
-	rows, err := r.db.Query(query, userID)
+	rows, err := r.GetQueryDB().Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("error getting user tribes: %w", err)
 	}
@@ -953,7 +954,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 			WHERE tm.tribe_id = $1
 			AND tm.deleted_at IS NULL`
 
-		memberRows, err := r.db.Query(membersQuery, tribe.ID)
+		memberRows, err := r.GetQueryDB().Query(membersQuery, tribe.ID)
 		if err != nil {
 			return nil, fmt.Errorf("error getting tribe members: %w", err)
 		}
@@ -1009,7 +1010,7 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(query, tribeType, limit, offset)
+	rows, err := r.GetQueryDB().Query(query, tribeType, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribes by type: %w", err)
 	}
@@ -1067,7 +1068,7 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 		LIMIT $2 OFFSET $3`
 
 	searchPattern := "%" + query + "%"
-	rows, err := r.db.Query(sqlQuery, searchPattern, limit, offset)
+	rows, err := r.GetQueryDB().Query(sqlQuery, searchPattern, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error searching tribes: %w", err)
 	}

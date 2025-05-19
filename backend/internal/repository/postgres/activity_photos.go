@@ -8,33 +8,18 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
-	"github.com/jenglund/rlship-tools/internal/testutil"
 )
 
 type ActivityPhotosRepository struct {
-	db *sql.DB
+	BaseRepository
 	tm *TransactionManager
 }
 
-func NewActivityPhotosRepository(db interface{}) *ActivityPhotosRepository {
-	var sqlDB *sql.DB
-
-	switch d := db.(type) {
-	case *sql.DB:
-		sqlDB = d
-	case *testutil.SchemaDB:
-		sqlDB = d.UnwrapDB()
-	default:
-		if db == nil {
-			sqlDB = nil
-		} else {
-			panic(fmt.Sprintf("Unsupported DB type: %T", db))
-		}
-	}
-
+func NewActivityPhotosRepository(db interface{}) models.ActivityPhotosRepository {
+	baseRepo := NewBaseRepository(db)
 	return &ActivityPhotosRepository{
-		db: sqlDB,
-		tm: NewTransactionManager(sqlDB),
+		BaseRepository: baseRepo,
+		tm:             NewTransactionManager(baseRepo.GetQueryDB()),
 	}
 }
 

@@ -9,6 +9,44 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// BaseRepository provides common functionality for all repositories
+type BaseRepository struct {
+	db interface{}
+}
+
+// NewBaseRepository creates a new base repository
+func NewBaseRepository(db interface{}) BaseRepository {
+	return BaseRepository{db: db}
+}
+
+// GetDB returns the database connection with appropriate type
+func (r *BaseRepository) GetDB() interface{} {
+	return r.db
+}
+
+// GetQueryDB returns a SQL DB that can be used for queries
+func (r *BaseRepository) GetQueryDB() *sql.DB {
+	switch db := r.db.(type) {
+	case *sql.DB:
+		return db
+	case *testutil.SchemaDB:
+		return db.DB
+	default:
+		if r.db == nil {
+			return nil
+		}
+		panic(fmt.Sprintf("Unsupported DB type: %T", r.db))
+	}
+}
+
+// GetSchemaDB returns a SchemaDB if available, or nil
+func (r *BaseRepository) GetSchemaDB() *testutil.SchemaDB {
+	if db, ok := r.db.(*testutil.SchemaDB); ok {
+		return db
+	}
+	return nil
+}
+
 // NewDB creates a new database connection
 func NewDB(host string, port int, user, password, dbname, sslmode string) (*sql.DB, error) {
 	dsn := fmt.Sprintf(
@@ -52,7 +90,7 @@ func NewRepositories(db interface{}) *Repositories {
 	case *sql.DB:
 		sqlDB = d
 	case *testutil.SchemaDB:
-		sqlDB = d.UnwrapDB()
+		sqlDB = d.DB
 	default:
 		if db == nil {
 			sqlDB = nil
@@ -62,11 +100,11 @@ func NewRepositories(db interface{}) *Repositories {
 	}
 
 	return &Repositories{
-		Users:          NewUserRepository(sqlDB),
-		Tribes:         NewTribeRepository(sqlDB),
-		Activities:     NewActivityRepository(sqlDB),
-		ActivityPhotos: NewActivityPhotosRepository(sqlDB),
-		Lists:          NewListRepository(sqlDB),
+		Users:          NewUserRepository(db),
+		Tribes:         NewTribeRepository(db),
+		Activities:     NewActivityRepository(db),
+		ActivityPhotos: NewActivityPhotosRepository(db),
+		Lists:          NewListRepository(db),
 		db:             sqlDB,
 	}
 }

@@ -9,35 +9,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
-	"github.com/jenglund/rlship-tools/internal/testutil"
 )
 
 // ActivityRepository implements models.ActivityRepository using PostgreSQL
 type ActivityRepository struct {
-	db *sql.DB
+	BaseRepository
 	tm *TransactionManager
 }
 
 // NewActivityRepository creates a new PostgreSQL activity repository
-func NewActivityRepository(db interface{}) *ActivityRepository {
-	var sqlDB *sql.DB
-
-	switch d := db.(type) {
-	case *sql.DB:
-		sqlDB = d
-	case *testutil.SchemaDB:
-		sqlDB = d.UnwrapDB()
-	default:
-		if db == nil {
-			sqlDB = nil
-		} else {
-			panic(fmt.Sprintf("Unsupported DB type: %T", db))
-		}
-	}
-
+func NewActivityRepository(db interface{}) models.ActivityRepository {
+	baseRepo := NewBaseRepository(db)
 	return &ActivityRepository{
-		db: sqlDB,
-		tm: NewTransactionManager(sqlDB),
+		BaseRepository: baseRepo,
+		tm:             NewTransactionManager(baseRepo.GetQueryDB()),
 	}
 }
 
@@ -305,7 +290,7 @@ func (r *ActivityRepository) AddOwner(activityID, ownerID uuid.UUID, ownerType m
 		INSERT INTO activity_owners (activity_id, owner_id, owner_type, created_at)
 		VALUES ($1, $2, $3, $4)`
 
-	_, err := r.db.Exec(query, activityID, ownerID, ownerType, time.Now())
+	_, err := r.GetQueryDB().Exec(query, activityID, ownerID, ownerType, time.Now())
 	if err != nil {
 		return fmt.Errorf("error adding activity owner: %w", err)
 	}
@@ -320,7 +305,7 @@ func (r *ActivityRepository) RemoveOwner(activityID, ownerID uuid.UUID) error {
 		SET deleted_at = $1
 		WHERE activity_id = $2 AND owner_id = $3 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, time.Now(), activityID, ownerID)
+	result, err := r.GetQueryDB().Exec(query, time.Now(), activityID, ownerID)
 	if err != nil {
 		return fmt.Errorf("error removing activity owner: %w", err)
 	}
@@ -344,7 +329,7 @@ func (r *ActivityRepository) GetOwners(activityID uuid.UUID) ([]*models.Activity
 		FROM activity_owners
 		WHERE activity_id = $1 AND deleted_at IS NULL`
 
-	rows, err := r.db.Query(query, activityID)
+	rows, err := r.GetQueryDB().Query(query, activityID)
 	if err != nil {
 		return nil, fmt.Errorf("error getting activity owners: %w", err)
 	}
@@ -385,7 +370,7 @@ func (r *ActivityRepository) GetUserActivities(userID uuid.UUID) ([]*models.Acti
 		AND a.deleted_at IS NULL
 		ORDER BY a.created_at DESC`
 
-	rows, err := r.db.Query(query, userID)
+	rows, err := r.GetQueryDB().Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("error getting user activities: %w", err)
 	}
@@ -437,7 +422,7 @@ func (r *ActivityRepository) GetTribeActivities(tribeID uuid.UUID) ([]*models.Ac
 		AND a.deleted_at IS NULL
 		ORDER BY a.created_at DESC`
 
-	rows, err := r.db.Query(query, tribeID)
+	rows, err := r.GetQueryDB().Query(query, tribeID)
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribe activities: %w", err)
 	}

@@ -13,15 +13,16 @@ import (
 )
 
 type ListRepository struct {
-	db *sql.DB
+	BaseRepository
 	tm *TransactionManager
 }
 
 // NewListRepository creates a new PostgreSQL-backed list repository
-func NewListRepository(db *sql.DB) models.ListRepository {
+func NewListRepository(db interface{}) models.ListRepository {
+	baseRepo := NewBaseRepository(db)
 	return &ListRepository{
-		db: db,
-		tm: NewTransactionManager(db),
+		BaseRepository: baseRepo,
+		tm:             NewTransactionManager(baseRepo.GetQueryDB()),
 	}
 }
 
@@ -307,37 +308,35 @@ func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
 func (r *ListRepository) GetByID(id uuid.UUID) (*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
-	var list *models.List
+
+	var list models.List
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Query the list
 		query := `
 			SELECT id, type, name, description, visibility,
 				sync_status, sync_source, sync_id, last_sync_at,
 				default_weight, max_items, cooldown_days,
-				owner_id, owner_type,
-				created_at, updated_at
+				owner_id, owner_type, 
+				created_at, updated_at, deleted_at
 			FROM lists
 			WHERE id = $1 AND deleted_at IS NULL`
 
-		list = &models.List{}
+		var maxItems, cooldownDays sql.NullInt32
+		var syncID sql.NullString
+		var lastSyncAt sql.NullTime
+		var ownerType models.OwnerType
+		var ownerID uuid.UUID
+		var deletedAt sql.NullTime
+
 		err := tx.QueryRow(query, id).Scan(
-			&list.ID,
-			&list.Type,
-			&list.Name,
-			&list.Description,
-			&list.Visibility,
-			&list.SyncStatus,
-			&list.SyncSource,
-			&list.SyncID,
-			&list.LastSyncAt,
-			&list.DefaultWeight,
-			&list.MaxItems,
-			&list.CooldownDays,
-			&list.OwnerID,
-			&list.OwnerType,
-			&list.CreatedAt,
-			&list.UpdatedAt,
+			&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
+			&list.SyncStatus, &list.SyncSource, &syncID, &lastSyncAt,
+			&list.DefaultWeight, &maxItems, &cooldownDays,
+			&ownerID, &ownerType,
+			&list.CreatedAt, &list.UpdatedAt, &deletedAt,
 		)
+
 		if err != nil {
 			if err == sql.ErrNoRows {
 				return models.ErrNotFound
@@ -345,8 +344,32 @@ func (r *ListRepository) GetByID(id uuid.UUID) (*models.List, error) {
 			return fmt.Errorf("error getting list: %w", err)
 		}
 
-		// Load all related data
-		if err := r.loadListData(tx, list); err != nil {
+		// Set nullable fields
+		if maxItems.Valid {
+			maxItemsVal := int(maxItems.Int32)
+			list.MaxItems = &maxItemsVal
+		}
+		if cooldownDays.Valid {
+			cooldownDaysVal := int(cooldownDays.Int32)
+			list.CooldownDays = &cooldownDaysVal
+		}
+		if syncID.Valid {
+			list.SyncID = syncID.String
+		}
+		if lastSyncAt.Valid {
+			syncTime := lastSyncAt.Time
+			list.LastSyncAt = &syncTime
+		}
+		if deletedAt.Valid {
+			list.DeletedAt = &deletedAt.Time
+		}
+
+		// Set owner fields
+		list.OwnerID = &ownerID
+		list.OwnerType = &ownerType
+
+		// Load related data
+		if err := r.loadListData(tx, &list); err != nil {
 			return err
 		}
 
@@ -357,7 +380,7 @@ func (r *ListRepository) GetByID(id uuid.UUID) (*models.List, error) {
 		return nil, err
 	}
 
-	return list, nil
+	return &list, nil
 }
 
 // Update updates an existing list in the database
@@ -630,7 +653,7 @@ func (r *ListRepository) List(offset, limit int) ([]*models.List, error) {
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2`
 
-	rows, err := r.db.Query(query, limit, offset)
+	rows, err := r.GetQueryDB().Query(query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error listing lists: %w", err)
 	}
@@ -797,7 +820,7 @@ func (r *ListRepository) RemoveItem(listID, itemID uuid.UUID) error {
 			deleted_at = NOW()
 		WHERE id = $1 AND list_id = $2 AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, itemID, listID)
+	result, err := r.GetQueryDB().Exec(query, itemID, listID)
 	if err != nil {
 		return err
 	}
@@ -922,7 +945,7 @@ func (r *ListRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[strin
 		query += fmt.Sprintf(" LIMIT %d", maxItems)
 	}
 
-	rows, err := r.db.Query(query, pq.Array(listIDs))
+	rows, err := r.GetQueryDB().Query(query, pq.Array(listIDs))
 	if err != nil {
 		return nil, err
 	}

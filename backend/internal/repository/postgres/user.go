@@ -13,15 +13,16 @@ import (
 
 // UserRepository implements models.UserRepository using PostgreSQL
 type UserRepository struct {
-	db *sql.DB
+	BaseRepository
 	tm *TransactionManager
 }
 
 // NewUserRepository creates a new PostgreSQL user repository
-func NewUserRepository(db *sql.DB) *UserRepository {
+func NewUserRepository(db interface{}) models.UserRepository {
+	baseRepo := NewBaseRepository(db)
 	return &UserRepository{
-		db: db,
-		tm: NewTransactionManager(db),
+		BaseRepository: baseRepo,
+		tm:             NewTransactionManager(baseRepo.GetQueryDB()),
 	}
 }
 
