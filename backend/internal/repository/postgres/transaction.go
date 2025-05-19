@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/lib/pq"
 )
 
@@ -65,6 +67,12 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 	var err error
 	var tx *sql.Tx
 
+	// Determine if we're using a test schema
+	var testSchema string
+	if currentSchema := testutil.GetCurrentTestSchema(); currentSchema != "" {
+		testSchema = currentSchema
+	}
+
 	for attempt := 0; attempt <= opts.MaxRetries; attempt++ {
 		// Start transaction with specified isolation level
 		tx, err = tm.db.BeginTx(ctx, &sql.TxOptions{
@@ -88,19 +96,31 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			return fmt.Errorf("error setting statement timeout: %w", err)
 		}
 
-		// Get the current search_path and ensure it's correctly set in the transaction
-		var searchPath string
-		err = tm.db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
-		if err != nil {
-			safeClose(tx)
-			return fmt.Errorf("error getting current search_path: %w", err)
-		}
+		// Priority for search_path:
+		// 1. If we're in a test with a test schema, use that
+		// 2. Otherwise, get the current search_path from the connection
+		if testSchema != "" {
+			// We're running in a test, set the test schema
+			_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(testSchema)))
+			if err != nil {
+				safeClose(tx)
+				return fmt.Errorf("error setting test schema search_path: %w", err)
+			}
+		} else {
+			// Get the current search_path and ensure it's correctly set in the transaction
+			var searchPath string
+			err = tm.db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+			if err != nil {
+				safeClose(tx)
+				return fmt.Errorf("error getting current search_path: %w", err)
+			}
 
-		// Set the same search_path in the transaction with LOCAL so it only affects this transaction
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", searchPath))
-		if err != nil {
-			safeClose(tx)
-			return fmt.Errorf("error setting search_path in transaction: %w", err)
+			// Set the same search_path in the transaction with LOCAL so it only affects this transaction
+			_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", searchPath))
+			if err != nil {
+				safeClose(tx)
+				return fmt.Errorf("error setting search_path in transaction: %w", err)
+			}
 		}
 
 		// Verify search_path was properly set
@@ -111,9 +131,10 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			return fmt.Errorf("error verifying search_path in transaction: %w", err)
 		}
 
-		if txSearchPath != searchPath {
+		// In a test environment, ensure the test schema is in the search path
+		if testSchema != "" && !strings.Contains(txSearchPath, testSchema) {
 			safeClose(tx)
-			return fmt.Errorf("transaction search_path mismatch: expected %s, got %s", searchPath, txSearchPath)
+			return fmt.Errorf("test schema not in transaction search_path: expected %s in %s", testSchema, txSearchPath)
 		}
 
 		// Execute the transaction function

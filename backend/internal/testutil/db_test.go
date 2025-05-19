@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sync"
@@ -240,6 +241,7 @@ func TestDatabaseOperations(t *testing.T) {
 
 	// Test transaction rollback
 	t.Run("transaction rollback", func(t *testing.T) {
+		// Create a fresh database connection for this test
 		db := SetupTestDB(t)
 		require.NotNil(t, db)
 		defer TeardownTestDB(t, db)
@@ -261,22 +263,34 @@ func TestDatabaseOperations(t *testing.T) {
 		`, tableName))
 		require.NoError(t, err)
 
-		// Start transaction
-		tx, err := db.Begin()
+		// Verify table is empty
+		var initialCount int
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&initialCount)
+		require.NoError(t, err)
+		assert.Equal(t, 0, initialCount, "Table should start empty")
+
+		// Use a single operation with ExecContext to do the insert in a transaction and then rollback
+		ctx := context.Background()
+		sqlDB := UnwrapDB(db)
+
+		// Start an explicit transaction
+		tx, err := sqlDB.BeginTx(ctx, nil)
 		require.NoError(t, err)
 
-		// Insert data
-		_, err = tx.Exec(fmt.Sprintf("INSERT INTO %s (value) VALUES ($1)", tableName), "test")
+		// Insert test data
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (value) VALUES ($1)", tableName), "test")
 		require.NoError(t, err)
 
-		// Rollback transaction
-		safeClose(tx)
-
-		// Verify no data was inserted
-		var count int
-		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+		// Explicitly rollback the transaction
+		err = tx.Rollback()
 		require.NoError(t, err)
-		assert.Equal(t, 0, count)
+
+		// Verify no data is in the table after rollback
+		// Use a completely fresh query to avoid connection issues
+		var finalCount int
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&finalCount)
+		require.NoError(t, err)
+		assert.Equal(t, 0, finalCount, "No data should be inserted after rollback")
 	})
 
 	// Test connection timeout

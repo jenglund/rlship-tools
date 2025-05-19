@@ -48,6 +48,9 @@ func getPostgresConnection(dbName string) string {
 	}
 
 	password := os.Getenv("POSTGRES_PASSWORD")
+	if password == "" {
+		password = "postgres"
+	}
 	sslMode := "disable"
 
 	if dbName == "" {
@@ -227,10 +230,10 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	}
 
 	password := os.Getenv("POSTGRES_PASSWORD")
-	passwordPart := ""
-	if password != "" {
-		passwordPart = ":" + password
+	if password == "" {
+		password = "postgres"
 	}
+	passwordPart := ":" + password
 
 	// Add schema to connection URL
 	postgresURL := fmt.Sprintf("postgres://%s%s@%s:%s/%s?sslmode=disable&search_path=%s",
@@ -526,17 +529,30 @@ func (db *SchemaDB) Close() error {
 	return db.DB.Close()
 }
 
-// UnwrapDB returns the underlying *sql.DB for backward compatibility
-// This allows existing code to use the *SchemaDB as a *sql.DB
-func (db *SchemaDB) UnwrapDB() *sql.DB {
-	// Instead of just returning the raw DB, we need to set the search path
-	// on the connection first to ensure that any operations use the correct schema
-	_, err := db.DB.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+// UnwrapDB sets the search path and returns a raw DB connection
+// This function is for backward compatibility
+func UnwrapDB(db *SchemaDB) *sql.DB {
+	if db == nil {
+		return nil
+	}
+
+	// Create a context with timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	// Set search path on the DB connection
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
 	if err != nil {
-		// Log the error but continue - the operation might fail but it's better than not trying
+		// Log the error but continue
 		fmt.Printf("Warning: Failed to set search path in UnwrapDB: %v\n", err)
 	}
+
 	return db.DB
+}
+
+// UnwrapDB returns the underlying *sql.DB with the search path properly set
+func (db *SchemaDB) UnwrapDB() *sql.DB {
+	return UnwrapDB(db)
 }
 
 // GetSchemaName returns the schema name for this database connection
@@ -582,21 +598,4 @@ func GetDB(db interface{}) *sql.DB {
 	default:
 		panic(fmt.Sprintf("Unsupported DB type: %T", db))
 	}
-}
-
-// UnwrapDB sets the search path and returns a raw DB connection
-// This function is for backward compatibility
-func UnwrapDB(db *SchemaDB) *sql.DB {
-	if db == nil {
-		return nil
-	}
-
-	// Set search path on the DB connection
-	_, err := db.DB.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
-	if err != nil {
-		// Log the error but continue
-		fmt.Printf("Warning: Failed to set search path in UnwrapDB: %v\n", err)
-	}
-
-	return db.DB
 }

@@ -100,6 +100,7 @@ TRIBE PROJECT DEBUGGING GUIDELINES
 - Implement test data generators
 - Add test coverage reports
 - Create integration test suites
+- When testing backend code, either use make commands from the repository root OR first change directory to /backend before running any go test commands. Never attempt to run go test commands with relative paths from the repository root.
 
 10. Documentation:
 - Document all complex queries
@@ -130,3 +131,5 @@ TRIBE PROJECT DEBUGGING GUIDELINES
   - Some communities know people by different names (IG/TikTok usernames, nicknames, etc.)
   - Initially implement a single "default" display name
   - Plan to add tribe-specific display name overrides in future iterations
+
+  

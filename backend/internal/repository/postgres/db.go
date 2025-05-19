@@ -30,7 +30,8 @@ func (r *BaseRepository) GetQueryDB() *sql.DB {
 	case *sql.DB:
 		return db
 	case *testutil.SchemaDB:
-		return db.DB
+		// Always use the UnwrapDB method to ensure search path is set
+		return testutil.UnwrapDB(db)
 	default:
 		if r.db == nil {
 			return nil

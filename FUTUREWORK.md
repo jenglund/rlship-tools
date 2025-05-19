@@ -213,6 +213,9 @@ Recently implemented a "pending" status for tribe members who have been invited 
    - Add database constraints (unique tribe names, etc.)
    - Improve handling of database connections in tests to eliminate warning messages
    - Add better transaction management to prevent "transaction already committed" warnings
+   - Fix remaining context cancellation issues in the test database setup and teardown
+   - Improve schema and search path handling in all repository methods
+   - Address errors in TestDatabaseOperations tests related to context cancellation
 
 2. **API Enhancements**
    - Implement comprehensive request validation

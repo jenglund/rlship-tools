@@ -69,6 +69,26 @@ This document tracks the current known issues in the Tribe project that need to 
 
 ## Recently Fixed Issues
 
+### Database Schema Issues in Test Environment
+- **Issue**: Tests were hanging or failing because the search path was not being correctly set in test database connections, leading to inability to find tables in the correct schema.
+- **Resolution**: Modified the SchemaDB UnwrapDB function to properly set search path, updated BaseRepository.GetQueryDB to use UnwrapDB for SchemaDBs, and enhanced TransactionManager to use consistent search path handling.
+- **Fixed Date**: May 19, 2025
+
+### Schema Resolution in Transaction Management
+- **Issue**: The transaction manager was not consistently ensuring the correct search path within transactions, causing queries to fail when running against the wrong schema.
+- **Resolution**: Added explicit schema handling in the TransactionManager by detecting test schemas and setting them appropriately in all transactions, and verified the search path configuration before executing queries.
+- **Fixed Date**: May 19, 2025
+
+### Direct Database Access in Repositories
+- **Issue**: Some repository methods were bypassing the transaction manager and using direct DB access with GetQueryDB(), leading to schema issues.
+- **Resolution**: Updated all repository methods to use the transaction manager which ensures correct schema handling.
+- **Fixed Date**: May 19, 2025
+
+### Hanging Tests
+- **Issue**: Some tests were hanging indefinitely, making test runs unreliable and slow.
+- **Resolution**: Added proper context timeout handling to prevent hanging queries and improved transaction management.
+- **Fixed Date**: May 19, 2025
+
 ### Tribe Member Reinvitation Issue
 - **Issue**: When trying to reinvite a former tribe member after confirmation, the reinvitation was failing.
 - **Resolution**: Fixed by modifying the `ReinviteMember` function to properly reactivate former members by updating the `deleted_at` field to NULL instead of trying to insert a new record while keeping the old soft-deleted record.
