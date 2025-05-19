@@ -16,8 +16,8 @@ func TestTribeRepository(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewTribeRepository(db)
-	userRepo := NewUserRepository(db)
+	repo := NewTribeRepository(testutil.UnwrapDB(db))
+	userRepo := NewUserRepository(testutil.UnwrapDB(db))
 
 	// Create test users that we'll use throughout the tests
 	user1 := &models.User{

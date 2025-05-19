@@ -240,8 +240,8 @@ func (h *ActivityHandler) DeleteActivity(c *gin.Context) {
 
 // AddOwnerRequest represents the add owner request body
 type AddOwnerRequest struct {
-	OwnerID   uuid.UUID `json:"owner_id" binding:"required"`
-	OwnerType string    `json:"owner_type" binding:"required,oneof=user tribe"`
+	OwnerID   uuid.UUID        `json:"owner_id" binding:"required"`
+	OwnerType models.OwnerType `json:"owner_type" binding:"required,oneof=user tribe"`
 }
 
 // AddOwner adds an owner to an activity

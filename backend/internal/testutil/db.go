@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -24,6 +26,9 @@ var (
 
 // Track current test database name
 var currentTestDBName string
+
+// Default timeout for database operations to prevent test hangs
+var defaultQueryTimeout = 10 * time.Second
 
 // getPostgresConnection returns the connection string for the Postgres database
 func getPostgresConnection(dbName string) string {
@@ -86,8 +91,12 @@ func cleanupDatabase(schemaName string) {
 	}
 	defer safeClose(db)
 
+	// Create a context with timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
 	// Drop the schema
-	_, err = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
+	_, err = db.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
 		log.Printf("Error dropping schema %s: %v", schemaName, err)
 	}
@@ -142,8 +151,18 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 		panic(fmt.Sprintf("Error connecting to postgres: %v", err))
 	}
 
+	// Set connection limit to avoid exhausting connection pool
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(1 * time.Minute)
+
+	// Create context with timeout for all database operations
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
 	// Ensure we can connect
-	if err = db.Ping(); err != nil {
+	if err = db.PingContext(ctx); err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error pinging database: %v", err))
 	}
@@ -152,24 +171,17 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	t.Logf("Successfully connected to Postgres, creating schema: %s", schemaName)
 
 	// Create test schema
-	_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName)))
+	_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error creating test schema: %v", err))
 	}
 
 	// Set search path to our test schema
-	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+	_, err = db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error setting search path: %v", err))
-	}
-
-	// Create a prepared statement that will set the search path for every new connection
-	_, err = db.Exec(fmt.Sprintf("PREPARE set_search_path AS SET search_path TO %s",
-		pq.QuoteIdentifier(schemaName)))
-	if err != nil {
-		t.Logf("Warning: Failed to create prepared statement for search path: %v", err)
 	}
 
 	// Run migrations
@@ -384,6 +396,7 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	wrappedDB := &SchemaDB{
 		DB:         db,
 		schemaName: schemaName,
+		timeout:    defaultQueryTimeout,
 	}
 
 	// Add test schema to list for cleanup
@@ -396,32 +409,111 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 type SchemaDB struct {
 	*sql.DB
 	schemaName string
+	timeout    time.Duration
 }
 
-// Ensure common DB methods set the search path
+// SetSearchPath sets the search path for the current connection
+func (db *SchemaDB) SetSearchPath() error {
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
 
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	return err
+}
+
+// Exec overrides the default Exec method to set the search path on the connection
 func (db *SchemaDB) Exec(query string, args ...interface{}) (sql.Result, error) {
-	return db.DB.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-		pq.QuoteIdentifier(db.schemaName), query), args...)
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.ExecContext(ctx, query, args...)
 }
 
+// ExecContext overrides the default ExecContext method to set the search path
+func (db *SchemaDB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	// Create a new context with timeout if the provided context doesn't have one
+	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	defer cancel()
+
+	// Set search path for this connection
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	if err != nil {
+		return nil, fmt.Errorf("error setting search path: %w", err)
+	}
+
+	// Execute the query
+	return db.DB.ExecContext(ctx, query, args...)
+}
+
+// Query overrides the default Query method to set the search path
 func (db *SchemaDB) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	return db.DB.Query(fmt.Sprintf("SET search_path TO %s; %s",
-		pq.QuoteIdentifier(db.schemaName), query), args...)
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.QueryContext(ctx, query, args...)
 }
 
+// QueryContext overrides the default QueryContext method to set the search path
+func (db *SchemaDB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	// Create a new context with timeout if the provided context doesn't have one
+	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	defer cancel()
+
+	// Set search path for this connection
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	if err != nil {
+		return nil, fmt.Errorf("error setting search path: %w", err)
+	}
+
+	// Execute the query
+	return db.DB.QueryContext(ctx, query, args...)
+}
+
+// QueryRow overrides the default QueryRow method to set the search path
 func (db *SchemaDB) QueryRow(query string, args ...interface{}) *sql.Row {
-	return db.DB.QueryRow(fmt.Sprintf("SET search_path TO %s; %s",
-		pq.QuoteIdentifier(db.schemaName), query), args...)
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.QueryRowContext(ctx, query, args...)
 }
 
+// QueryRowContext overrides the default QueryRowContext method to set the search path
+func (db *SchemaDB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	// Create a new context with timeout if the provided context doesn't have one
+	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	defer cancel()
+
+	// Set search path for this connection
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	if err != nil {
+		// We can't return an error from QueryRowContext directly, so just log it
+		log.Printf("Error setting search path in QueryRowContext: %v", err)
+	}
+
+	// Execute the query
+	return db.DB.QueryRowContext(ctx, query, args...)
+}
+
+// Begin overrides the default Begin method to set the search path on the transaction
 func (db *SchemaDB) Begin() (*sql.Tx, error) {
-	tx, err := db.DB.Begin()
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.BeginTx(ctx, nil)
+}
+
+// BeginTx overrides the default BeginTx method to set the search path on the transaction
+func (db *SchemaDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	// Create a new context with timeout if the provided context doesn't have one
+	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	defer cancel()
+
+	tx, err := db.DB.BeginTx(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = tx.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	_, err = tx.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
 	if err != nil {
 		tx.Rollback()
 		return nil, err
@@ -437,6 +529,13 @@ func (db *SchemaDB) Close() error {
 // UnwrapDB returns the underlying *sql.DB for backward compatibility
 // This allows existing code to use the *SchemaDB as a *sql.DB
 func (db *SchemaDB) UnwrapDB() *sql.DB {
+	// Instead of just returning the raw DB, we need to set the search path
+	// on the connection first to ensure that any operations use the correct schema
+	_, err := db.DB.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	if err != nil {
+		// Log the error but continue - the operation might fail but it's better than not trying
+		fmt.Printf("Warning: Failed to set search path in UnwrapDB: %v\n", err)
+	}
 	return db.DB
 }
 
@@ -450,8 +549,12 @@ func TeardownTestDB(t *testing.T, db *SchemaDB) {
 	t.Helper()
 
 	if db != nil && currentTestDBName != "" {
+		// Create context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+		defer cancel()
+
 		// Clean up schema
-		_, err := db.DB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(currentTestDBName)))
+		_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(currentTestDBName)))
 		if err != nil {
 			t.Logf("Error dropping test schema: %v", err)
 		}
@@ -479,4 +582,21 @@ func GetDB(db interface{}) *sql.DB {
 	default:
 		panic(fmt.Sprintf("Unsupported DB type: %T", db))
 	}
+}
+
+// UnwrapDB sets the search path and returns a raw DB connection
+// This function is for backward compatibility
+func UnwrapDB(db *SchemaDB) *sql.DB {
+	if db == nil {
+		return nil
+	}
+
+	// Set search path on the DB connection
+	_, err := db.DB.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	if err != nil {
+		// Log the error but continue
+		fmt.Printf("Warning: Failed to set search path in UnwrapDB: %v\n", err)
+	}
+
+	return db.DB
 }

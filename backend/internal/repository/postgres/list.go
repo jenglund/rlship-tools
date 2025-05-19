@@ -12,21 +12,21 @@ import (
 	"github.com/lib/pq"
 )
 
-type listRepository struct {
+type ListRepository struct {
 	db *sql.DB
 	tm *TransactionManager
 }
 
 // NewListRepository creates a new PostgreSQL-backed list repository
 func NewListRepository(db *sql.DB) models.ListRepository {
-	return &listRepository{
+	return &ListRepository{
 		db: db,
 		tm: NewTransactionManager(db),
 	}
 }
 
 // Create inserts a new list into the database
-func (r *listRepository) Create(list *models.List) error {
+func (r *ListRepository) Create(list *models.List) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	opts.IsolationLevel = sql.LevelSerializable // Ensure consistency for list creation
@@ -153,7 +153,7 @@ func (r *listRepository) Create(list *models.List) error {
 }
 
 // validateAndSetOwners validates and sets the owner fields for a list
-func (r *listRepository) validateAndSetOwners(list *models.List) error {
+func (r *ListRepository) validateAndSetOwners(list *models.List) error {
 	if list.OwnerID == nil || list.OwnerType == nil {
 		if len(list.Owners) == 0 {
 			return fmt.Errorf("at least one owner is required")
@@ -190,7 +190,7 @@ func (r *listRepository) validateAndSetOwners(list *models.List) error {
 }
 
 // loadListData loads all related data for a list
-func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
+func (r *ListRepository) loadListData(tx *sql.Tx, list *models.List) error {
 	// Load items
 	itemsQuery := `
 		SELECT id, list_id, name, description,
@@ -304,7 +304,7 @@ func (r *listRepository) loadListData(tx *sql.Tx, list *models.List) error {
 }
 
 // GetByID retrieves a list by its ID
-func (r *listRepository) GetByID(id uuid.UUID) (*models.List, error) {
+func (r *ListRepository) GetByID(id uuid.UUID) (*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var list *models.List
@@ -361,7 +361,7 @@ func (r *listRepository) GetByID(id uuid.UUID) (*models.List, error) {
 }
 
 // Update updates an existing list in the database
-func (r *listRepository) Update(list *models.List) error {
+func (r *ListRepository) Update(list *models.List) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -521,7 +521,7 @@ func (r *listRepository) Update(list *models.List) error {
 }
 
 // Delete soft-deletes a list and all its related data
-func (r *listRepository) Delete(id uuid.UUID) error {
+func (r *ListRepository) Delete(id uuid.UUID) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	opts.IsolationLevel = sql.LevelSerializable // Ensure consistency for deletion
@@ -612,7 +612,7 @@ func (r *listRepository) Delete(id uuid.UUID) error {
 }
 
 // List retrieves a paginated list of lists
-func (r *listRepository) List(offset, limit int) ([]*models.List, error) {
+func (r *ListRepository) List(offset, limit int) ([]*models.List, error) {
 	// Check if limit is 0, which means no results should be returned
 	if limit == 0 {
 		return []*models.List{}, nil
@@ -689,7 +689,7 @@ func (r *listRepository) List(offset, limit int) ([]*models.List, error) {
 }
 
 // AddItem adds a new item to a list
-func (r *listRepository) AddItem(item *models.ListItem) error {
+func (r *ListRepository) AddItem(item *models.ListItem) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -739,7 +739,7 @@ func (r *listRepository) AddItem(item *models.ListItem) error {
 }
 
 // UpdateItem updates an existing list item
-func (r *listRepository) UpdateItem(item *models.ListItem) error {
+func (r *ListRepository) UpdateItem(item *models.ListItem) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -791,7 +791,7 @@ func (r *listRepository) UpdateItem(item *models.ListItem) error {
 }
 
 // RemoveItem soft-deletes an item from a list
-func (r *listRepository) RemoveItem(listID, itemID uuid.UUID) error {
+func (r *ListRepository) RemoveItem(listID, itemID uuid.UUID) error {
 	query := `
 		UPDATE list_items SET
 			deleted_at = NOW()
@@ -814,7 +814,7 @@ func (r *listRepository) RemoveItem(listID, itemID uuid.UUID) error {
 }
 
 // GetItems retrieves all items from a list
-func (r *listRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) {
+func (r *ListRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) {
 	// Create a transaction to ensure schema search path is correctly set
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
@@ -899,7 +899,7 @@ func (r *listRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) 
 }
 
 // GetEligibleItems retrieves items eligible for menu generation
-func (r *listRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[string]interface{}) ([]*models.ListItem, error) {
+func (r *ListRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[string]interface{}) ([]*models.ListItem, error) {
 	query := `
 		SELECT 
 			i.id, i.list_id, i.name, i.description,
@@ -963,7 +963,7 @@ func (r *listRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[strin
 }
 
 // UpdateItemStats updates the statistics for a list item
-func (r *listRepository) UpdateItemStats(itemID uuid.UUID, chosen bool) error {
+func (r *ListRepository) UpdateItemStats(itemID uuid.UUID, chosen bool) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -993,7 +993,7 @@ func (r *listRepository) UpdateItemStats(itemID uuid.UUID, chosen bool) error {
 }
 
 // UpdateSyncStatus updates the sync status of a list
-func (r *listRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSyncStatus) error {
+func (r *ListRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSyncStatus) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1026,7 +1026,7 @@ func (r *listRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSy
 }
 
 // GetListsBySource retrieves all lists from a specific sync source
-func (r *listRepository) GetListsBySource(source string) ([]*models.List, error) {
+func (r *ListRepository) GetListsBySource(source string) ([]*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
@@ -1124,7 +1124,7 @@ func (r *listRepository) GetListsBySource(source string) ([]*models.List, error)
 }
 
 // CreateConflict creates a new list conflict
-func (r *listRepository) CreateConflict(conflict *models.SyncConflict) error {
+func (r *ListRepository) CreateConflict(conflict *models.SyncConflict) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1177,7 +1177,7 @@ func (r *listRepository) CreateConflict(conflict *models.SyncConflict) error {
 }
 
 // GetConflicts retrieves all unresolved conflicts for a list
-func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
+func (r *ListRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var conflicts []*models.SyncConflict
@@ -1239,7 +1239,7 @@ func (r *listRepository) GetConflicts(listID uuid.UUID) ([]*models.SyncConflict,
 }
 
 // ResolveConflict marks a conflict as resolved
-func (r *listRepository) ResolveConflict(conflictID uuid.UUID) error {
+func (r *ListRepository) ResolveConflict(conflictID uuid.UUID) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1267,7 +1267,7 @@ func (r *listRepository) ResolveConflict(conflictID uuid.UUID) error {
 }
 
 // AddOwner adds an owner to a list
-func (r *listRepository) AddOwner(owner *models.ListOwner) error {
+func (r *ListRepository) AddOwner(owner *models.ListOwner) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1302,7 +1302,7 @@ func (r *listRepository) AddOwner(owner *models.ListOwner) error {
 }
 
 // RemoveOwner removes an owner from a list
-func (r *listRepository) RemoveOwner(listID, ownerID uuid.UUID) error {
+func (r *ListRepository) RemoveOwner(listID, ownerID uuid.UUID) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1331,7 +1331,7 @@ func (r *listRepository) RemoveOwner(listID, ownerID uuid.UUID) error {
 }
 
 // GetOwners retrieves all owners of a list
-func (r *listRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error) {
+func (r *ListRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var owners []*models.ListOwner
@@ -1403,7 +1403,7 @@ func (r *listRepository) GetOwners(listID uuid.UUID) ([]*models.ListOwner, error
 }
 
 // GetUserLists retrieves all lists owned by a user
-func (r *listRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) {
+func (r *ListRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
@@ -1459,7 +1459,7 @@ func (r *listRepository) GetUserLists(userID uuid.UUID) ([]*models.List, error) 
 }
 
 // GetTribeLists retrieves all lists owned by a tribe
-func (r *listRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
+func (r *ListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
@@ -1515,7 +1515,7 @@ func (r *listRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error
 }
 
 // ShareWithTribe shares a list with a tribe
-func (r *listRepository) ShareWithTribe(share *models.ListShare) error {
+func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1592,12 +1592,8 @@ func (r *listRepository) ShareWithTribe(share *models.ListShare) error {
 			if err != nil {
 				return fmt.Errorf("error removing old shares: %w", err)
 			}
-
-			// Commit this transaction first to avoid constraint violation
-			return nil
 		}
 
-		// If we get here, there was no existing share or it was already deleted
 		// Insert the new share
 		_, err = tx.Exec(`
 			INSERT INTO list_sharing (
@@ -1618,7 +1614,7 @@ func (r *listRepository) ShareWithTribe(share *models.ListShare) error {
 }
 
 // UnshareWithTribe removes a tribe's access to a list
-func (r *listRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
+func (r *ListRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
@@ -1658,7 +1654,7 @@ func (r *listRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
 }
 
 // GetListShares retrieves all shares for a list
-func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
+func (r *ListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var shares []*models.ListShare
@@ -1705,7 +1701,7 @@ func (r *listRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 }
 
 // GetSharedLists retrieves all lists shared with a tribe
-func (r *listRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
+func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var lists []*models.List
@@ -1761,7 +1757,7 @@ func (r *listRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 }
 
 // GetListsByOwner retrieves all lists owned by a specific owner
-func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.OwnerType) ([]*models.List, error) {
+func (r *ListRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.OwnerType) ([]*models.List, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	lists := make([]*models.List, 0)
@@ -1944,7 +1940,7 @@ func (r *listRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 }
 
 // GetSharedTribes retrieves all tribes that a list is shared with
-func (r *listRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, error) {
+func (r *ListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, error) {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 	var tribes []*models.Tribe
@@ -2005,6 +2001,6 @@ func (r *listRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, err
 }
 
 // MarkItemChosen marks an item as chosen and updates its stats
-func (r *listRepository) MarkItemChosen(itemID uuid.UUID) error {
+func (r *ListRepository) MarkItemChosen(itemID uuid.UUID) error {
 	return r.UpdateItemStats(itemID, true)
 }

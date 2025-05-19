@@ -44,7 +44,7 @@ func TestActivityRepository_GetUserActivities(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add the user as owner (this is usually handled at service layer)
-		err = repo.AddOwner(activity.ID, testUser.ID, string(models.OwnerTypeUser))
+		err = repo.AddOwner(activity.ID, testUser.ID, models.OwnerTypeUser)
 		require.NoError(t, err)
 	}
 
@@ -61,7 +61,7 @@ func TestActivityRepository_GetUserActivities(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add the other user as owner
-	err = repo.AddOwner(otherActivity.ID, anotherUser.ID, string(models.OwnerTypeUser))
+	err = repo.AddOwner(otherActivity.ID, anotherUser.ID, models.OwnerTypeUser)
 	require.NoError(t, err)
 
 	t.Run("Get User Activities - Success", func(t *testing.T) {
@@ -167,7 +167,7 @@ func TestActivityRepository_GetTribeActivities(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add the tribe as owner
-		err = repo.AddOwner(activity.ID, testTribe.ID, string(models.OwnerTypeTribe))
+		err = repo.AddOwner(activity.ID, testTribe.ID, models.OwnerTypeTribe)
 		require.NoError(t, err)
 	}
 
@@ -184,7 +184,7 @@ func TestActivityRepository_GetTribeActivities(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add the other tribe as owner
-	err = repo.AddOwner(otherActivity.ID, anotherTribe.ID, string(models.OwnerTypeTribe))
+	err = repo.AddOwner(otherActivity.ID, anotherTribe.ID, models.OwnerTypeTribe)
 	require.NoError(t, err)
 
 	t.Run("Get Tribe Activities - Success", func(t *testing.T) {
@@ -241,7 +241,7 @@ func TestActivityRepository_GetTribeActivities(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add the tribe as owner
-		err = repo.AddOwner(newActivity.ID, testTribe.ID, string(models.OwnerTypeTribe))
+		err = repo.AddOwner(newActivity.ID, testTribe.ID, models.OwnerTypeTribe)
 		require.NoError(t, err)
 
 		// Verify activity appears in tribe activities

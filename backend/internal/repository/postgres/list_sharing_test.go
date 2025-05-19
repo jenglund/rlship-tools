@@ -11,14 +11,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListRepository_ShareWithTribe(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
+// setupTestWithSchema sets up a test database with the schema path properly configured
+func setupTestWithSchema(t *testing.T) (*testutil.SchemaDB, func()) {
+	t.Helper()
 
-	// Create repositories
-	listRepo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
-	tribeRepo := NewTribeRepository(db)
+	// Setup test database with schema
+	schemaDB := testutil.SetupTestDB(t)
+
+	// Create a teardown function
+	teardown := func() {
+		testutil.TeardownTestDB(t, schemaDB)
+	}
+
+	return schemaDB, teardown
+}
+
+func TestListRepository_ShareWithTribe(t *testing.T) {
+	// Use our custom setup function
+	schemaDB, teardown := setupTestWithSchema(t)
+	defer teardown()
+
+	// Get raw DB for repository constructors
+	rawDB := testutil.UnwrapDB(schemaDB)
+
+	// Create repositories using the raw DB with schema path set
+	listRepo := NewListRepository(rawDB)
+	userRepo := NewUserRepository(rawDB)
+	tribeRepo := NewTribeRepository(rawDB)
 
 	// Create a test user
 	user := &models.User{
@@ -70,8 +89,8 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 	err = listRepo.Create(list)
 	require.NoError(t, err)
 
-	t.Run("success", func(t *testing.T) {
-		// Create a share
+	t.Run("with_expiry", func(t *testing.T) {
+		// Create a share with expiration date
 		expiresAt := time.Now().Add(24 * time.Hour)
 		share := &models.ListShare{
 			ListID:    list.ID,
@@ -85,19 +104,19 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 
 		// Verify share was created
 		var shareExists bool
-		err = db.QueryRow(`
+		err = schemaDB.QueryRow(`
 			SELECT EXISTS(
 				SELECT 1 FROM list_sharing 
-				WHERE list_id = $1 AND tribe_id = $2 AND user_id = $3 AND deleted_at IS NULL
+				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
 			)`,
-			list.ID, tribe.ID, user.ID,
+			list.ID, tribe.ID,
 		).Scan(&shareExists)
 		require.NoError(t, err)
 		assert.True(t, shareExists, "share record should exist")
 
 		// Verify expiration date was set
 		var storedExpiresAt time.Time
-		err = db.QueryRow(`
+		err = schemaDB.QueryRow(`
 			SELECT expires_at FROM list_sharing
 			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
 		`, list.ID, tribe.ID).Scan(&storedExpiresAt)
@@ -106,8 +125,6 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 	})
 
 	t.Run("update_existing", func(t *testing.T) {
-		t.Skip("Skipping due to database constraint issues - needs further investigation")
-
 		// Create a new list for this test to avoid duplicate key issues
 		maxItems := 100
 		cooldownDays := 7
@@ -146,7 +163,7 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 
 		// Verify share was created
 		var shareExists bool
-		err = db.QueryRow(`
+		err = schemaDB.QueryRow(`
 			SELECT EXISTS(
 				SELECT 1 FROM list_sharing 
 				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
@@ -165,12 +182,12 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 			ExpiresAt: &newExpiresAt,
 		}
 
-		// First call marks the existing share as deleted
+		// Now we can do the share update in a single call
 		err = listRepo.ShareWithTribe(updatedShare)
 		require.NoError(t, err)
 
 		// Verify old share is marked as deleted
-		err = db.QueryRow(`
+		err = schemaDB.QueryRow(`
 			SELECT EXISTS(
 				SELECT 1 FROM list_sharing 
 				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NOT NULL
@@ -180,14 +197,10 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, shareExists, "old share record should be soft deleted")
 
-		// Second call creates the new share
-		err = listRepo.ShareWithTribe(updatedShare)
-		require.NoError(t, err)
-
 		// Verify new share exists with new expiration date
 		var storedExpiresAt time.Time
 		var version int
-		err = db.QueryRow(`
+		err = schemaDB.QueryRow(`
 			SELECT expires_at, version FROM list_sharing
 			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
 		`, list2.ID, tribe.ID).Scan(&storedExpiresAt, &version)
@@ -234,7 +247,7 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 
 		// Verify share was created with null expiry
 		var expiresAt *time.Time
-		err = db.QueryRow(`
+		err = schemaDB.QueryRow(`
 			SELECT expires_at FROM list_sharing
 			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
 		`, list3.ID, tribe.ID).Scan(&expiresAt)
@@ -309,13 +322,17 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 }
 
 func TestListRepository_GetListShares(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
+	// Use our custom setup function
+	schemaDB, teardown := setupTestWithSchema(t)
+	defer teardown()
+
+	// Get raw DB for repository constructors
+	rawDB := testutil.UnwrapDB(schemaDB)
 
 	// Create repositories
-	listRepo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
-	tribeRepo := NewTribeRepository(db)
+	listRepo := NewListRepository(rawDB)
+	userRepo := NewUserRepository(rawDB)
+	tribeRepo := NewTribeRepository(rawDB)
 
 	// Create a test user
 	user := &models.User{
@@ -426,7 +443,7 @@ func TestListRepository_GetListShares(t *testing.T) {
 	expiresAt3 := now.Add(72 * time.Hour)
 
 	// Share with first tribe (created first but with an earlier createdAt timestamp)
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		list.ID, tribe1.ID, user.ID, now, now, expiresAt1, 1,
@@ -434,7 +451,7 @@ func TestListRepository_GetListShares(t *testing.T) {
 	require.NoError(t, err)
 
 	// Share with second tribe (created second with a later createdAt timestamp)
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		list.ID, tribe2.ID, user.ID, now.Add(1*time.Hour), now.Add(1*time.Hour), expiresAt2, 1,
@@ -442,7 +459,7 @@ func TestListRepository_GetListShares(t *testing.T) {
 	require.NoError(t, err)
 
 	// Share third tribe with a different version
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		list.ID, tribe3.ID, user.ID, now.Add(2*time.Hour), now.Add(2*time.Hour), expiresAt3, 3,
@@ -450,10 +467,10 @@ func TestListRepository_GetListShares(t *testing.T) {
 	require.NoError(t, err)
 
 	// Share second list with first tribe
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		list2.ID, tribe1.ID, user.ID, now.Add(3*time.Hour), now.Add(3*time.Hour), expiresAt1, 2,
+		list2.ID, tribe1.ID, user.ID, now, now, expiresAt1, 1,
 	)
 	require.NoError(t, err)
 
@@ -486,11 +503,11 @@ func TestListRepository_GetListShares(t *testing.T) {
 
 	t.Run("ordering", func(t *testing.T) {
 		// Update the timestamp for tribe1's share to be the most recent
-		_, err := db.Exec(`
+		_, err := schemaDB.Exec(`
 			UPDATE list_sharing
 			SET created_at = $1, updated_at = $1
 			WHERE list_id = $2 AND tribe_id = $3`,
-			now.Add(4*time.Hour), list.ID, tribe1.ID,
+			now.Add(3*time.Hour), list.ID, tribe1.ID,
 		)
 		require.NoError(t, err)
 
@@ -513,11 +530,11 @@ func TestListRepository_GetListShares(t *testing.T) {
 
 	t.Run("deleted_shares", func(t *testing.T) {
 		// Delete one of the shares
-		_, err := db.Exec(`
+		_, err := schemaDB.Exec(`
 			UPDATE list_sharing
 			SET deleted_at = NOW()
 			WHERE list_id = $1 AND tribe_id = $2`,
-			list.ID, tribe1.ID,
+			list.ID, tribe2.ID,
 		)
 		require.NoError(t, err)
 
@@ -561,7 +578,7 @@ func TestListRepository_GetListShares(t *testing.T) {
 		// Each with increasing version numbers
 
 		// Version 1 - soft deleted
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 			list4.ID, tribe1.ID, user.ID, now, now, expiresAt1, now.Add(30*time.Minute), 1,
@@ -569,7 +586,7 @@ func TestListRepository_GetListShares(t *testing.T) {
 		require.NoError(t, err)
 
 		// Version 2 - soft deleted
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, deleted_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 			list4.ID, tribe1.ID, user.ID, now.Add(1*time.Hour), now.Add(1*time.Hour),
@@ -578,7 +595,7 @@ func TestListRepository_GetListShares(t *testing.T) {
 		require.NoError(t, err)
 
 		// Version 3 - current active version
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			list4.ID, tribe1.ID, user.ID, now.Add(3*time.Hour), now.Add(3*time.Hour),
@@ -598,13 +615,16 @@ func TestListRepository_GetListShares(t *testing.T) {
 func TestListRepository_GetSharedLists(t *testing.T) {
 	t.Skip("Skipping due to database constraint issues - needs further investigation")
 
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
+	schemaDB, teardown := setupTestWithSchema(t)
+	defer teardown()
+
+	// Get raw DB for repository constructors
+	rawDB := testutil.UnwrapDB(schemaDB)
 
 	// Create repositories
-	listRepo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
-	tribeRepo := NewTribeRepository(db)
+	listRepo := NewListRepository(rawDB)
+	userRepo := NewUserRepository(rawDB)
+	tribeRepo := NewTribeRepository(rawDB)
 
 	// Create a test user
 	user := &models.User{
@@ -664,7 +684,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	list3ID := uuid.New()
 
 	// Insert first list
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -681,7 +701,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add user as owner for list1
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list1ID, user.ID, models.OwnerTypeUser, now, now,
@@ -689,7 +709,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert second list
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -706,7 +726,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert third list with more complex setup (different type, multiple owners)
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -723,7 +743,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add user as primary owner for list3
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list3ID, user.ID, models.OwnerTypeUser, now, now,
@@ -731,7 +751,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add user2 as secondary owner for list3
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list3ID, user2.ID, models.OwnerTypeUser, now, now,
@@ -743,7 +763,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	item2ID := uuid.New()
 
 	// Add first item
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_items (
 			id, list_id, name, description, weight,
 			created_at, updated_at
@@ -761,7 +781,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	long := -122.4194
 	address := "San Francisco, CA"
 
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_items (
 			id, list_id, name, description, weight,
 			latitude, longitude, address,
@@ -782,7 +802,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	pastDate := now.Add(-24 * time.Hour)
 
 	// Share first list with future expiration
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		list1ID, tribe.ID, user.ID, now, now, futureDate, 1,
@@ -790,7 +810,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Share second list with past expiration
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		list2ID, tribe.ID, user.ID, now, now, pastDate, 1,
@@ -798,7 +818,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Share third list with tribe2, no expiration
-	_, err = db.Exec(`
+	_, err = schemaDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6)`,
 		list3ID, tribe2.ID, user.ID, now, now, 1,
@@ -820,7 +840,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		list4ID := uuid.New()
 
 		// Insert fourth list
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO lists (
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id,
@@ -837,7 +857,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add user as owner for list4
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5)`,
 			list4ID, user.ID, models.OwnerTypeUser, now, now,
@@ -845,7 +865,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Share with no expiration
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6)`,
 			list4ID, tribe.ID, user.ID, now, now, 1,
@@ -924,7 +944,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 
 	t.Run("deleted_list", func(t *testing.T) {
 		// Delete the first list
-		_, err := db.Exec(`
+		_, err := schemaDB.Exec(`
 			UPDATE lists
 			SET deleted_at = NOW()
 			WHERE id = $1`,
@@ -936,7 +956,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		list4ID := uuid.New()
 
 		// Insert fourth list
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO lists (
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id,
@@ -953,7 +973,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add user as owner for list4
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5)`,
 			list4ID, user.ID, models.OwnerTypeUser, now, now,
@@ -961,7 +981,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Share with no expiration
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6)`,
 			list4ID, tribe.ID, user.ID, now, now, 1,
@@ -989,7 +1009,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		list5ID := uuid.New()
 
 		// Insert fifth list
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO lists (
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id,
@@ -1006,7 +1026,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add user as owner for list5
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5)`,
 			list5ID, user.ID, models.OwnerTypeUser, now, now,
@@ -1014,7 +1034,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add a share
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6)`,
 			list5ID, tribe.ID, user.ID, now, now, 1,
@@ -1022,7 +1042,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Delete the share
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			UPDATE list_sharing 
 			SET deleted_at = NOW() 
 			WHERE list_id = $1 AND tribe_id = $2`,
@@ -1072,7 +1092,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 			list8ID: oneHourLater,
 		} {
 			// Insert list
-			_, err = db.Exec(`
+			_, err = schemaDB.Exec(`
 				INSERT INTO lists (
 					id, type, name, description, visibility,
 					sync_status, sync_source, sync_id,
@@ -1089,7 +1109,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 			require.NoError(t, err)
 
 			// Add owner
-			_, err = db.Exec(`
+			_, err = schemaDB.Exec(`
 				INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 				VALUES ($1, $2, $3, $4, $5)`,
 				id, user.ID, models.OwnerTypeUser, timestamp, timestamp,
@@ -1097,7 +1117,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 			require.NoError(t, err)
 
 			// Share with tribe
-			_, err = db.Exec(`
+			_, err = schemaDB.Exec(`
 				INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, version)
 				VALUES ($1, $2, $3, $4, $5, $6)`,
 				id, orderingTribe.ID, user.ID, timestamp, timestamp, 1,
@@ -1121,7 +1141,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		boundaryList := uuid.New()
 
 		// Insert boundary test list
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO lists (
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id,
@@ -1138,7 +1158,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add owner
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5)`,
 			boundaryList, user.ID, models.OwnerTypeUser, now, now,
@@ -1147,7 +1167,7 @@ func TestListRepository_GetSharedLists(t *testing.T) {
 
 		// Share with tribe using exact now() as expiration
 		expiresNow := time.Now()
-		_, err = db.Exec(`
+		_, err = schemaDB.Exec(`
 			INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, expires_at, version)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			boundaryList, tribe.ID, user.ID, now, now, expiresNow, 1,

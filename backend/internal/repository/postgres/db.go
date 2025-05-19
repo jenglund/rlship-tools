@@ -35,11 +35,11 @@ func NewDB(host string, port int, user, password, dbname, sslmode string) (*sql.
 
 // Repositories holds all repository implementations
 type Repositories struct {
-	Users          *UserRepository
-	Tribes         *TribeRepository
-	Activities     *ActivityRepository
-	ActivityPhotos *ActivityPhotosRepository
-	Lists          *ListRepository
+	Users          models.UserRepository
+	Tribes         models.TribeRepository
+	Activities     models.ActivityRepository
+	ActivityPhotos models.ActivityPhotosRepository
+	Lists          models.ListRepository
 	db             *sql.DB
 }
 
@@ -52,7 +52,7 @@ func NewRepositories(db interface{}) *Repositories {
 	case *sql.DB:
 		sqlDB = d
 	case *testutil.SchemaDB:
-		sqlDB = d.DB
+		sqlDB = d.UnwrapDB()
 	default:
 		if db == nil {
 			sqlDB = nil

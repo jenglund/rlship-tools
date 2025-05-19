@@ -1078,7 +1078,7 @@ func TestAddOwner(t *testing.T) {
 
 				found := false
 				for _, owner := range owners {
-					if owner.OwnerID == tt.request.OwnerID && string(owner.OwnerType) == tt.request.OwnerType {
+					if owner.OwnerID == tt.request.OwnerID && owner.OwnerType == models.OwnerType(tt.request.OwnerType) {
 						found = true
 						break
 					}

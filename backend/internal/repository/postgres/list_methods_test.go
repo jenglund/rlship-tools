@@ -16,7 +16,7 @@ func TestListRepository_List(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
 	testUser := testutil.CreateTestUser(t, db)
 
 	// Create multiple test lists for pagination testing
@@ -166,7 +166,7 @@ func TestListRepository_ItemOperations(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
 	testUser := testutil.CreateTestUser(t, db)
 
 	// Create a test list
@@ -299,7 +299,7 @@ func TestListRepository_GetEligibleItems(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
 	testUser := testutil.CreateTestUser(t, db)
 
 	// Create a test list

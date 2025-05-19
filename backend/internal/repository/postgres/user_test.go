@@ -15,7 +15,7 @@ func TestUserRepository(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewUserRepository(db)
+	repo := NewUserRepository(testutil.UnwrapDB(db))
 
 	t.Run("Create", func(t *testing.T) {
 		t.Run("valid user", func(t *testing.T) {

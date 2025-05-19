@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
+	"github.com/jenglund/rlship-tools/internal/testutil"
 )
 
 // ActivityRepository implements models.ActivityRepository using PostgreSQL
@@ -18,10 +19,25 @@ type ActivityRepository struct {
 }
 
 // NewActivityRepository creates a new PostgreSQL activity repository
-func NewActivityRepository(db *sql.DB) *ActivityRepository {
+func NewActivityRepository(db interface{}) *ActivityRepository {
+	var sqlDB *sql.DB
+
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *testutil.SchemaDB:
+		sqlDB = d.UnwrapDB()
+	default:
+		if db == nil {
+			sqlDB = nil
+		} else {
+			panic(fmt.Sprintf("Unsupported DB type: %T", db))
+		}
+	}
+
 	return &ActivityRepository{
-		db: db,
-		tm: NewTransactionManager(db),
+		db: sqlDB,
+		tm: NewTransactionManager(sqlDB),
 	}
 }
 
@@ -284,7 +300,7 @@ func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error)
 }
 
 // AddOwner adds an owner to an activity
-func (r *ActivityRepository) AddOwner(activityID, ownerID uuid.UUID, ownerType string) error {
+func (r *ActivityRepository) AddOwner(activityID, ownerID uuid.UUID, ownerType models.OwnerType) error {
 	query := `
 		INSERT INTO activity_owners (activity_id, owner_id, owner_type, created_at)
 		VALUES ($1, $2, $3, $4)`
@@ -669,4 +685,57 @@ func (r *ActivityRepository) GetSharedActivities(tribeID uuid.UUID) ([]*models.A
 	}
 
 	return activities, nil
+}
+
+// CleanupOrphanedActivities removes activities that have no owners
+func (r *ActivityRepository) CleanupOrphanedActivities() error {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			WITH orphaned_activities AS (
+				SELECT a.id
+				FROM activities a
+				LEFT JOIN activity_owners ao ON a.id = ao.activity_id AND ao.deleted_at IS NULL
+				WHERE a.deleted_at IS NULL AND ao.activity_id IS NULL
+			)
+			UPDATE activities
+			SET deleted_at = NOW(), updated_at = NOW()
+			WHERE id IN (SELECT id FROM orphaned_activities)
+			RETURNING id`
+
+		rows, err := tx.Query(query)
+		if err != nil {
+			return fmt.Errorf("error cleaning up orphaned activities: %w", err)
+		}
+		defer safeClose(rows)
+
+		return nil
+	})
+}
+
+// MarkForDeletion marks an activity for future deletion
+func (r *ActivityRepository) MarkForDeletion(activityID uuid.UUID) error {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			UPDATE activities
+			SET deleted_at = NOW(), updated_at = NOW()
+			WHERE id = $1 AND deleted_at IS NULL
+			RETURNING id`
+
+		var id uuid.UUID
+		err := tx.QueryRow(query, activityID).Scan(&id)
+		if err == sql.ErrNoRows {
+			return models.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("error marking activity for deletion: %w", err)
+		}
+
+		return nil
+	})
 }

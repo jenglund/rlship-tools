@@ -364,7 +364,7 @@ func TestActivityOwnerManagement(t *testing.T) {
 
 	t.Run("AddOwner - User", func(t *testing.T) {
 		// Add second user as owner
-		err := repo.AddOwner(activity.ID, secondUser.ID, string(models.OwnerTypeUser))
+		err := repo.AddOwner(activity.ID, secondUser.ID, models.OwnerTypeUser)
 		require.NoError(t, err)
 
 		// Check owner was added
@@ -384,7 +384,7 @@ func TestActivityOwnerManagement(t *testing.T) {
 
 	t.Run("AddOwner - Tribe", func(t *testing.T) {
 		// Add tribe as owner
-		err := repo.AddOwner(activity.ID, tribe.ID, string(models.OwnerTypeTribe))
+		err := repo.AddOwner(activity.ID, tribe.ID, models.OwnerTypeTribe)
 		require.NoError(t, err)
 
 		// Check owner was added
@@ -488,7 +488,7 @@ func TestActivityOwnerManagement(t *testing.T) {
 		// Since the Create method doesn't automatically add owners
 		// (unlike in List repository), we need to manually add at least
 		// one owner for this test
-		err = repo.AddOwner(newActivity.ID, testUser.ID, string(models.OwnerTypeUser))
+		err = repo.AddOwner(newActivity.ID, testUser.ID, models.OwnerTypeUser)
 		require.NoError(t, err)
 
 		// Get owners - should have the one we added

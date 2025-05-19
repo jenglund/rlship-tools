@@ -16,14 +16,14 @@ import (
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
-	return testutil.SetupTestDB(t)
+	return testutil.UnwrapDB(testutil.SetupTestDB(t))
 }
 
 func TestListRepository(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
 	testUser := testutil.CreateTestUser(t, db)
 
 	maxItems := 100

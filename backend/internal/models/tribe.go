@@ -174,6 +174,7 @@ type TribeRepository interface {
 	GetMembers(tribeID uuid.UUID) ([]*TribeMember, error)
 	GetUserTribes(userID uuid.UUID) ([]*Tribe, error)
 	CheckFormerTribeMember(tribeID, userID uuid.UUID) (bool, error)
+	ReinviteMember(tribeID, userID uuid.UUID, memberType MembershipType, expiresAt *time.Time, invitedBy *uuid.UUID) error
 
 	// Queries
 	GetByType(tribeType TribeType, offset, limit int) ([]*Tribe, error)

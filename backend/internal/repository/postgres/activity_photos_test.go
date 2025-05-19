@@ -15,7 +15,8 @@ func TestActivityPhotos(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewActivityRepository(db)
+	sqlDB := db.UnwrapDB()
+	repo := NewActivityRepository(sqlDB)
 	testUser := testutil.CreateTestUser(t, db)
 
 	// Create test activity
@@ -169,7 +170,9 @@ func TestActivityPhotos(t *testing.T) {
 func TestActivityPhotosRepository(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
-	repo := NewActivityPhotosRepository(db)
+
+	sqlDB := db.UnwrapDB()
+	repo := NewActivityPhotosRepository(sqlDB)
 	testUser := testutil.CreateTestUser(t, db)
 
 	// Create test activity
@@ -186,7 +189,7 @@ func TestActivityPhotosRepository(t *testing.T) {
 	}
 
 	// Create activity first
-	activityRepo := NewActivityRepository(db)
+	activityRepo := NewActivityRepository(sqlDB)
 	err := activityRepo.Create(activity)
 	require.NoError(t, err)
 

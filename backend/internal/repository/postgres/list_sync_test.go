@@ -15,11 +15,12 @@ import (
 )
 
 func TestListRepository_UpdateSyncStatus(t *testing.T) {
+	// Use the test utility with timeouts to prevent test hangs
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
+	userRepo := NewUserRepository(testutil.UnwrapDB(db))
 
 	// Create a test user first
 	user := &models.User{
@@ -109,8 +110,8 @@ func TestListRepository_CreateConflict(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
+	userRepo := NewUserRepository(testutil.UnwrapDB(db))
 
 	// Create a test user
 	user := &models.User{
@@ -221,8 +222,8 @@ func TestListRepository_GetConflicts(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
+	userRepo := NewUserRepository(testutil.UnwrapDB(db))
 
 	// Create a test user
 	user := &models.User{
@@ -356,8 +357,8 @@ func TestListRepository_ResolveConflict(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
+	userRepo := NewUserRepository(testutil.UnwrapDB(db))
 
 	// Create a test user
 	user := &models.User{
@@ -440,39 +441,26 @@ func TestListRepository_ResolveConflict(t *testing.T) {
 
 // setupTestListSync creates tables directly with hard-coded schema name for tests
 func setupTestListSync(t *testing.T, schemaName string) (*sql.DB, func()) {
+	t.Helper()
+
+	// Use testutil's SetupTestDB instead of direct DB creation
 	db := testutil.SetupTestDB(t)
+	sqlDB := testutil.UnwrapDB(db)
 
-	// Check if schema was created successfully
-	var exists bool
-	err := db.QueryRow(`
-		SELECT EXISTS (
-			SELECT FROM information_schema.schemata 
-			WHERE schema_name = $1
-		)`, schemaName).Scan(&exists)
-	require.NoError(t, err)
-	require.True(t, exists, "Schema was not created")
-
-	// Output schema name for debugging
-	t.Logf("Using schema: %s", schemaName)
-
-	// Set search path to include both the test schema and public
-	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", schemaName))
-	require.NoError(t, err)
-
-	// Verify search_path
-	var searchPath string
-	err = db.QueryRow("SHOW search_path").Scan(&searchPath)
-	require.NoError(t, err)
-	t.Logf("Search path set to: %s", searchPath)
-
-	return db, func() {
+	// Return a cleanup function that uses proper teardown
+	cleanup := func() {
 		testutil.TeardownTestDB(t, db)
 	}
+
+	return sqlDB, cleanup
 }
 
 func TestListRepository_GetListsBySyncSource(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
+
+	// Use the repository for testing GetListsBySource
+	listRepo := NewListRepository(testutil.UnwrapDB(db))
 
 	// Get the schema name directly from the database
 	var schemaName string
@@ -713,13 +701,22 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 
 		assert.Empty(t, lists, "Should return empty slice for unknown source")
 	})
+
+	// Now test the repository method
+	t.Run("get google maps lists via repository", func(t *testing.T) {
+		lists, err := listRepo.GetListsBySource(string(models.SyncSourceGoogleMaps))
+		require.NoError(t, err)
+		require.Len(t, lists, 2, "Should have two Google Maps lists")
+
+		// Additional checks can be added here to verify the lists
+	})
 }
 
 func TestListRepository_CreateConflict_Extra(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(db)
+	repo := NewListRepository(testutil.UnwrapDB(db))
 
 	// Create a test user directly with SQL
 	userID := uuid.New()

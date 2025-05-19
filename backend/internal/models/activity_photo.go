@@ -26,3 +26,11 @@ func (p *ActivityPhoto) Validate() error {
 	}
 	return nil
 }
+
+// ActivityPhotosRepository defines the interface for activity photo data operations
+type ActivityPhotosRepository interface {
+	Create(photo *ActivityPhoto) error
+	GetByID(id uuid.UUID) (*ActivityPhoto, error)
+	Update(photo *ActivityPhoto) error
+	Delete(id uuid.UUID) error
+}
