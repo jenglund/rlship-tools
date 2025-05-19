@@ -1014,7 +1014,7 @@ func TestTribeRepository(t *testing.T) {
 }
 
 // Helper function to create test tribes of a specific type
-func createTestTribesByType(t *testing.T, repo *TribeRepository, tribeType models.TribeType, count int) []*models.Tribe {
+func createTestTribesByType(t *testing.T, repo models.TribeRepository, tribeType models.TribeType, count int) []*models.Tribe {
 	tribes := make([]*models.Tribe, count)
 	for i := range tribes {
 		now := time.Now()

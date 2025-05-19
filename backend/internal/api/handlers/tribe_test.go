@@ -752,20 +752,20 @@ func TestCreateTribe(t *testing.T) {
 				assert.NotNil(t, tribe)
 
 				// Verify the deeply nested metadata was properly stored
-				level1, ok := tribe.Metadata["level1"].(map[string]interface{})
-				assert.True(t, ok, "Should have level1 map")
+				level1, ok1 := tribe.Metadata["level1"].(map[string]interface{})
+				assert.True(t, ok1, "Should have level1 map")
 
-				level2, ok := level1["level2"].(map[string]interface{})
-				assert.True(t, ok, "Should have level2 map")
+				level2, ok2 := level1["level2"].(map[string]interface{})
+				assert.True(t, ok2, "Should have level2 map")
 
-				level3, ok := level2["level3"].(map[string]interface{})
-				assert.True(t, ok, "Should have level3 map")
+				level3, ok3 := level2["level3"].(map[string]interface{})
+				assert.True(t, ok3, "Should have level3 map")
 
 				assert.Equal(t, "deeply nested value", level3["key"], "Should have correctly nested value")
 
 				// Check the nested array
-				nestedArray, ok := level3["array"].([]interface{})
-				assert.True(t, ok, "Should have array in nested structure")
+				nestedArray, ok4 := level3["array"].([]interface{})
+				assert.True(t, ok4, "Should have array in nested structure")
 				assert.Equal(t, 2, len(nestedArray), "Array should have 2 items")
 			},
 		},
