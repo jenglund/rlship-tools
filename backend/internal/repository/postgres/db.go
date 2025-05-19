@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jenglund/rlship-tools/internal/models"
+	"github.com/jenglund/rlship-tools/internal/testutil"
 	_ "github.com/lib/pq"
 )
 
@@ -34,19 +35,39 @@ func NewDB(host string, port int, user, password, dbname, sslmode string) (*sql.
 
 // Repositories holds all repository implementations
 type Repositories struct {
-	Users      *UserRepository
-	Tribes     *TribeRepository
-	Activities *ActivityRepository
-	db         *sql.DB
+	Users          *UserRepository
+	Tribes         *TribeRepository
+	Activities     *ActivityRepository
+	ActivityPhotos *ActivityPhotosRepository
+	Lists          *ListRepository
+	db             *sql.DB
 }
 
 // NewRepositories creates new instances of all repositories
-func NewRepositories(db *sql.DB) *Repositories {
+func NewRepositories(db interface{}) *Repositories {
+	var sqlDB *sql.DB
+
+	// Handle different DB types
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *testutil.SchemaDB:
+		sqlDB = d.DB
+	default:
+		if db == nil {
+			sqlDB = nil
+		} else {
+			panic(fmt.Sprintf("Unsupported DB type: %T", db))
+		}
+	}
+
 	return &Repositories{
-		Users:      NewUserRepository(db),
-		Tribes:     NewTribeRepository(db),
-		Activities: NewActivityRepository(db),
-		db:         db,
+		Users:          NewUserRepository(sqlDB),
+		Tribes:         NewTribeRepository(sqlDB),
+		Activities:     NewActivityRepository(sqlDB),
+		ActivityPhotos: NewActivityPhotosRepository(sqlDB),
+		Lists:          NewListRepository(sqlDB),
+		db:             sqlDB,
 	}
 }
 

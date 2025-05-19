@@ -434,6 +434,17 @@ func (db *SchemaDB) Close() error {
 	return db.DB.Close()
 }
 
+// UnwrapDB returns the underlying *sql.DB for backward compatibility
+// This allows existing code to use the *SchemaDB as a *sql.DB
+func (db *SchemaDB) UnwrapDB() *sql.DB {
+	return db.DB
+}
+
+// GetSchemaName returns the schema name for this database connection
+func (db *SchemaDB) GetSchemaName() string {
+	return db.schemaName
+}
+
 // TeardownTestDB cleans up the test schema
 func TeardownTestDB(t *testing.T, db *SchemaDB) {
 	t.Helper()
@@ -456,4 +467,16 @@ func TeardownTestDB(t *testing.T, db *SchemaDB) {
 // GetCurrentTestSchema returns the name of the current test schema
 func GetCurrentTestSchema() string {
 	return currentTestDBName
+}
+
+// GetDB returns a *sql.DB from any supported DB type (for backward compatibility)
+func GetDB(db interface{}) *sql.DB {
+	switch d := db.(type) {
+	case *sql.DB:
+		return d
+	case *SchemaDB:
+		return d.DB
+	default:
+		panic(fmt.Sprintf("Unsupported DB type: %T", db))
+	}
 }

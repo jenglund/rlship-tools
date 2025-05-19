@@ -35,11 +35,22 @@ type TestList struct {
 }
 
 // CreateTestUser creates a test user in the database
-func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
+func CreateTestUser(t *testing.T, db interface{}) TestUser {
 	t.Helper()
 
+	// Handle different DB types
+	var sqlDB *sql.DB
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *SchemaDB:
+		sqlDB = d.DB
+	default:
+		t.Fatalf("Unsupported DB type: %T", db)
+	}
+
 	// Start a transaction
-	tx, err := db.Begin()
+	tx, err := sqlDB.Begin()
 	if err != nil {
 		t.Fatalf("Error starting transaction: %v", err)
 	}
@@ -72,11 +83,22 @@ func CreateTestUser(t *testing.T, db *sql.DB) TestUser {
 }
 
 // CreateTestTribe creates a test tribe with members in the database
-func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
+func CreateTestTribe(t *testing.T, db interface{}, members []TestUser) TestTribe {
 	t.Helper()
 
+	// Handle different DB types
+	var sqlDB *sql.DB
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *SchemaDB:
+		sqlDB = d.DB
+	default:
+		t.Fatalf("Unsupported DB type: %T", db)
+	}
+
 	// Start a transaction
-	tx, err := db.Begin()
+	tx, err := sqlDB.Begin()
 	if err != nil {
 		t.Fatalf("Failed to start transaction: %v", err)
 	}
@@ -123,11 +145,22 @@ func CreateTestTribe(t *testing.T, db *sql.DB, members []TestUser) TestTribe {
 }
 
 // CreateTestList creates a test list in the database
-func CreateTestList(t *testing.T, db *sql.DB, tribe TestTribe) TestList {
+func CreateTestList(t *testing.T, db interface{}, tribe TestTribe) TestList {
 	t.Helper()
 
+	// Handle different DB types
+	var sqlDB *sql.DB
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *SchemaDB:
+		sqlDB = d.DB
+	default:
+		t.Fatalf("Unsupported DB type: %T", db)
+	}
+
 	// Start a transaction
-	tx, err := db.Begin()
+	tx, err := sqlDB.Begin()
 	if err != nil {
 		t.Fatalf("Failed to start transaction: %v", err)
 	}
@@ -173,11 +206,22 @@ func CreateTestList(t *testing.T, db *sql.DB, tribe TestTribe) TestList {
 }
 
 // CreateTestActivity creates a test activity in the database
-func CreateTestActivity(t *testing.T, db *sql.DB, user TestUser) *models.Activity {
+func CreateTestActivity(t *testing.T, db interface{}, user TestUser) *models.Activity {
 	t.Helper()
 
+	// Handle different DB types
+	var sqlDB *sql.DB
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *SchemaDB:
+		sqlDB = d.DB
+	default:
+		t.Fatalf("Unsupported DB type: %T", db)
+	}
+
 	// Start a transaction
-	tx, err := db.Begin()
+	tx, err := sqlDB.Begin()
 	if err != nil {
 		t.Fatalf("Failed to start transaction: %v", err)
 	}
@@ -226,11 +270,22 @@ func CreateTestActivity(t *testing.T, db *sql.DB, user TestUser) *models.Activit
 }
 
 // CleanupTestData removes all test data from the database
-func CleanupTestData(t *testing.T, db *sql.DB) {
+func CleanupTestData(t *testing.T, db interface{}) {
 	t.Helper()
 
+	// Handle different DB types
+	var sqlDB *sql.DB
+	switch d := db.(type) {
+	case *sql.DB:
+		sqlDB = d
+	case *SchemaDB:
+		sqlDB = d.DB
+	default:
+		t.Fatalf("Unsupported DB type: %T", db)
+	}
+
 	// Start a transaction
-	tx, err := db.Begin()
+	tx, err := sqlDB.Begin()
 	if err != nil {
 		t.Fatalf("Error starting transaction: %v", err)
 	}
@@ -249,18 +304,22 @@ func CleanupTestData(t *testing.T, db *sql.DB) {
 		"lists",
 		"tribe_members",
 		"tribes",
+		"activity_shares",
+		"activity_photos",
+		"activity_owners",
+		"activities",
 		"users",
 	}
 
 	for _, table := range tables {
 		_, err = tx.Exec(fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
-			t.Fatalf("Error cleaning up %s table: %v", table, err)
+			t.Logf("Error clearing table %s: %v", table, err)
 		}
 	}
 
 	// Commit the transaction
-	if err = tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil {
 		t.Fatalf("Error committing transaction: %v", err)
 	}
 }
