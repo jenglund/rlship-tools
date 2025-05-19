@@ -1200,6 +1200,79 @@ func (r *TribeRepository) ReinviteMember(tribeID, userID uuid.UUID, memberType m
 			return fmt.Errorf("user is already a member of this tribe")
 		}
 
+		// Check if the user exists as a former member (with deleted_at)
+		var formerMemberExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NOT NULL)", tribeID, userID).Scan(&formerMemberExists)
+		if err != nil {
+			return fmt.Errorf("error checking if former member exists: %w", err)
+		}
+
+		now := time.Now()
+
+		if formerMemberExists {
+			// Reactivate the former member by updating the existing record
+			var updateQuery string
+			var args []interface{}
+
+			if hasInvitedBy && hasInvitedAt {
+				updateQuery = `
+					UPDATE tribe_members
+					SET deleted_at = NULL,
+						membership_type = $1,
+						expires_at = $2,
+						updated_at = $3,
+						invited_by = $4,
+						invited_at = $5
+					WHERE tribe_id = $6
+					AND user_id = $7
+					AND deleted_at IS NOT NULL
+				`
+				args = []interface{}{
+					memberType,
+					expiresAt,
+					now,
+					invitedBy,
+					now,
+					tribeID,
+					userID,
+				}
+			} else {
+				updateQuery = `
+					UPDATE tribe_members
+					SET deleted_at = NULL,
+						membership_type = $1,
+						expires_at = $2,
+						updated_at = $3
+					WHERE tribe_id = $4
+					AND user_id = $5
+					AND deleted_at IS NOT NULL
+				`
+				args = []interface{}{
+					memberType,
+					expiresAt,
+					now,
+					tribeID,
+					userID,
+				}
+			}
+
+			result, err := tx.Exec(updateQuery, args...)
+			if err != nil {
+				return fmt.Errorf("error reactivating tribe member: %w", err)
+			}
+
+			rowsAffected, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("error checking rows affected: %w", err)
+			}
+
+			if rowsAffected == 0 {
+				return fmt.Errorf("no former member found to reactivate")
+			}
+
+			return nil
+		}
+
 		// Get user's name for display_name
 		var displayName sql.NullString
 		err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
@@ -1213,22 +1286,12 @@ func (r *TribeRepository) ReinviteMember(tribeID, userID uuid.UUID, memberType m
 			finalDisplayName = displayName.String
 		}
 
-		now := time.Now()
 		id := uuid.New()
-
-		// Soft-delete any existing records for this user in this tribe (even though they should already be soft-deleted)
-		_, err = tx.Exec(`
-			UPDATE tribe_members 
-			SET deleted_at = $1 
-			WHERE tribe_id = $2 AND user_id = $3 AND deleted_at IS NULL
-		`, now, tribeID, userID)
-		if err != nil {
-			return fmt.Errorf("error soft-deleting any existing tribe member records: %w", err)
-		}
 
 		var query string
 		var args []interface{}
 
+		// If no former member exists, create a new record
 		if hasInvitedBy && hasInvitedAt {
 			// Use the columns if they exist
 			query = `

@@ -69,6 +69,11 @@ This document tracks the current known issues in the Tribe project that need to 
 
 ## Recently Fixed Issues
 
+### Tribe Member Reinvitation Issue
+- **Issue**: When trying to reinvite a former tribe member after confirmation, the reinvitation was failing.
+- **Resolution**: Fixed by modifying the `ReinviteMember` function to properly reactivate former members by updating the `deleted_at` field to NULL instead of trying to insert a new record while keeping the old soft-deleted record.
+- **Fixed Date**: May 18, 2025
+
 ### Data Race in Database Tests
 - **Issue**: There was a data race in the `TestDatabaseErrors/concurrent_database_operations` test due to improper mutex usage.
 - **Resolution**: Fixed by improving the concurrent database operations test to use proper synchronization and thread-safe patterns.
