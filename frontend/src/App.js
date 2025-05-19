@@ -11,6 +11,7 @@ import AdminPanel from './components/AdminPanel';
 import AdminTribeDetail from './components/AdminTribeDetail';
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
+import TribeMemberProfileScreen from './components/TribeMemberProfileScreen';
 
 function App() {
   return (
@@ -42,6 +43,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <TribeDetailScreen />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/tribes/:tribeId/members/:memberId" 
+            element={
+              <ProtectedRoute>
+                <TribeMemberProfileScreen />
               </ProtectedRoute>
             } 
           />

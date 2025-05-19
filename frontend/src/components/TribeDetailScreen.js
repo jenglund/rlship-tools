@@ -209,8 +209,18 @@ const TribeDetailScreen = () => {
             {members.map(member => (
               <div key={member.id} className="member-card">
                 <div className="member-info">
-                  <h3>{member.user.name || member.display_name}</h3>
+                  <h3>
+                    <a href={`/tribes/${tribe.id}/members/${member.user_id}`}>{member.user.name || member.display_name}</a>
+                  </h3>
                   <p>{member.user.email}</p>
+                  <p>
+                    <strong>Invited by:</strong> {member.invited_by ? (
+                      <a href={`/tribes/${tribe.id}/members/${member.invited_by}`}>{/* We'll resolve display name in the profile page */}View Profile</a>
+                    ) : 'Unknown'}
+                  </p>
+                  <p>
+                    <strong>Invited at:</strong> {member.invited_at ? new Date(member.invited_at).toLocaleDateString() : 'Unknown'}
+                  </p>
                   {member.membership_type === 'pending' && (
                     <span className="badge pending-badge">Pending</span>
                   )}

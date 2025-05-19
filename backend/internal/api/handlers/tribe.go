@@ -161,7 +161,7 @@ func (h *TribeHandler) CreateTribe(c *gin.Context) {
 	}
 
 	// Add the creator as the first member
-	if addMemberErr := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, nil); addMemberErr != nil {
+	if addMemberErr := h.repos.Tribes.AddMember(tribe.ID, userID, models.MembershipFull, nil, &userID); addMemberErr != nil {
 		fmt.Printf("DEBUG: Failed to add member to tribe: %v\n", addMemberErr)
 
 		// Try to clean up the tribe if we couldn't add the member

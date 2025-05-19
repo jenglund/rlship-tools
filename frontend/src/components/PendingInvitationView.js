@@ -52,7 +52,9 @@ const PendingInvitationView = ({ tribe, invitedBy, invitedAt }) => {
 
       <div className="invitation-details">
         <p>
-          <strong>Invited by:</strong> {invitedBy ? invitedBy.name : 'Unknown'}
+          <strong>Invited by:</strong> {invitedBy ? (
+            <a href={`/tribes/${tribe.id}/members/${invitedBy.id}`}>{invitedBy.name || 'View Profile'}</a>
+          ) : 'Unknown'}
         </p>
         <p>
           <strong>Invitation date:</strong> {formattedDate}
