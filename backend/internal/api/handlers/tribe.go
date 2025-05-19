@@ -594,15 +594,19 @@ type AddMemberRequest struct {
 func (h *TribeHandler) AddMember(c *gin.Context) {
 	tribeID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
+		log.Printf("AddMember ERROR: Invalid tribe ID format: %s - %v", c.Param("id"), err)
 		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	var req AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("AddMember ERROR: Invalid request body: %v", err)
 		response.GinBadRequest(c, "Invalid request body")
 		return
 	}
+
+	log.Printf("AddMember: Adding user %s to tribe %s", req.UserID, tribeID)
 
 	// Get the current user as the inviter
 	inviterID := c.GetString("user_id")
@@ -611,15 +615,54 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 		uid, err := uuid.Parse(inviterID)
 		if err == nil {
 			inviter = &uid
+			log.Printf("AddMember: Inviter user ID: %s", *inviter)
+		} else {
+			log.Printf("AddMember WARNING: Failed to parse inviter ID: %v", err)
 		}
+	} else {
+		log.Printf("AddMember WARNING: No inviter ID found in context")
 	}
 
-	// Add the user as a pending member
-	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
+	// Check if user is already a member of the tribe
+	members, err := h.repos.Tribes.GetMembers(tribeID)
+	if err != nil {
+		if err.Error() == "tribe not found" {
+			log.Printf("AddMember ERROR: Tribe not found: %s", tribeID)
+			response.GinNotFound(c, "Tribe not found")
+			return
+		}
+		log.Printf("AddMember ERROR: Failed to get tribe members: %v", err)
 		response.GinInternalError(c, err)
 		return
 	}
 
+	log.Printf("AddMember: Retrieved %d members for tribe %s", len(members), tribeID)
+
+	for _, member := range members {
+		if member.UserID == req.UserID {
+			log.Printf("AddMember ERROR: User %s is already a member of tribe %s", req.UserID, tribeID)
+			response.GinBadRequest(c, "User is already a member of this tribe")
+			return
+		}
+	}
+
+	// Verify that the user exists
+	user, err := h.repos.Users.GetByID(req.UserID)
+	if err != nil {
+		log.Printf("AddMember ERROR: Failed to find user %s: %v", req.UserID, err)
+		response.GinBadRequest(c, "User not found")
+		return
+	}
+	log.Printf("AddMember: Found user %s (%s)", user.ID, user.Email)
+
+	// Add the user as a pending member
+	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
+		log.Printf("AddMember ERROR: Failed to add member to tribe: %v", err)
+		response.GinInternalError(c, err)
+		return
+	}
+
+	log.Printf("AddMember: Successfully added user %s to tribe %s as pending member", req.UserID, tribeID)
 	response.GinNoContent(c)
 }
 

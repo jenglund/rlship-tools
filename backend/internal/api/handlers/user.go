@@ -41,6 +41,7 @@ func (h *UserHandler) RegisterRoutes(r *gin.RouterGroup) {
 			auth.GET("/me", h.GetCurrentUser)
 			auth.PUT("/me", h.UpdateCurrentUser)
 			auth.GET("/:id", h.GetUser)
+			auth.POST("/search", h.SearchUsers)
 		}
 	}
 }
@@ -257,6 +258,28 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 
 	user, err := h.repos.GetUserRepository().GetByID(id)
 	if err != nil {
+		response.GinNotFound(c, "User not found")
+		return
+	}
+
+	response.GinSuccess(c, user)
+}
+
+// SearchRequest represents the user search request
+type SearchRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// SearchUsers finds users by email address
+func (h *UserHandler) SearchUsers(c *gin.Context) {
+	var req SearchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.GinBadRequest(c, "Invalid request body")
+		return
+	}
+
+	user, err := h.repos.GetUserRepository().GetByEmail(req.Email)
+	if err != nil || user == nil {
 		response.GinNotFound(c, "User not found")
 		return
 	}

@@ -115,28 +115,17 @@ const TribeDetailScreen = () => {
   const handleInviteClick = () => {
     setShowInviteModal(true);
   };
-
-  const handleInviteMember = async (email) => {
+  
+  // We'll refresh the member list when the invite modal is closed
+  const handleInviteModalClose = async () => {
     try {
-      // In a real application, you would:
-      // 1. Search for a user by email
-      // 2. Get their ID
-      // 3. Add them to the tribe
-      // For now, we'll assume a dummy ID for demonstration
-      const dummyUserId = "00000000-0000-0000-0000-000000000000"; // Replace with actual API call
-      
-      // Add the user to the tribe
-      await tribeService.addTribeMember(id, dummyUserId);
-      
       // Refresh the member list
       const membersData = await tribeService.getTribeMembers(id);
       setMembers(membersData);
-      
-      return dummyUserId;
     } catch (err) {
-      console.error('Error inviting member:', err);
-      throw err;
+      console.error('Error refreshing members:', err);
     }
+    setShowInviteModal(false);
   };
 
   if (loading) {
@@ -232,8 +221,7 @@ const TribeDetailScreen = () => {
 
       <InviteMemberModal
         show={showInviteModal}
-        onClose={() => setShowInviteModal(false)}
-        onInvite={handleInviteMember}
+        onClose={handleInviteModalClose}
         tribeId={id}
       />
     </div>

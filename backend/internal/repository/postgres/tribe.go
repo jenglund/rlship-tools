@@ -462,6 +462,11 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
+	log.Printf("AddMember repo: Adding user %s to tribe %s with membership type %s", userID, tribeID, memberType)
+	if invitedBy != nil {
+		log.Printf("AddMember repo: Invited by user %s", *invitedBy)
+	}
+
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Check if the columns exist first
 		var hasInvitedBy, hasInvitedAt bool
@@ -471,8 +476,10 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				WHERE table_name = 'tribe_members' AND column_name = 'invited_by'
 		`).Scan(&hasInvitedBy)
 		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to check for invited_by column: %v", err)
 			return fmt.Errorf("error checking for invited_by column: %w", err)
 		}
+		log.Printf("AddMember repo: Has invited_by column: %v", hasInvitedBy)
 
 		err = tx.QueryRow(`
 			SELECT 
@@ -480,13 +487,55 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				WHERE table_name = 'tribe_members' AND column_name = 'invited_at'
 		`).Scan(&hasInvitedAt)
 		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to check for invited_at column: %v", err)
 			return fmt.Errorf("error checking for invited_at column: %w", err)
 		}
+		log.Printf("AddMember repo: Has invited_at column: %v", hasInvitedAt)
+
+		// Check if tribe exists
+		var tribeExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribes WHERE id = $1 AND deleted_at IS NULL)", tribeID).Scan(&tribeExists)
+		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to check if tribe exists: %v", err)
+			return fmt.Errorf("error checking if tribe exists: %w", err)
+		}
+		if !tribeExists {
+			log.Printf("AddMember repo ERROR: Tribe %s does not exist", tribeID)
+			return fmt.Errorf("tribe not found")
+		}
+		log.Printf("AddMember repo: Tribe %s exists", tribeID)
+
+		// Check if user exists
+		var userExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID).Scan(&userExists)
+		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to check if user exists: %v", err)
+			return fmt.Errorf("error checking if user exists: %w", err)
+		}
+		if !userExists {
+			log.Printf("AddMember repo ERROR: User %s does not exist", userID)
+			return fmt.Errorf("user not found")
+		}
+		log.Printf("AddMember repo: User %s exists", userID)
+
+		// Check if user is already a member
+		var memberExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NULL)", tribeID, userID).Scan(&memberExists)
+		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to check if member exists: %v", err)
+			return fmt.Errorf("error checking if member exists: %w", err)
+		}
+		if memberExists {
+			log.Printf("AddMember repo ERROR: User %s is already a member of tribe %s", userID, tribeID)
+			return fmt.Errorf("user is already a member of this tribe")
+		}
+		log.Printf("AddMember repo: User %s is not already a member of tribe %s", userID, tribeID)
 
 		// Get user's name for display_name
 		var displayName sql.NullString
 		err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
 		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to get user name: %v", err)
 			return fmt.Errorf("error getting user name: %w", err)
 		}
 
@@ -495,6 +544,7 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 		if displayName.Valid && displayName.String != "" {
 			finalDisplayName = displayName.String
 		}
+		log.Printf("AddMember repo: Using display name: %s", finalDisplayName)
 
 		now := time.Now()
 		id := uuid.New()
@@ -523,6 +573,7 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				invitedBy,
 				now,
 			}
+			log.Printf("AddMember repo: Using query with invited_by and invited_at columns")
 		} else {
 			// Fall back to not using those columns if they don't exist
 			query = `
@@ -542,13 +593,16 @@ func (r *TribeRepository) AddMember(tribeID, userID uuid.UUID, memberType models
 				now,
 				now,
 			}
+			log.Printf("AddMember repo: Using query without invited_by and invited_at columns")
 		}
 
 		_, err = tx.Exec(query, args...)
 		if err != nil {
+			log.Printf("AddMember repo ERROR: Failed to add tribe member: %v", err)
 			return fmt.Errorf("error adding tribe member: %w", err)
 		}
 
+		log.Printf("AddMember repo: Successfully added user %s to tribe %s", userID, tribeID)
 		return nil
 	})
 }

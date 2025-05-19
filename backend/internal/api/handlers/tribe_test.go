@@ -1750,7 +1750,7 @@ func TestAddMember(t *testing.T) {
 			request: AddMemberRequest{
 				UserID: testUser.ID, // This user is already a member
 			},
-			wantStatus: http.StatusInternalServerError, // The current implementation returns 500 for this case
+			wantStatus: http.StatusBadRequest, // Should return 400 for duplicate member
 			validate: func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {
 				// Member count should remain unchanged
 				members, err := repos.Tribes.GetMembers(tribeID)

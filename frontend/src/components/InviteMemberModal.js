@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import userService from '../services/userService';
 import tribeService from '../services/tribeService';
 
-const InviteMemberModal = ({ show, onClose, onInvite, tribeId }) => {
+const InviteMemberModal = ({ show, onClose, tribeId }) => {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,18 +21,33 @@ const InviteMemberModal = ({ show, onClose, onInvite, tribeId }) => {
       setError('');
       
       // First search for user by email
-      const userId = await onInvite(email);
-      if (userId) {
+      const user = await userService.searchUserByEmail(email);
+      
+      if (!user) {
+        setError('No user found with this email address');
+        return;
+      }
+      
+      try {
+        // Add user to tribe
+        await tribeService.addTribeMember(tribeId, user.id);
         setSuccess(true);
         setTimeout(() => {
           setSuccess(false);
           setEmail('');
           onClose();
         }, 2000);
+      } catch (addErr) {
+        // Check if the error is because the user is already a member of the tribe
+        if (addErr.response && addErr.response.status === 400) {
+          setError('This user is already a member of the tribe');
+        } else {
+          setError(addErr.response?.data?.message || 'Failed to add member to tribe');
+        }
       }
     } catch (err) {
       console.error('Error inviting member:', err);
-      setError(err.response?.data?.error?.message || 'Failed to invite member');
+      setError(err.response?.data?.message || 'Failed to invite member');
     } finally {
       setLoading(false);
     }
