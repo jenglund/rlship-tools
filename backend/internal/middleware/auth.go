@@ -74,9 +74,9 @@ func (fa *FirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Add the Firebase UID to the context
-		c.Set("firebase_uid", tokenData.UID)
-		c.Set("user_email", tokenData.Claims["email"])
-		c.Set("user_name", tokenData.Claims["name"])
+		c.Set(string(ContextFirebaseUIDKey), tokenData.UID)
+		c.Set(string(ContextUserEmailKey), tokenData.Claims["email"])
+		c.Set(string(ContextUserNameKey), tokenData.Claims["name"])
 
 		c.Next()
 	}
@@ -85,7 +85,7 @@ func (fa *FirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 // RequireAuth returns a middleware that requires Firebase authentication
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, exists := c.Get("firebase_uid"); !exists {
+		if _, exists := c.Get(string(ContextFirebaseUIDKey)); !exists {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
@@ -104,7 +104,7 @@ func extractToken(r *http.Request) string {
 
 // GetFirebaseUID retrieves the Firebase UID from the Gin context
 func GetFirebaseUID(c *gin.Context) string {
-	uid, exists := c.Get("firebase_uid")
+	uid, exists := c.Get(string(ContextFirebaseUIDKey))
 	if !exists {
 		return ""
 	}
@@ -113,7 +113,7 @@ func GetFirebaseUID(c *gin.Context) string {
 
 // GetUserEmail retrieves the user's email from the Gin context
 func GetUserEmail(c *gin.Context) string {
-	email, exists := c.Get("user_email")
+	email, exists := c.Get(string(ContextUserEmailKey))
 	if !exists {
 		return ""
 	}
@@ -122,7 +122,7 @@ func GetUserEmail(c *gin.Context) string {
 
 // GetUserName retrieves the user's name from the Gin context
 func GetUserName(c *gin.Context) string {
-	name, exists := c.Get("user_name")
+	name, exists := c.Get(string(ContextUserNameKey))
 	if !exists {
 		return ""
 	}
@@ -150,7 +150,7 @@ func UserIDMiddleware(repos RepositoryProvider) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("user_id", user.ID.String())
+		c.Set(string(ContextUserIDKey), user.ID.String())
 		c.Next()
 	}
 }

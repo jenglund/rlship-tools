@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/api/response"
+	"github.com/jenglund/rlship-tools/internal/middleware"
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/jenglund/rlship-tools/internal/repository/postgres"
 	"github.com/jenglund/rlship-tools/internal/testutil"
@@ -38,8 +39,8 @@ func setupTribeTest(t *testing.T) (*gin.Engine, *postgres.Repositories, *testuti
 
 	// Set up auth context middleware
 	router.Use(func(c *gin.Context) {
-		c.Set("firebase_uid", testUser.FirebaseUID)
-		c.Set("user_id", testUser.ID)
+		c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+		c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 		c.Next()
 	})
 
@@ -70,8 +71,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -100,8 +101,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:    map[string]interface{}{"key": "value"},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -123,8 +124,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -137,8 +138,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -151,8 +152,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata: map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -166,8 +167,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -181,8 +182,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -196,8 +197,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   "not a map", // This will cause a type assertion failure
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -211,8 +212,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -232,8 +233,8 @@ func TestCreateTribe(t *testing.T) {
 				},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -257,8 +258,8 @@ func TestCreateTribe(t *testing.T) {
 			},
 			setupAuth: func(c *gin.Context) {
 				// Do not set any auth context - for test safety, explicitly clear any auth context
-				c.Set("firebase_uid", "")
-				c.Set("user_id", nil)
+				c.Set(string(middleware.ContextFirebaseUIDKey), "")
+				c.Set(string(middleware.ContextUserIDKey), nil)
 			},
 			wantStatus: http.StatusUnauthorized,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -272,8 +273,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -291,14 +292,14 @@ func TestCreateTribe(t *testing.T) {
 
 				// Set up auth
 				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-				ctx.Set("firebase_uid", testUser.FirebaseUID)
-				ctx.Set("user_id", testUser.ID)
+				ctx.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				ctx.Set(string(middleware.ContextUserIDKey), testUser.ID)
 
 				// Create a new router with auth middleware
 				testRouter := gin.New()
 				testRouter.Use(func(c *gin.Context) {
-					c.Set("firebase_uid", testUser.FirebaseUID)
-					c.Set("user_id", testUser.ID)
+					c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+					c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 					c.Next()
 				})
 
@@ -318,8 +319,8 @@ func TestCreateTribe(t *testing.T) {
 			name:    "malformed JSON request",
 			request: CreateTribeRequest{}, // Won't actually use this
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -332,8 +333,8 @@ func TestCreateTribe(t *testing.T) {
 				// Create a new router with auth middleware
 				testRouter := gin.New()
 				testRouter.Use(func(c *gin.Context) {
-					c.Set("firebase_uid", testUser.FirebaseUID)
-					c.Set("user_id", testUser.ID)
+					c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+					c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 					c.Next()
 				})
 
@@ -358,8 +359,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -389,8 +390,8 @@ func TestCreateTribe(t *testing.T) {
 					// Create a new router with auth middleware
 					testRouter := gin.New()
 					testRouter.Use(func(c *gin.Context) {
-						c.Set("firebase_uid", testUser.FirebaseUID)
-						c.Set("user_id", testUser.ID)
+						c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+						c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 						c.Next()
 					})
 
@@ -426,8 +427,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -455,8 +456,8 @@ func TestCreateTribe(t *testing.T) {
 					// Create a new router with auth middleware
 					testRouter := gin.New()
 					testRouter.Use(func(c *gin.Context) {
-						c.Set("firebase_uid", testUser.FirebaseUID)
-						c.Set("user_id", testUser.ID)
+						c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+						c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 						c.Next()
 					})
 
@@ -492,8 +493,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -511,8 +512,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata: nil, // Will handle this specially in the test case
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -528,8 +529,8 @@ func TestCreateTribe(t *testing.T) {
 				},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -554,8 +555,8 @@ func TestCreateTribe(t *testing.T) {
 				},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -584,8 +585,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{}, // Empty map metadata instead of nil
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -606,8 +607,8 @@ func TestCreateTribe(t *testing.T) {
 			},
 			setupAuth: func(c *gin.Context) {
 				// Set a non-UUID value as user_id
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", "not-a-valid-uuid")
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), "not-a-valid-uuid")
 			},
 			wantStatus: http.StatusUnauthorized,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -622,8 +623,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:    map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -641,8 +642,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:    map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -659,8 +660,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -678,8 +679,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   "not a map", // String instead of map
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -693,8 +694,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   []string{"not", "a", "map"}, // Array instead of map
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -708,8 +709,8 @@ func TestCreateTribe(t *testing.T) {
 				Metadata:   map[string]interface{}{},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribe *models.Tribe) {},
@@ -741,8 +742,8 @@ func TestCreateTribe(t *testing.T) {
 				},
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusCreated,
 			validate: func(t *testing.T, tribe *models.Tribe) {
@@ -979,8 +980,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 1,
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1009,8 +1010,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version:     2, // After the first update
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1044,8 +1045,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 1,
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusNotFound,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1071,8 +1072,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 1,
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusForbidden,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1098,8 +1099,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 1,
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusForbidden,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1125,8 +1126,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 999, // Incorrect version
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusConflict,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1153,8 +1154,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 3, // After the previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1181,8 +1182,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version:     3, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1209,8 +1210,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version:    4, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1236,8 +1237,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version:  5, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1268,8 +1269,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 6, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1293,8 +1294,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 7, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1321,8 +1322,8 @@ func TestUpdateTribe(t *testing.T) {
 				// Version is required but missing
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1349,8 +1350,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version:    7, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1377,8 +1378,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version:  7,               // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1404,8 +1405,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 7, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID.String()) // Set user_id as string instead of UUID
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID.String()) // Set user_id as string instead of UUID
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1427,8 +1428,8 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 8, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", "not-a-valid-uuid") // Invalid UUID string
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), "not-a-valid-uuid") // Invalid UUID string
 			},
 			wantStatus: http.StatusInternalServerError,
 			validate: func(t *testing.T, w *httptest.ResponseRecorder) {
@@ -1454,7 +1455,7 @@ func TestUpdateTribe(t *testing.T) {
 				Version: 8, // After previous updates
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
 				// Intentionally not setting user_id to test fallback
 			},
 			wantStatus: http.StatusOK,
@@ -1537,8 +1538,8 @@ func TestUpdateTribeDatabaseError(t *testing.T) {
 
 	// Add a middleware to set auth context
 	router.Use(func(c *gin.Context) {
-		c.Set("firebase_uid", testUser.FirebaseUID)
-		c.Set("user_id", testUser.ID)
+		c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+		c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 		c.Next()
 	})
 
@@ -2437,8 +2438,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "user with multiple tribe types",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, tribes []*models.Tribe) {
@@ -2469,8 +2470,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "user with no tribes",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", userWithNoTribes.FirebaseUID)
-				c.Set("user_id", userWithNoTribes.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), userWithNoTribes.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), userWithNoTribes.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, tribes []*models.Tribe) {
@@ -2480,7 +2481,7 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "non-existent user",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", "non-existent-uid")
+				c.Set(string(middleware.ContextFirebaseUIDKey), "non-existent-uid")
 			},
 			wantStatus: http.StatusNotFound,
 			validate:   func(t *testing.T, tribes []*models.Tribe) {},
@@ -2488,8 +2489,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "filter by couple type",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, tribes []*models.Tribe) {
@@ -2500,8 +2501,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "pagination - first page with limit 1",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, tribes []*models.Tribe) {
@@ -2511,8 +2512,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "pagination - second page with limit 1",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusOK,
 			validate: func(t *testing.T, tribes []*models.Tribe) {
@@ -2524,8 +2525,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "invalid page parameter",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribes []*models.Tribe) {},
@@ -2533,8 +2534,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "invalid limit parameter",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribes []*models.Tribe) {},
@@ -2542,8 +2543,8 @@ func TestListMyTribes(t *testing.T) {
 		{
 			name: "invalid type parameter",
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			wantStatus: http.StatusBadRequest,
 			validate:   func(t *testing.T, tribes []*models.Tribe) {},
@@ -2637,8 +2638,8 @@ func TestCreateTribeDatabaseErrors(t *testing.T) {
 				require.NoError(t, err)
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			request: CreateTribeRequest{
 				Name:        "Test Tribe",
@@ -2685,8 +2686,8 @@ func TestCreateTribeDatabaseErrors(t *testing.T) {
 				})
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			request: CreateTribeRequest{
 				Name:        "Tribe with Member Error",
@@ -2709,7 +2710,7 @@ func TestCreateTribeDatabaseErrors(t *testing.T) {
 			},
 			setupAuth: func(c *gin.Context) {
 				// Set firebase_uid but not user_id
-				c.Set("firebase_uid", "some-firebase-uid")
+				c.Set(string(middleware.ContextFirebaseUIDKey), "some-firebase-uid")
 				// Explicitly do not set user_id
 			},
 			request: CreateTribeRequest{
@@ -2732,7 +2733,7 @@ func TestCreateTribeDatabaseErrors(t *testing.T) {
 				// No setup needed
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", "some-firebase-uid")
+				c.Set(string(middleware.ContextFirebaseUIDKey), "some-firebase-uid")
 				c.Set("user_id", nil)
 			},
 			request: CreateTribeRequest{
@@ -2784,8 +2785,8 @@ func TestCreateTribeDatabaseErrors(t *testing.T) {
 				})
 			},
 			setupAuth: func(c *gin.Context) {
-				c.Set("firebase_uid", testUser.FirebaseUID)
-				c.Set("user_id", testUser.ID)
+				c.Set(string(middleware.ContextFirebaseUIDKey), testUser.FirebaseUID)
+				c.Set(string(middleware.ContextUserIDKey), testUser.ID)
 			},
 			request: CreateTribeRequest{
 				Name:        "Tribe with GetByID Error",
@@ -2897,24 +2898,24 @@ func TestRespondToInvitation(t *testing.T) {
 
 	// Set up mock Firebase auth for different users
 	validAuthSetupForPendingUser := func(c *gin.Context) {
-		c.Set("firebase_uid", pendingUser.FirebaseUID)
-		c.Set("user_id", pendingUser.ID.String())
+		c.Set(string(middleware.ContextFirebaseUIDKey), pendingUser.FirebaseUID)
+		c.Set(string(middleware.ContextUserIDKey), pendingUser.ID.String())
 	}
 
 	validAuthSetupForFullMember := func(c *gin.Context) {
-		c.Set("firebase_uid", fullMember.FirebaseUID)
-		c.Set("user_id", fullMember.ID.String())
+		c.Set(string(middleware.ContextFirebaseUIDKey), fullMember.FirebaseUID)
+		c.Set(string(middleware.ContextUserIDKey), fullMember.ID.String())
 	}
 
 	validAuthSetupForNonMember := func(c *gin.Context) {
-		c.Set("firebase_uid", "non-member-uid")
+		c.Set(string(middleware.ContextFirebaseUIDKey), "non-member-uid")
 		// No user ID set
 	}
 
 	// Setup required helper function for another pending user
 	validAuthSetupForAnotherPendingUser := func(c *gin.Context) {
-		c.Set("firebase_uid", anotherPendingUser.FirebaseUID)
-		c.Set("user_id", anotherPendingUser.ID.String())
+		c.Set(string(middleware.ContextFirebaseUIDKey), anotherPendingUser.FirebaseUID)
+		c.Set(string(middleware.ContextUserIDKey), anotherPendingUser.ID.String())
 	}
 
 	tests := []struct {
@@ -3024,7 +3025,7 @@ func TestRespondToInvitation(t *testing.T) {
 				require.NoError(t, err)
 
 				// Get member's ID from auth context
-				userIDStr, exists := c.Get("user_id")
+				userIDStr, exists := c.Get(string(middleware.ContextUserIDKey))
 				require.True(t, exists)
 
 				userID, err := uuid.Parse(userIDStr.(string))
@@ -3080,8 +3081,8 @@ func TestListMyTribes_CurrentUserMembershipType(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Set up context values for authentication
-	req = req.WithContext(context.WithValue(req.Context(), "firebase_uid", testUser.FirebaseUID))
-	req = req.WithContext(context.WithValue(req.Context(), "user_id", testUser.ID))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextFirebaseUIDKey, testUser.FirebaseUID))
+	req = req.WithContext(context.WithValue(req.Context(), middleware.ContextUserIDKey, testUser.ID))
 
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {

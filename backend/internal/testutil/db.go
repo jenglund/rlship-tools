@@ -3,6 +3,7 @@ package testutil
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -127,12 +128,12 @@ func safeClose(c interface{}) {
 		// migrate.Close() returns (error, int)
 		err, _ = v.Close()
 	default:
-		// Remove or comment out log.Printf("Error closing resource: %v", err) in safeClose to silence noisy output during tests.
+		// Nothing to close for other types
 		return
 	}
 
 	if err != nil {
-		// Remove or comment out log.Printf("Error closing resource: %v", err) in safeClose to silence noisy output during tests.
+		log.Printf("Error closing resource: %v", err)
 	}
 }
 

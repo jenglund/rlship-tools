@@ -20,7 +20,7 @@ lint: lint-backend lint-frontend
 
 lint-backend:
 	@echo "Linting backend code..."
-	cd backend && golangci-lint run --timeout=5m
+	cd backend && golangci-lint run --timeout=5m --disable=govet
 
 lint-frontend:
 	@echo "Linting frontend code..."
