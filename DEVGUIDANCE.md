@@ -177,6 +177,15 @@ When analyzing test failures, follow these best practices:
    - Include version fields in all relevant database tables and model structs
    - Ensure data validation happens at both the model and database levels
 
+3. **Reuse of Soft-Deleted Entities**:
+   - When an entity with the same unique identifiers exists but is soft-deleted, prefer to update and reactivate it rather than creating a new one
+   - This approach reduces database bloat and prevents potential abuse vectors
+   - Set `deleted_at = NULL` to reactivate a soft-deleted entity
+   - This pattern is especially important for share records, memberships, and other high-volume operational data
+   - In repositories, always check for existing soft-deleted entities before creating new ones
+   - Consider database constraints that might prevent creating new records when soft-deleted ones exist
+   - Only create truly new entities when no corresponding soft-deleted entity exists
+
 ## User Interface Design
 
 1. **Display Names in Tribes**:

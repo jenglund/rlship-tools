@@ -538,63 +538,18 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 	noSyncListID := insertTestList("No Sync List", string(models.SyncSourceNone), "", models.ListSyncStatusNone)
 
 	t.Run("filter by google maps source", func(t *testing.T) {
-		// Query directly with schema name
-		query := fmt.Sprintf(`
-			SELECT id, type, name, description, visibility,
-				sync_status, sync_source, sync_id, last_sync_at,
-				default_weight, max_items, cooldown_days,
-				owner_id, owner_type,
-				created_at, updated_at
-			FROM %s.lists
-			WHERE sync_source = $1
-				AND deleted_at IS NULL
-			ORDER BY created_at DESC`, schemaName)
-
-		rows, err := db.Query(query, string(models.SyncSourceGoogleMaps))
+		lists, err := listRepo.GetListsBySource(string(models.SyncSourceGoogleMaps))
 		require.NoError(t, err)
-		defer rows.Close()
-
-		var lists []uuid.UUID
-		for rows.Next() {
-			var id uuid.UUID
-			var listType string
-			var name string
-			var description string
-			var visibility string
-			var syncStatus models.ListSyncStatus
-			var syncSource models.SyncSource
-			var syncID string
-			var lastSyncAt *time.Time
-			var defaultWeight float64
-			var maxItems *int
-			var cooldownDays *int
-			var ownerID uuid.UUID
-			var ownerType models.OwnerType
-			var createdAt time.Time
-			var updatedAt time.Time
-
-			err := rows.Scan(
-				&id, &listType, &name, &description, &visibility,
-				&syncStatus, &syncSource, &syncID, &lastSyncAt,
-				&defaultWeight, &maxItems, &cooldownDays,
-				&ownerID, &ownerType,
-				&createdAt, &updatedAt,
-			)
-			require.NoError(t, err)
-			lists = append(lists, id)
-		}
-		require.NoError(t, rows.Err())
-
 		require.Len(t, lists, 2, "Should have two Google Maps lists")
 
 		// Check IDs match what we expect
 		foundList1 := false
 		foundList2 := false
-		for _, id := range lists {
-			if id == googleList1ID {
+		for _, list := range lists {
+			if list.ID == googleList1ID {
 				foundList1 = true
 			}
-			if id == googleList2ID {
+			if list.ID == googleList2ID {
 				foundList2 = true
 			}
 		}
@@ -604,105 +559,33 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 	})
 
 	t.Run("filter by manual source", func(t *testing.T) {
-		// Query directly with schema name
-		query := fmt.Sprintf(`
-			SELECT id
-			FROM %s.lists
-			WHERE sync_source = $1
-				AND deleted_at IS NULL`, schemaName)
-
-		rows, err := db.Query(query, string(models.SyncSourceManual))
+		lists, err := listRepo.GetListsBySource(string(models.SyncSourceManual))
 		require.NoError(t, err)
-		defer rows.Close()
-
-		var lists []uuid.UUID
-		for rows.Next() {
-			var id uuid.UUID
-			err := rows.Scan(&id)
-			require.NoError(t, err)
-			lists = append(lists, id)
-		}
-		require.NoError(t, rows.Err())
-
 		require.Len(t, lists, 1, "Should have one Manual list")
-		assert.Equal(t, manualListID, lists[0])
+		assert.Equal(t, manualListID, lists[0].ID)
 	})
 
 	t.Run("filter by imported source", func(t *testing.T) {
-		// Query directly with schema name
-		query := fmt.Sprintf(`
-			SELECT id
-			FROM %s.lists
-			WHERE sync_source = $1
-				AND deleted_at IS NULL`, schemaName)
-
-		rows, err := db.Query(query, string(models.SyncSourceImported))
+		lists, err := listRepo.GetListsBySource(string(models.SyncSourceImported))
 		require.NoError(t, err)
-		defer rows.Close()
-
-		var lists []uuid.UUID
-		for rows.Next() {
-			var id uuid.UUID
-			err := rows.Scan(&id)
-			require.NoError(t, err)
-			lists = append(lists, id)
-		}
-		require.NoError(t, rows.Err())
-
 		require.Len(t, lists, 1, "Should have one Imported list")
-		assert.Equal(t, importedListID, lists[0])
+		assert.Equal(t, importedListID, lists[0].ID)
 	})
 
 	t.Run("filter by none source", func(t *testing.T) {
-		// Query directly with schema name
-		query := fmt.Sprintf(`
-			SELECT id
-			FROM %s.lists
-			WHERE sync_source = $1
-				AND deleted_at IS NULL`, schemaName)
-
-		rows, err := db.Query(query, string(models.SyncSourceNone))
+		lists, err := listRepo.GetListsBySource(string(models.SyncSourceNone))
 		require.NoError(t, err)
-		defer rows.Close()
-
-		var lists []uuid.UUID
-		for rows.Next() {
-			var id uuid.UUID
-			err := rows.Scan(&id)
-			require.NoError(t, err)
-			lists = append(lists, id)
-		}
-		require.NoError(t, rows.Err())
-
 		require.Len(t, lists, 1, "Should have one unsynchronized list")
-		assert.Equal(t, noSyncListID, lists[0])
+		assert.Equal(t, noSyncListID, lists[0].ID)
 	})
 
 	t.Run("filter by unknown source", func(t *testing.T) {
-		// Query directly with schema name
-		query := fmt.Sprintf(`
-			SELECT id
-			FROM %s.lists
-			WHERE sync_source = $1
-				AND deleted_at IS NULL`, schemaName)
-
-		rows, err := db.Query(query, "unknown_source")
+		lists, err := listRepo.GetListsBySource("unknown_source")
 		require.NoError(t, err)
-		defer rows.Close()
-
-		var lists []uuid.UUID
-		for rows.Next() {
-			var id uuid.UUID
-			err := rows.Scan(&id)
-			require.NoError(t, err)
-			lists = append(lists, id)
-		}
-		require.NoError(t, rows.Err())
-
 		assert.Empty(t, lists, "Should return empty slice for unknown source")
 	})
 
-	// Now test the repository method
+	// Keep the original repository method test
 	t.Run("get google maps lists via repository", func(t *testing.T) {
 		lists, err := listRepo.GetListsBySource(string(models.SyncSourceGoogleMaps))
 		require.NoError(t, err)

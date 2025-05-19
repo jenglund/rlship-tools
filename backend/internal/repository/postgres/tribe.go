@@ -1064,6 +1064,83 @@ func (r *TribeRepository) GetByType(tribeType models.TribeType, offset, limit in
 			return fmt.Errorf("error iterating tribes: %w", err)
 		}
 
+		// Get members for each tribe within the same transaction
+		for i, tribe := range tribesList {
+			membersQuery := `
+				SELECT 
+					tm.id, 
+					tm.tribe_id, 
+					tm.user_id, 
+					tm.membership_type, 
+					COALESCE(tm.display_name, 'Member') as display_name, 
+					tm.expires_at, 
+					tm.invited_by,
+					tm.invited_at,
+					tm.metadata, 
+					tm.created_at, 
+					tm.updated_at, 
+					tm.deleted_at,
+					tm.version
+				FROM tribe_members tm
+				WHERE tm.tribe_id = $1
+				AND tm.deleted_at IS NULL`
+
+			memberRows, err := tx.Query(membersQuery, tribe.ID)
+			if err != nil {
+				return fmt.Errorf("error getting tribe members: %w", err)
+			}
+			defer safeClose(memberRows)
+
+			for memberRows.Next() {
+				member := &models.TribeMember{
+					Metadata: models.JSONMap{},
+				}
+				var version int
+				var invitedBy sql.NullString
+				var invitedAt sql.NullTime
+
+				err := memberRows.Scan(
+					&member.ID,
+					&member.TribeID,
+					&member.UserID,
+					&member.MembershipType,
+					&member.DisplayName,
+					&member.ExpiresAt,
+					&invitedBy,
+					&invitedAt,
+					&member.Metadata,
+					&member.CreatedAt,
+					&member.UpdatedAt,
+					&member.DeletedAt,
+					&version,
+				)
+				if err != nil {
+					return fmt.Errorf("error scanning tribe member: %w", err)
+				}
+
+				member.Version = version
+
+				// Handle invited_by as UUID
+				if invitedBy.Valid {
+					inviterID, err := uuid.Parse(invitedBy.String)
+					if err == nil {
+						member.InvitedBy = &inviterID
+					}
+				}
+
+				// Handle invited_at
+				if invitedAt.Valid {
+					member.InvitedAt = &invitedAt.Time
+				}
+
+				tribesList[i].Members = append(tribesList[i].Members, member)
+			}
+
+			if err = memberRows.Err(); err != nil {
+				return fmt.Errorf("error iterating tribe members: %w", err)
+			}
+		}
+
 		tribes = tribesList
 		return nil
 	})

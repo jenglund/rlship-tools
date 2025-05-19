@@ -492,7 +492,7 @@ func (r *ListRepository) Update(list *models.List) error {
 		}
 
 		// Validate list
-		if validateErr := list.Validate(); err != nil {
+		if validateErr := list.Validate(); validateErr != nil {
 			return fmt.Errorf("list validation failed: %w", validateErr)
 		}
 
@@ -1050,8 +1050,14 @@ func (r *ListRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSy
 
 // GetListsBySource retrieves all lists from a specific sync source
 func (r *ListRepository) GetListsBySource(source string) ([]*models.List, error) {
-	ctx := context.Background()
+	// Create a context with a longer timeout for this operation
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	opts := DefaultTransactionOptions()
+	// Increase statement timeout to match context timeout
+	opts.StatementTimeout = 25 * time.Second
+
 	var lists []*models.List
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
@@ -1591,45 +1597,49 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 			return fmt.Errorf("error checking user existence: %w", err)
 		}
 
-		// Check if there's an existing share
+		// Check if there's an existing share (including soft-deleted ones)
 		var existingShare bool
+		var isDeleted bool
 		err = tx.QueryRow(`
-			SELECT EXISTS(
-				SELECT 1 FROM list_sharing 
-				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
-			)`,
+			SELECT 
+				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2),
+				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NOT NULL)
+			`,
 			share.ListID, share.TribeID,
-		).Scan(&existingShare)
+		).Scan(&existingShare, &isDeleted)
 		if err != nil {
 			return fmt.Errorf("error checking existing share: %w", err)
 		}
 
-		// If exists, soft delete it first
 		if existingShare {
+			// Update existing share - reactivate if soft-deleted
 			_, err = tx.Exec(`
 				UPDATE list_sharing
-				SET deleted_at = NOW()
-				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL`,
-				share.ListID, share.TribeID,
+				SET user_id = $1,
+					expires_at = $2,
+					updated_at = NOW(),
+					deleted_at = NULL
+				WHERE list_id = $3 AND tribe_id = $4`,
+				share.UserID, share.ExpiresAt, share.ListID, share.TribeID,
 			)
 			if err != nil {
-				return fmt.Errorf("error removing old shares: %w", err)
+				return fmt.Errorf("error updating share: %w", err)
 			}
-		}
-
-		// Insert the new share
-		_, err = tx.Exec(`
-			INSERT INTO list_sharing (
-				list_id, tribe_id, user_id,
-				created_at, updated_at, expires_at
-			) VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
-			share.ListID,
-			share.TribeID,
-			share.UserID,
-			share.ExpiresAt,
-		)
-		if err != nil {
-			return fmt.Errorf("error sharing list: %w", err)
+		} else {
+			// Insert a new share if no existing one
+			_, err = tx.Exec(`
+				INSERT INTO list_sharing (
+					list_id, tribe_id, user_id,
+					created_at, updated_at, expires_at
+				) VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
+				share.ListID,
+				share.TribeID,
+				share.UserID,
+				share.ExpiresAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error sharing list: %w", err)
+			}
 		}
 
 		return nil

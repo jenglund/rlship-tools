@@ -173,6 +173,14 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, shareExists, "share record should exist")
 
+		// Get the initial version
+		var initialVersion int
+		err = schemaDB.QueryRow(`
+			SELECT version FROM list_sharing
+			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
+		`, list2.ID, tribe.ID).Scan(&initialVersion)
+		require.NoError(t, err)
+
 		// Update the share with a new expiration
 		newExpiresAt := time.Now().Add(48 * time.Hour)
 		updatedShare := &models.ListShare{
@@ -186,18 +194,30 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 		err = listRepo.ShareWithTribe(updatedShare)
 		require.NoError(t, err)
 
-		// Verify old share is marked as deleted
+		// Verify share still exists and was updated (not soft-deleted)
+		err = schemaDB.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1 FROM list_sharing 
+				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
+			)`,
+			list2.ID, tribe.ID,
+		).Scan(&shareExists)
+		require.NoError(t, err)
+		assert.True(t, shareExists, "share record should still exist and not be soft-deleted")
+
+		// Verify no soft-deleted shares exist
+		var deletedShareExists bool
 		err = schemaDB.QueryRow(`
 			SELECT EXISTS(
 				SELECT 1 FROM list_sharing 
 				WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NOT NULL
 			)`,
 			list2.ID, tribe.ID,
-		).Scan(&shareExists)
+		).Scan(&deletedShareExists)
 		require.NoError(t, err)
-		assert.True(t, shareExists, "old share record should be soft deleted")
+		assert.False(t, deletedShareExists, "no soft-deleted share records should exist")
 
-		// Verify new share exists with new expiration date
+		// Verify share has been updated with new expiration date
 		var storedExpiresAt time.Time
 		var version int
 		err = schemaDB.QueryRow(`
@@ -206,7 +226,7 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 		`, list2.ID, tribe.ID).Scan(&storedExpiresAt, &version)
 		require.NoError(t, err)
 		assert.WithinDuration(t, newExpiresAt, storedExpiresAt, time.Second, "expires_at should be updated")
-		assert.Equal(t, 1, version, "version should be 1 for new share record")
+		assert.Equal(t, initialVersion+1, version, "version should be incremented")
 	})
 
 	t.Run("null_expiry_date", func(t *testing.T) {
@@ -543,9 +563,9 @@ func TestListRepository_GetListShares(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, shares, 2, "should return 2 shares after deletion")
 
-		// The shares for tribe1 should no longer be in the result
+		// The shares for tribe2 should no longer be in the result
 		for _, share := range shares {
-			assert.NotEqual(t, tribe1.ID, share.TribeID, "tribe1 share should no longer be in the results")
+			assert.NotEqual(t, tribe2.ID, share.TribeID, "tribe2 share should no longer be in the results")
 		}
 	})
 
