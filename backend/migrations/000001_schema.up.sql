@@ -251,7 +251,7 @@ BEGIN
 END
 $$;
 
--- Create triggers for updated_at and version
+-- Create triggers
 CREATE TRIGGER update_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW
@@ -353,6 +353,8 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
             RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
         END IF;
+    ELSE
+        RAISE EXCEPTION 'Invalid owner type: %', NEW.owner_type;
     END IF;
     RETURN NEW;
 END;
@@ -374,6 +376,8 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM tribes WHERE id = NEW.owner_id) THEN
             RAISE EXCEPTION 'Tribe with ID % does not exist', NEW.owner_id;
         END IF;
+    ELSE
+        RAISE EXCEPTION 'Invalid owner type: %', NEW.owner_type;
     END IF;
     RETURN NEW;
 END;

@@ -18,6 +18,10 @@ func safeClose(c interface{}) {
 	case *sql.Tx:
 		// For transactions, Rollback is safe to call after Commit
 		err = v.Rollback()
+		// Ignore error if transaction was already committed
+		if err == sql.ErrTxDone {
+			return
+		}
 	case *sql.DB:
 		err = v.Close()
 	default:

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -328,24 +329,34 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 	}
 
 	firebaseUID := middleware.GetFirebaseUID(c)
+	log.Printf("ListMyTribes: Getting user by Firebase UID: %s", firebaseUID)
+
 	user, err := h.repos.Users.GetByFirebaseUID(firebaseUID)
 	if err != nil {
+		log.Printf("ListMyTribes ERROR: Failed to get user by Firebase UID %s: %v", firebaseUID, err)
 		response.GinNotFound(c, "User not found")
 		return
 	}
+
+	log.Printf("ListMyTribes: Found user with ID: %s", user.ID)
 
 	// Calculate offset
 	offset := (page - 1) * limit
 
 	// Get user tribes, filtering by type if specified
+	log.Printf("ListMyTribes: Getting tribes for user ID: %s", user.ID)
 	tribes, err := h.repos.Tribes.GetUserTribes(user.ID)
 	if err != nil {
+		log.Printf("ListMyTribes ERROR: Failed to get user tribes: %v", err)
 		response.GinInternalError(c, err)
 		return
 	}
 
+	log.Printf("ListMyTribes: Found %d tribes for user", len(tribes))
+
 	// If type filter is specified, filter the results
 	if tribeType != "" {
+		log.Printf("ListMyTribes: Filtering tribes by type: %s", tribeType)
 		filteredTribes := make([]*models.Tribe, 0)
 		for _, tribe := range tribes {
 			if tribe.Type == models.TribeType(tribeType) {
@@ -353,6 +364,7 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 			}
 		}
 		tribes = filteredTribes
+		log.Printf("ListMyTribes: %d tribes remain after filtering", len(tribes))
 	}
 
 	// Apply pagination to the results (since GetUserTribes doesn't support pagination directly)
@@ -370,6 +382,7 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 		tribes = tribes[start:end]
 	}
 
+	log.Printf("ListMyTribes: Returning %d tribes after pagination", len(tribes))
 	response.GinSuccess(c, tribes)
 }
 
@@ -377,16 +390,47 @@ func (h *TribeHandler) ListMyTribes(c *gin.Context) {
 func (h *TribeHandler) GetTribe(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
+		log.Printf("GetTribe ERROR: Invalid tribe ID format: %s - %v", c.Param("id"), err)
 		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
+	log.Printf("GetTribe: Looking up tribe with ID: %s", id)
 	tribe, err := h.repos.Tribes.GetByID(id)
 	if err != nil {
+		log.Printf("GetTribe ERROR: Failed to find tribe with ID %s: %v", id, err)
 		response.GinNotFound(c, "Tribe not found")
 		return
 	}
 
+	// Check if current user is a member of the tribe before returning it
+	userID, err := getUserIDFromContext(c)
+	if err != nil {
+		log.Printf("GetTribe ERROR: Failed to get user ID from context: %v", err)
+		response.GinUnauthorized(c, "Authentication required")
+		return
+	}
+
+	log.Printf("GetTribe: Checking if user %s is a member of tribe %s", userID, id)
+
+	// Check if user is a member of the tribe
+	isMember := false
+	for _, member := range tribe.Members {
+		if member.UserID == userID {
+			isMember = true
+			log.Printf("GetTribe: User %s is a member of tribe %s with membership type %s",
+				userID, id, member.MembershipType)
+			break
+		}
+	}
+
+	if !isMember {
+		log.Printf("GetTribe ERROR: User %s is not a member of tribe %s", userID, id)
+		response.GinNotFound(c, "Tribe not found")
+		return
+	}
+
+	log.Printf("GetTribe: Successfully retrieved tribe %s for user %s", id, userID)
 	response.GinSuccess(c, tribe)
 }
 

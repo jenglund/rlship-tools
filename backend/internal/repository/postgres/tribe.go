@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -854,12 +855,25 @@ func (r *TribeRepository) GetExpiredGuestMemberships() ([]*models.TribeMember, e
 
 // GetUserTribes retrieves all tribes a user is a member of
 func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, error) {
+	log.Printf("GetUserTribes: Starting query for user ID: %s", userID)
+
 	// Start transaction for consistent read
 	tx, err := r.db.Begin()
 	if err != nil {
+		log.Printf("GetUserTribes ERROR: Failed to start transaction: %v", err)
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
-	defer safeClose(tx)
+
+	// Defer transaction rollback in case of error
+	txClosed := false
+	defer func() {
+		if !txClosed {
+			log.Printf("GetUserTribes: Rolling back unclosed transaction")
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				log.Printf("GetUserTribes ERROR: Failed to rollback transaction: %v", err)
+			}
+		}
+	}()
 
 	query := `
 		SELECT DISTINCT t.id, t.name, t.type, t.description, t.visibility,
@@ -872,6 +886,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 
 	rows, err := tx.Query(query, userID)
 	if err != nil {
+		log.Printf("GetUserTribes ERROR: Failed to query tribes: %v", err)
 		return nil, fmt.Errorf("error getting user tribes: %w", err)
 	}
 	defer safeClose(rows)
@@ -894,6 +909,7 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 			&tribe.Version,
 		)
 		if err != nil {
+			log.Printf("GetUserTribes ERROR: Failed to scan tribe row: %v", err)
 			return nil, fmt.Errorf("error scanning user tribe: %w", err)
 		}
 
@@ -901,16 +917,27 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 	}
 
 	if err = rows.Err(); err != nil {
+		log.Printf("GetUserTribes ERROR: Error after iterating rows: %v", err)
 		return nil, fmt.Errorf("error iterating user tribes: %w", err)
 	}
 
+	log.Printf("GetUserTribes: Found %d tribes for user", len(tribes))
+
 	// If no tribes were found, return empty slice
 	if len(tribes) == 0 {
+		// Commit the transaction even if we didn't find any tribes
+		if err := tx.Commit(); err != nil {
+			log.Printf("GetUserTribes ERROR: Failed to commit transaction after finding no tribes: %v", err)
+			return nil, fmt.Errorf("error committing transaction: %w", err)
+		}
+		txClosed = true
 		return tribes, nil
 	}
 
 	// For each tribe, get its members in a separate query to avoid the parse error
 	for i, tribe := range tribes {
+		log.Printf("GetUserTribes: Getting members for tribe ID: %s", tribe.ID)
+
 		membersQuery := `
 			SELECT 
 				tm.id, 
@@ -932,10 +959,12 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 
 		memberRows, err := tx.Query(membersQuery, tribe.ID)
 		if err != nil {
+			log.Printf("GetUserTribes ERROR: Failed to query members for tribe %s: %v", tribe.ID, err)
 			return nil, fmt.Errorf("error getting tribe members: %w", err)
 		}
 		defer safeClose(memberRows)
 
+		memberCount := 0
 		for memberRows.Next() {
 			member := &models.TribeMember{}
 			err := memberRows.Scan(
@@ -954,22 +983,30 @@ func (r *TribeRepository) GetUserTribes(userID uuid.UUID) ([]*models.Tribe, erro
 				&member.Version,
 			)
 			if err != nil {
+				log.Printf("GetUserTribes ERROR: Failed to scan member row: %v", err)
 				return nil, fmt.Errorf("error scanning tribe member: %w", err)
 			}
 
 			tribes[i].Members = append(tribes[i].Members, member)
+			memberCount++
 		}
 
 		if err = memberRows.Err(); err != nil {
+			log.Printf("GetUserTribes ERROR: Error after iterating member rows: %v", err)
 			return nil, fmt.Errorf("error iterating tribe members: %w", err)
 		}
+
+		log.Printf("GetUserTribes: Found %d members for tribe %s", memberCount, tribe.ID)
 	}
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
+		log.Printf("GetUserTribes ERROR: Failed to commit transaction: %v", err)
 		return nil, fmt.Errorf("error committing transaction: %w", err)
 	}
+	txClosed = true
 
+	log.Printf("GetUserTribes: Successfully completed for user %s with %d tribes", userID, len(tribes))
 	return tribes, nil
 }
 
