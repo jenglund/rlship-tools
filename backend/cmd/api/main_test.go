@@ -19,6 +19,8 @@ import (
 	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	_ "github.com/lib/pq"
 )
 
 // MockDB is a mock implementation of sql.DB
@@ -425,4 +427,51 @@ func TestSetupApp(t *testing.T) {
 
 	// We expect an error due to invalid configuration
 	assert.Error(t, err)
+}
+
+func TestDatabaseConnection(t *testing.T) {
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "postgres"
+	}
+
+	password := os.Getenv("POSTGRES_PASSWORD")
+	if password == "" {
+		password = "postgres" // Default password
+	}
+
+	dbName := os.Getenv("POSTGRES_DB")
+	if dbName == "" {
+		dbName = "postgres" // Default database
+	}
+
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbName,
+	)
+
+	// Try to connect to the database
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		t.Fatalf("Failed to open database connection: %v", err)
+	}
+	defer db.Close()
+
+	// Test the connection
+	err = db.Ping()
+	if err != nil {
+		t.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	t.Logf("Successfully connected to PostgreSQL database at %s:%s/%s", host, port, dbName)
 }

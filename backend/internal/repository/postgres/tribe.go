@@ -1143,3 +1143,139 @@ func (r *TribeRepository) CheckFormerTribeMember(tribeID, userID uuid.UUID) (boo
 
 	return wasFormerMember, nil
 }
+
+// ReinviteMember re-adds a former member to the tribe
+func (r *TribeRepository) ReinviteMember(tribeID, userID uuid.UUID, memberType models.MembershipType, expiresAt *time.Time, invitedBy *uuid.UUID) error {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Check if the columns exist first
+		var hasInvitedBy, hasInvitedAt bool
+		err := tx.QueryRow(`
+			SELECT 
+				COUNT(*) > 0 FROM information_schema.columns 
+				WHERE table_name = 'tribe_members' AND column_name = 'invited_by'
+		`).Scan(&hasInvitedBy)
+		if err != nil {
+			return fmt.Errorf("error checking for invited_by column: %w", err)
+		}
+
+		err = tx.QueryRow(`
+			SELECT 
+				COUNT(*) > 0 FROM information_schema.columns 
+				WHERE table_name = 'tribe_members' AND column_name = 'invited_at'
+		`).Scan(&hasInvitedAt)
+		if err != nil {
+			return fmt.Errorf("error checking for invited_at column: %w", err)
+		}
+
+		// Check if tribe exists
+		var tribeExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribes WHERE id = $1 AND deleted_at IS NULL)", tribeID).Scan(&tribeExists)
+		if err != nil {
+			return fmt.Errorf("error checking if tribe exists: %w", err)
+		}
+		if !tribeExists {
+			return fmt.Errorf("tribe not found")
+		}
+
+		// Check if user exists
+		var userExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID).Scan(&userExists)
+		if err != nil {
+			return fmt.Errorf("error checking if user exists: %w", err)
+		}
+		if !userExists {
+			return fmt.Errorf("user not found")
+		}
+
+		// Check if user is already an active member
+		var activeMemberExists bool
+		err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM tribe_members WHERE tribe_id = $1 AND user_id = $2 AND deleted_at IS NULL)", tribeID, userID).Scan(&activeMemberExists)
+		if err != nil {
+			return fmt.Errorf("error checking if active member exists: %w", err)
+		}
+		if activeMemberExists {
+			return fmt.Errorf("user is already a member of this tribe")
+		}
+
+		// Get user's name for display_name
+		var displayName sql.NullString
+		err = tx.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&displayName)
+		if err != nil {
+			return fmt.Errorf("error getting user name: %w", err)
+		}
+
+		// Use displayName if valid, otherwise use a default name
+		finalDisplayName := "Member"
+		if displayName.Valid && displayName.String != "" {
+			finalDisplayName = displayName.String
+		}
+
+		now := time.Now()
+		id := uuid.New()
+
+		// Soft-delete any existing records for this user in this tribe (even though they should already be soft-deleted)
+		_, err = tx.Exec(`
+			UPDATE tribe_members 
+			SET deleted_at = $1 
+			WHERE tribe_id = $2 AND user_id = $3 AND deleted_at IS NULL
+		`, now, tribeID, userID)
+		if err != nil {
+			return fmt.Errorf("error soft-deleting any existing tribe member records: %w", err)
+		}
+
+		var query string
+		var args []interface{}
+
+		if hasInvitedBy && hasInvitedAt {
+			// Use the columns if they exist
+			query = `
+				INSERT INTO tribe_members (
+					id, tribe_id, user_id, membership_type, display_name,
+					expires_at, metadata, created_at, updated_at, invited_by, invited_at
+				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+
+			args = []interface{}{
+				id,
+				tribeID,
+				userID,
+				memberType,
+				finalDisplayName,
+				expiresAt,
+				models.JSONMap{},
+				now,
+				now,
+				invitedBy,
+				now,
+			}
+		} else {
+			// Fall back to not using those columns if they don't exist
+			query = `
+				INSERT INTO tribe_members (
+					id, tribe_id, user_id, membership_type, display_name,
+					expires_at, metadata, created_at, updated_at
+				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+
+			args = []interface{}{
+				id,
+				tribeID,
+				userID,
+				memberType,
+				finalDisplayName,
+				expiresAt,
+				models.JSONMap{},
+				now,
+				now,
+			}
+		}
+
+		_, err = tx.Exec(query, args...)
+		if err != nil {
+			return fmt.Errorf("error adding tribe member: %w", err)
+		}
+
+		return nil
+	})
+}

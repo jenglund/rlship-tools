@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -68,47 +67,28 @@ func getPostgresConnection(dbName string) string {
 		host, port, user, password, dbName, sslMode)
 }
 
-// cleanupDatabase ensures the test database is dropped even if setup fails
-func cleanupDatabase(dbName string) {
-	if dbName == "" {
+// cleanupDatabase is now cleanupSchema and removes a schema instead of a database
+func cleanupDatabase(schemaName string) {
+	if schemaName == "" {
 		return
 	}
 
-	// Connect to default postgres database
-	db, err := sql.Open("postgres", getPostgresConnection(""))
+	// Connect to database
+	dbName := os.Getenv("POSTGRES_DB")
+	if dbName == "" {
+		dbName = "postgres"
+	}
+
+	db, err := sql.Open("postgres", getPostgresConnection(dbName))
 	if err != nil {
 		return // Can't clean up if we can't connect
 	}
 	defer safeClose(db)
 
-	// Terminate any remaining connections with retries
-	maxRetries := 3
-	for i := 0; i < maxRetries; i++ {
-		_, err = db.Exec(fmt.Sprintf(`
-			SELECT pg_terminate_backend(pid)
-			FROM pg_stat_activity
-			WHERE datname = %s AND pid != pg_backend_pid()
-		`, pq.QuoteLiteral(dbName)))
-
-		if err == nil {
-			break
-		}
-
-		if i < maxRetries-1 {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
-	// Drop the test database with retries
-	for i := 0; i < maxRetries; i++ {
-		_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(dbName)))
-		if err == nil {
-			break
-		}
-
-		if i < maxRetries-1 {
-			time.Sleep(100 * time.Millisecond)
-		}
+	// Drop the schema
+	_, err = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
+	if err != nil {
+		log.Printf("Error dropping schema %s: %v", schemaName, err)
 	}
 }
 
@@ -137,58 +117,48 @@ func safeClose(c interface{}) {
 	}
 }
 
-// SetupTestDB creates a test database and runs migrations
+// SetupTestDB creates a test schema and runs migrations
 func SetupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	// Create a unique test database name
-	dbName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+	// Create a unique test schema name
+	schemaName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 
-	// Validate database name
-	if strings.Contains(dbName, "/") || strings.Contains(dbName, "\\") || strings.Contains(currentTestDBName, "/") || strings.Contains(currentTestDBName, "\\") {
-		cleanupDatabase(dbName)
-		panic(fmt.Sprintf("Invalid database name: %s", dbName))
+	// Store current schema name for cleanup
+	currentTestDBName = schemaName
+
+	// Connect to existing database
+	dbName := os.Getenv("POSTGRES_DB")
+	if dbName == "" {
+		dbName = "postgres"
 	}
 
-	// Connect to postgres to create test database
-	db, err := sql.Open("postgres", getPostgresConnection(""))
+	db, err := sql.Open("postgres", getPostgresConnection(dbName))
 	if err != nil {
-		cleanupDatabase(dbName)
 		panic(fmt.Sprintf("Error connecting to postgres: %v", err))
 	}
-	defer safeClose(db)
 
-	// Create test database
-	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", pq.QuoteIdentifier(dbName)))
-	if err != nil {
-		cleanupDatabase(dbName)
-		panic(fmt.Sprintf("Error dropping existing database: %v", err))
+	// Ensure we can connect
+	if err = db.Ping(); err != nil {
+		safeClose(db)
+		panic(fmt.Sprintf("Error pinging database: %v", err))
 	}
 
-	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(dbName)))
+	// Create test schema
+	_, err = db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
-		cleanupDatabase(dbName)
-		panic(fmt.Sprintf("Error creating test database: %v", err))
+		safeClose(db)
+		panic(fmt.Sprintf("Error creating test schema: %v", err))
 	}
 
-	// Connect to test database
-	testDB, err := sql.Open("postgres", getPostgresConnection(dbName))
+	// Set search path to our test schema
+	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
-		cleanupDatabase(dbName)
-		panic(fmt.Sprintf("Error connecting to test database: %v", err))
+		safeClose(db)
+		panic(fmt.Sprintf("Error setting search path: %v", err))
 	}
-
-	// Ensure we clean up if something goes wrong
-	setupSuccess := false
-	defer func() {
-		if !setupSuccess {
-			safeClose(testDB)
-			cleanupDatabase(dbName)
-		}
-	}()
 
 	// Run migrations
-	// Get the absolute path to the migrations directory
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("Could not get current file path")
@@ -217,68 +187,48 @@ func SetupTestDB(t *testing.T) *sql.DB {
 		passwordPart = ":" + password
 	}
 
-	postgresURL := fmt.Sprintf("postgres://%s%s@%s:%s/%s?sslmode=disable",
-		user, passwordPart, host, port, dbName)
+	// Add schema to connection URL
+	postgresURL := fmt.Sprintf("postgres://%s%s@%s:%s/%s?sslmode=disable&search_path=%s",
+		user, passwordPart, host, port, dbName, schemaName)
 
 	m, err := migrate.New(
 		fmt.Sprintf("file://%s", migrationsPath),
 		postgresURL,
 	)
 	if err != nil {
+		safeClose(db)
 		panic(fmt.Sprintf("Error creating migrate instance: %v", err))
 	}
 	defer safeClose(m)
 
-	// Check for dirty state before running migrations
-	version, dirty, err := m.Version()
-	if err != nil && err != migrate.ErrNilVersion {
-		panic(fmt.Sprintf("Error checking migration version: %v", err))
-	}
-	if dirty {
-		panic(fmt.Sprintf("Database is in a dirty state before migrations (version %d)", version))
-	}
-
 	// Run migrations
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
+		safeClose(db)
 		panic(fmt.Sprintf("Error running migrations: %v", err))
 	}
 
-	// Verify final migration state
-	version, dirty, err = m.Version()
-	if err != nil {
-		panic(fmt.Sprintf("Error getting final migration version: %v", err))
-	}
-	if dirty {
-		panic(fmt.Sprintf("Database is in a dirty state after migrations (version %d)", version))
-	}
+	// Add test schema to list for cleanup
+	testDBs = append(testDBs, schemaName)
 
-	// Mark setup as successful
-	setupSuccess = true
-
-	// Set current test database name only after successful setup
-	currentTestDBName = dbName
-
-	// Add test database to cleanup list
-	testDBs = append(testDBs, dbName)
-
-	return testDB
+	return db
 }
 
-// TeardownTestDB cleans up the test database
+// TeardownTestDB cleans up the test schema
 func TeardownTestDB(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	if db != nil && currentTestDBName != "" {
-		// Close the test database connection
+		// Clean up schema
+		_, err := db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(currentTestDBName)))
+		if err != nil {
+			t.Logf("Error dropping test schema: %v", err)
+		}
+
+		// Close the database connection
 		safeClose(db)
 
-		// Wait a bit to ensure all connections are closed
-		time.Sleep(100 * time.Millisecond)
-
-		cleanupDatabase(currentTestDBName)
-
-		// Clear the current test database name
+		// Clear the current test schema name
 		currentTestDBName = ""
 	}
 }

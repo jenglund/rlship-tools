@@ -207,6 +207,31 @@ func (h *TribeHandler) ListTribes(c *gin.Context) {
 		return
 	}
 
+	// Check for specific tribe_id parameter
+	tribeIDParam := c.Query("tribe_id")
+	if tribeIDParam != "" {
+		// If tribe_id is specified, fetch just that one tribe
+		tribeID, err := uuid.Parse(tribeIDParam)
+		if err != nil {
+			response.GinNotFound(c, "Tribe not found")
+			return
+		}
+
+		tribe, err := h.repos.Tribes.GetByID(tribeID)
+		if err != nil {
+			if err.Error() == "tribe not found" {
+				response.GinNotFound(c, "Tribe not found")
+			} else {
+				response.GinInternalError(c, err)
+			}
+			return
+		}
+
+		// Return just this one tribe
+		response.GinSuccess(c, []*models.Tribe{tribe})
+		return
+	}
+
 	// Calculate offset
 	offset := (page - 1) * limit
 
@@ -603,6 +628,12 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 		}
 	}
 
+	// Verify that the user exists
+	if _, err := h.repos.Users.GetByID(req.UserID); err != nil {
+		response.GinBadRequest(c, "User not found")
+		return
+	}
+
 	// Check if user is already a member of the tribe
 	members, err := h.repos.Tribes.GetMembers(tribeID)
 	if err != nil {
@@ -628,22 +659,25 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 		return
 	}
 
-	// If user was a former member and force flag is not set, return a special error
-	if wasFormerMember && !req.Force {
-		response.GinError(c, 409, "former_member", "User was previously a member of this tribe. Set force=true to reinvite them.")
-		return
-	}
+	// Handle former members
+	if wasFormerMember {
+		if !req.Force {
+			// If user was a former member and force flag is not set, return a special error
+			response.GinError(c, 409, "former_member", "User was previously a member of this tribe. Set force=true to reinvite them.")
+			return
+		}
 
-	// Verify that the user exists
-	if _, err := h.repos.Users.GetByID(req.UserID); err != nil {
-		response.GinBadRequest(c, "User not found")
-		return
-	}
-
-	// Add the user as a pending member
-	if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
-		response.GinInternalError(c, err)
-		return
+		// If force flag is set, reinvite the former member
+		if err := h.repos.Tribes.ReinviteMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
+			response.GinInternalError(c, err)
+			return
+		}
+	} else {
+		// Add the user as a pending member
+		if err := h.repos.Tribes.AddMember(tribeID, req.UserID, models.MembershipPending, nil, inviter); err != nil {
+			response.GinInternalError(c, err)
+			return
+		}
 	}
 
 	response.GinNoContent(c)

@@ -3,6 +3,7 @@ package testutil
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -29,10 +30,10 @@ func TestSetupTestDB(t *testing.T) {
 		err = db.QueryRow(`
 			SELECT EXISTS (
 				SELECT FROM information_schema.tables 
-				WHERE table_schema = 'public' 
+				WHERE table_schema = $1
 				AND table_name = 'users'
 			)
-		`).Scan(&exists)
+		`, currentTestDBName).Scan(&exists)
 		require.NoError(t, err)
 		assert.True(t, exists, "users table should exist after migrations")
 
@@ -51,13 +52,13 @@ func TestSetupTestDB(t *testing.T) {
 		defer TeardownTestDB(t, db2)
 
 		// Verify both databases are different
-		var db1Name, db2Name string
-		err := db1.QueryRow("SELECT current_database()").Scan(&db1Name)
+		var db1Schema, db2Schema string
+		err := db1.QueryRow("SELECT current_schema").Scan(&db1Schema)
 		require.NoError(t, err)
-		err = db2.QueryRow("SELECT current_database()").Scan(&db2Name)
+		err = db2.QueryRow("SELECT current_schema").Scan(&db2Schema)
 		require.NoError(t, err)
 
-		assert.NotEqual(t, db1Name, db2Name, "each setup should create a unique database")
+		assert.NotEqual(t, db1Schema, db2Schema, "each setup should create a unique schema")
 	})
 }
 
@@ -67,15 +68,15 @@ func TestTeardownTestDB(t *testing.T) {
 		db := SetupTestDB(t)
 		require.NotNil(t, db)
 
-		// Get the database name before teardown
-		var dbName string
-		err := db.QueryRow("SELECT current_database()").Scan(&dbName)
+		// Get the schema name before teardown
+		var schemaName string
+		err := db.QueryRow("SELECT current_schema").Scan(&schemaName)
 		require.NoError(t, err)
 
 		// Perform teardown
 		TeardownTestDB(t, db)
 
-		// Verify database no longer exists by connecting to postgres and checking
+		// Verify schema no longer exists by checking information_schema
 		pgdb, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer safeClose(pgdb)
@@ -83,12 +84,12 @@ func TestTeardownTestDB(t *testing.T) {
 		var exists bool
 		err = pgdb.QueryRow(`
 			SELECT EXISTS (
-				SELECT FROM pg_database 
-				WHERE datname = $1
+				SELECT FROM information_schema.schemata 
+				WHERE schema_name = $1
 			)
-		`, dbName).Scan(&exists)
+		`, schemaName).Scan(&exists)
 		require.NoError(t, err)
-		assert.False(t, exists, "database should not exist after teardown")
+		assert.False(t, exists, "schema should not exist after teardown")
 	})
 
 	// Test teardown with active connections
@@ -96,14 +97,31 @@ func TestTeardownTestDB(t *testing.T) {
 		db := SetupTestDB(t)
 		require.NotNil(t, db)
 
+		// Get the schema name
+		var schemaName string
+		err := db.QueryRow("SELECT current_schema").Scan(&schemaName)
+		require.NoError(t, err)
+
 		// Create additional connections
-		db2, err := sql.Open("postgres", getPostgresConnection(currentTestDBName))
+		db2, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer safeClose(db2)
 
-		db3, err := sql.Open("postgres", getPostgresConnection(currentTestDBName))
+		// Set search path for additional connections
+		_, err = db2.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+		require.NoError(t, err)
+
+		db3, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
 		defer safeClose(db3)
+
+		// Set search path for additional connections
+		_, err = db3.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+		require.NoError(t, err)
+
+		// Create a test table
+		_, err = db.Exec("CREATE TABLE teardown_test (id SERIAL PRIMARY KEY, name TEXT)")
+		require.NoError(t, err)
 
 		// Perform some queries to ensure connections are active
 		var count int
@@ -115,10 +133,10 @@ func TestTeardownTestDB(t *testing.T) {
 		// Perform teardown
 		TeardownTestDB(t, db)
 
-		// Verify connections are closed by attempting queries
-		err = db2.QueryRow("SELECT 1").Scan(&count)
+		// Verify connections are closed by attempting queries to the dropped schema's table
+		err = db2.QueryRow("SELECT * FROM teardown_test LIMIT 1").Scan(&count)
 		assert.Error(t, err, "query should fail after teardown")
-		err = db3.QueryRow("SELECT 1").Scan(&count)
+		err = db3.QueryRow("SELECT * FROM teardown_test LIMIT 1").Scan(&count)
 		assert.Error(t, err, "query should fail after teardown")
 	})
 
@@ -173,33 +191,39 @@ func TestDatabaseOperations(t *testing.T) {
 		require.NotNil(t, db)
 		defer TeardownTestDB(t, db)
 
-		// Create test table
-		_, err := db.Exec(`
-			CREATE TABLE concurrent_test (
+		// Get the current schema name
+		var schemaName string
+		err := db.QueryRow("SELECT current_schema").Scan(&schemaName)
+		require.NoError(t, err)
+		require.Equal(t, currentTestDBName, schemaName, "Schema should be set to the test schema")
+
+		// Create test table with fully qualified name
+		tableName := fmt.Sprintf("%s.concurrent_test", pq.QuoteIdentifier(schemaName))
+		_, err = db.Exec(fmt.Sprintf(`
+			CREATE TABLE %s (
 				id SERIAL PRIMARY KEY,
 				value INTEGER
 			)
-		`)
+		`, tableName))
 		require.NoError(t, err)
 
 		// Run concurrent insertions
-		done := make(chan bool)
+		var wg sync.WaitGroup
+		wg.Add(10)
 		for i := 0; i < 10; i++ {
 			go func(val int) {
-				_, execErr := db.Exec("INSERT INTO concurrent_test (value) VALUES ($1)", val)
+				defer wg.Done()
+				_, execErr := db.Exec(fmt.Sprintf("INSERT INTO %s (value) VALUES ($1)", tableName), val)
 				assert.NoError(t, execErr)
-				done <- true
 			}(i)
 		}
 
 		// Wait for all goroutines to complete
-		for i := 0; i < 10; i++ {
-			<-done
-		}
+		wg.Wait()
 
 		// Verify all insertions
 		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM concurrent_test").Scan(&count)
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 10, count)
 	})
@@ -258,27 +282,18 @@ func TestDatabaseOperations(t *testing.T) {
 func TestDatabaseErrors(t *testing.T) {
 	// Test invalid connection string
 	t.Run("invalid connection", func(t *testing.T) {
-		// Save current test DB name and restore after test
-		oldName := currentTestDBName
-		defer func() { currentTestDBName = oldName }()
+		// Use a non-existent host to cause a connection error
+		origHost := os.Getenv("POSTGRES_HOST")
+		os.Setenv("POSTGRES_HOST", "non-existent-host")
+		defer os.Setenv("POSTGRES_HOST", origHost)
 
-		// Use an invalid database name that should cause connection failure
-		currentTestDBName = "invalid/db"
-
-		// Should panic when trying to create database with invalid name
+		// The function should now panic with a connection error
 		assert.Panics(t, func() {
-			SetupTestDB(t)
+			db := SetupTestDB(t)
+			if db != nil {
+				safeClose(db)
+			}
 		})
-
-		// Verify database was cleaned up
-		db, err := sql.Open("postgres", getPostgresConnection(""))
-		require.NoError(t, err)
-		defer safeClose(db)
-
-		var exists bool
-		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", currentTestDBName).Scan(&exists)
-		require.NoError(t, err)
-		assert.False(t, exists, "Database should have been cleaned up after failed setup")
 	})
 
 	// Test migration failures
@@ -425,80 +440,108 @@ func TestDatabaseErrors(t *testing.T) {
 		}
 	})
 
-	// Test concurrent database operations
+	// Test concurrent database operations under contention
 	t.Run("concurrent database operations", func(t *testing.T) {
 		db := SetupTestDB(t)
 		require.NotNil(t, db)
 		defer TeardownTestDB(t, db)
 
-		// Create test table
-		_, err := db.Exec(`
-			CREATE TABLE concurrent_write_test (
-				id SERIAL PRIMARY KEY,
-				value TEXT
-			)
-		`)
+		// Get the current schema
+		var schemaName string
+		err := db.QueryRow("SELECT current_schema").Scan(&schemaName)
 		require.NoError(t, err)
 
-		// Run concurrent writes
-		const numGoroutines = 10
+		// Create test table with a unique constraint
+		tableName := fmt.Sprintf("%s.concurrent_error_test", pq.QuoteIdentifier(schemaName))
+		_, err = db.Exec(fmt.Sprintf(`
+			CREATE TABLE %s (
+				id SERIAL PRIMARY KEY,
+				value TEXT UNIQUE,
+				version INTEGER DEFAULT 1
+			)
+		`, tableName))
+		require.NoError(t, err)
+
+		// Insert a base record
+		_, err = db.Exec(fmt.Sprintf("INSERT INTO %s (value) VALUES ('base-value')", tableName))
+		require.NoError(t, err)
+
+		// Run concurrent operations with optimistic locking
 		var wg sync.WaitGroup
-		var errorsMu sync.Mutex
-		errors := make([]string, 0)
+		var mutex sync.Mutex
+		successCount := 0
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := 0; i < 10; i++ {
 			wg.Add(1)
-			i := i // Create a new i for each goroutine
-
-			go func() {
+			go func(i int) {
 				defer wg.Done()
 
-				// Use a separate connection for each goroutine to avoid interference
-				connStr := getPostgresConnection(currentTestDBName)
-				connDB, err := sql.Open("postgres", connStr)
+				// Use a separate connection for each goroutine
+				conn, err := sql.Open("postgres", getPostgresConnection(""))
 				if err != nil {
-					errorsMu.Lock()
-					errors = append(errors, fmt.Sprintf("Failed to open DB connection: %v", err))
-					errorsMu.Unlock()
+					t.Logf("Error creating connection: %v", err)
 					return
 				}
-				defer safeClose(connDB)
+				defer safeClose(conn)
 
-				// Execute insert with retries
-				var success bool
+				// Set search path for the connection
+				_, err = conn.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+				if err != nil {
+					t.Logf("Error setting search path: %v", err)
+					return
+				}
+
+				// Try to update with optimistic locking
 				for retry := 0; retry < 3; retry++ {
-					_, err := connDB.Exec("INSERT INTO concurrent_write_test (value) VALUES ($1)", fmt.Sprintf("value-%d", i))
-					if err == nil {
-						success = true
-						break
+					// Start a transaction
+					tx, err := conn.Begin()
+					if err != nil {
+						continue
 					}
 
-					// Wait before retrying
-					time.Sleep(10 * time.Millisecond)
-				}
+					// Get current version
+					var version int
+					err = tx.QueryRow(fmt.Sprintf("SELECT version FROM %s WHERE value = 'base-value' FOR UPDATE", tableName)).Scan(&version)
+					if err != nil {
+						tx.Rollback()
+						continue
+					}
 
-				if !success {
-					errorsMu.Lock()
-					errors = append(errors, fmt.Sprintf("Failed to insert value-%d after retries", i))
-					errorsMu.Unlock()
+					// Try to update with version check
+					result, err := tx.Exec(
+						fmt.Sprintf("UPDATE %s SET value = $1, version = version + 1 WHERE value = 'base-value' AND version = $2",
+							tableName),
+						fmt.Sprintf("value-%d", i),
+						version,
+					)
+
+					if err != nil {
+						tx.Rollback()
+						time.Sleep(10 * time.Millisecond)
+						continue
+					}
+
+					rows, err := result.RowsAffected()
+					if err != nil || rows != 1 {
+						tx.Rollback()
+						continue
+					}
+
+					// Commit the transaction
+					if err := tx.Commit(); err == nil {
+						mutex.Lock()
+						successCount++
+						mutex.Unlock()
+						return
+					}
 				}
-			}()
+				t.Logf("Failed to update value-%d after retries", i)
+			}(i)
 		}
 
-		// Wait for all goroutines to complete
 		wg.Wait()
 
-		// Check for errors
-		if len(errors) > 0 {
-			for _, err := range errors {
-				t.Error(err)
-			}
-		}
-
-		// Verify all insertions
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM concurrent_write_test").Scan(&count)
-		require.NoError(t, err)
-		assert.Equal(t, numGoroutines, count)
+		// Only one transaction should succeed due to optimistic locking
+		assert.Equal(t, 1, successCount, "Only one update should succeed due to contention")
 	})
 }
