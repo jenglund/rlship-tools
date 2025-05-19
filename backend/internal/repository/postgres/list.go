@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
+	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/lib/pq"
 )
 
@@ -20,6 +21,12 @@ type ListRepository struct {
 // NewListRepository creates a new PostgreSQL-backed list repository
 func NewListRepository(db interface{}) models.ListRepository {
 	baseRepo := NewBaseRepository(db)
+
+	// Log schema info
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("Creating ListRepository with test schema: %s\n", testSchema)
+	}
+
 	return &ListRepository{
 		BaseRepository: baseRepo,
 		tm:             NewTransactionManager(baseRepo.GetQueryDB()),
@@ -611,7 +618,7 @@ func (r *ListRepository) Delete(id uuid.UUID) error {
 		err = tx.QueryRow(`
 			SELECT EXISTS (
 				SELECT FROM information_schema.tables 
-				WHERE table_schema = 'public' 
+				WHERE table_schema = current_schema() 
 				AND table_name = 'list_conflicts'
 			)`).Scan(&tableExists)
 		if err != nil {
@@ -641,42 +648,53 @@ func (r *ListRepository) List(offset, limit int) ([]*models.List, error) {
 		return []*models.List{}, nil
 	}
 
-	// First, fetch the basic list details
-	query := `
-		SELECT 
-			id, type, name, description, visibility,
-			sync_status, sync_source, sync_id, last_sync_at,
-			default_weight, max_items, cooldown_days,
-			created_at, updated_at, deleted_at
-		FROM lists
-		WHERE deleted_at IS NULL
-		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2`
-
-	rows, err := r.GetQueryDB().Query(query, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("error listing lists: %w", err)
-	}
-	defer safeClose(rows)
-
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 	var lists []*models.List
-	for rows.Next() {
-		list := &models.List{}
-		err := rows.Scan(
-			&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
-			&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
-			&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
-			&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
-		)
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// First, fetch the basic list details
+		query := `
+			SELECT 
+				id, type, name, description, visibility,
+				sync_status, sync_source, sync_id, last_sync_at,
+				default_weight, max_items, cooldown_days,
+				created_at, updated_at, deleted_at
+			FROM lists
+			WHERE deleted_at IS NULL
+			ORDER BY created_at DESC
+			LIMIT $1 OFFSET $2`
+
+		rows, err := tx.Query(query, limit, offset)
 		if err != nil {
-			return nil, fmt.Errorf("error scanning list: %w", err)
+			return fmt.Errorf("error listing lists: %w", err)
+		}
+		defer safeClose(rows)
+
+		for rows.Next() {
+			list := &models.List{}
+			err := rows.Scan(
+				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
+				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
+				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
+				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("error scanning list: %w", err)
+			}
+
+			lists = append(lists, list)
 		}
 
-		lists = append(lists, list)
-	}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("error iterating lists: %w", err)
+		}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating lists: %w", err)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	// If there are no lists, return early
@@ -815,25 +833,30 @@ func (r *ListRepository) UpdateItem(item *models.ListItem) error {
 
 // RemoveItem soft-deletes an item from a list
 func (r *ListRepository) RemoveItem(listID, itemID uuid.UUID) error {
-	query := `
-		UPDATE list_items SET
-			deleted_at = NOW()
-		WHERE id = $1 AND list_id = $2 AND deleted_at IS NULL`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	result, err := r.GetQueryDB().Exec(query, itemID, listID)
-	if err != nil {
-		return err
-	}
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			UPDATE list_items SET
+				deleted_at = NOW()
+			WHERE id = $1 AND list_id = $2 AND deleted_at IS NULL`
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows == 0 {
-		return fmt.Errorf("item not found: %v", itemID)
-	}
+		result, err := tx.Exec(query, itemID, listID)
+		if err != nil {
+			return err
+		}
 
-	return nil
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return fmt.Errorf("item not found: %v", itemID)
+		}
+
+		return nil
+	})
 }
 
 // GetItems retrieves all items from a list
@@ -901,63 +924,76 @@ func (r *ListRepository) GetItems(listID uuid.UUID) ([]*models.ListItem, error) 
 
 // GetEligibleItems retrieves items eligible for menu generation
 func (r *ListRepository) GetEligibleItems(listIDs []uuid.UUID, filters map[string]interface{}) ([]*models.ListItem, error) {
-	query := `
-		SELECT 
-			i.id, i.list_id, i.name, i.description,
-			i.metadata, i.external_id,
-			i.weight, i.last_chosen, i.chosen_count,
-			i.latitude, i.longitude, i.address,
-			i.created_at, i.updated_at, i.deleted_at,
-			l.default_weight, l.cooldown_days
-		FROM list_items i
-		JOIN lists l ON i.list_id = l.id
-		WHERE i.list_id = ANY($1)
-		AND i.deleted_at IS NULL
-		AND l.deleted_at IS NULL`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var items []*models.ListItem
 
-	// Apply filters
-	if cooldown, ok := filters["cooldown_days"].(int); ok {
-		query += fmt.Sprintf(" AND (i.last_chosen IS NULL OR i.last_chosen < NOW() - INTERVAL '%d days')", cooldown)
-	}
-	if maxItems, ok := filters["max_items"].(int); ok {
-		query += fmt.Sprintf(" LIMIT %d", maxItems)
-	}
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT 
+				i.id, i.list_id, i.name, i.description,
+				i.metadata, i.external_id,
+				i.weight, i.last_chosen, i.chosen_count,
+				i.latitude, i.longitude, i.address,
+				i.created_at, i.updated_at, i.deleted_at,
+				l.default_weight, l.cooldown_days
+			FROM list_items i
+			JOIN lists l ON i.list_id = l.id
+			WHERE i.list_id = ANY($1)
+			AND i.deleted_at IS NULL
+			AND l.deleted_at IS NULL`
 
-	rows, err := r.GetQueryDB().Query(query, pq.Array(listIDs))
+		// Apply filters
+		if cooldown, ok := filters["cooldown_days"].(int); ok {
+			query += fmt.Sprintf(" AND (i.last_chosen IS NULL OR i.last_chosen < NOW() - INTERVAL '%d days')", cooldown)
+		}
+		if maxItems, ok := filters["max_items"].(int); ok {
+			query += fmt.Sprintf(" LIMIT %d", maxItems)
+		}
+
+		rows, err := tx.Query(query, pq.Array(listIDs))
+		if err != nil {
+			return err
+		}
+		defer safeClose(rows)
+
+		for rows.Next() {
+			item := &models.ListItem{}
+			var metadata []byte
+			var defaultWeight float64
+			var cooldownDays *int
+			if err := rows.Scan(
+				&item.ID, &item.ListID, &item.Name, &item.Description,
+				&metadata, &item.ExternalID,
+				&item.Weight, &item.LastChosen, &item.ChosenCount,
+				&item.Latitude, &item.Longitude, &item.Address,
+				&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
+				&defaultWeight, &cooldownDays,
+			); err != nil {
+				return err
+			}
+
+			if len(metadata) > 0 {
+				if err := json.Unmarshal(metadata, &item.Metadata); err != nil {
+					return err
+				}
+			} else {
+				item.Metadata = make(models.JSONMap)
+			}
+
+			// Apply list's default weight if item weight is not set
+			if item.Weight == 0 {
+				item.Weight = defaultWeight
+			}
+
+			items = append(items, item)
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
-	}
-	defer safeClose(rows)
-
-	var items []*models.ListItem
-	for rows.Next() {
-		item := &models.ListItem{}
-		var metadata []byte
-		var defaultWeight float64
-		var cooldownDays *int
-		if err := rows.Scan(
-			&item.ID, &item.ListID, &item.Name, &item.Description,
-			&metadata, &item.ExternalID,
-			&item.Weight, &item.LastChosen, &item.ChosenCount,
-			&item.Latitude, &item.Longitude, &item.Address,
-			&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-			&defaultWeight, &cooldownDays,
-		); err != nil {
-			return nil, err
-		}
-
-		if len(metadata) > 0 {
-			if err := json.Unmarshal(metadata, &item.Metadata); err != nil {
-				return nil, err
-			}
-		}
-
-		// Apply list's default weight if item weight is not set
-		if item.Weight == 0 {
-			item.Weight = defaultWeight
-		}
-
-		items = append(items, item)
 	}
 
 	return items, nil
@@ -1057,6 +1093,8 @@ func (r *ListRepository) GetListsBySource(source string) ([]*models.List, error)
 		}
 		defer safeClose(rows)
 
+		var listIDs []uuid.UUID // Track list IDs for batch loading
+
 		for rows.Next() {
 			list := &models.List{
 				Items:  []*models.ListItem{},
@@ -1073,27 +1111,103 @@ func (r *ListRepository) GetListsBySource(source string) ([]*models.List, error)
 			}
 
 			lists = append(lists, list)
+			listIDs = append(listIDs, list.ID)
 		}
 
 		if err = rows.Err(); err != nil {
 			return fmt.Errorf("error iterating lists: %w", err)
 		}
 
-		// Load items and owners separately for each list to avoid parse errors
-		for _, list := range lists {
-			// Get items
-			items, err := r.GetItems(list.ID)
-			if err != nil {
-				return fmt.Errorf("error loading items for list %s: %w", list.ID, err)
-			}
-			list.Items = items
+		// If no lists were found, return early
+		if len(lists) == 0 {
+			return nil
+		}
 
-			// Get owners
-			owners, err := r.GetOwners(list.ID)
-			if err != nil {
-				return fmt.Errorf("error loading owners for list %s: %w", list.ID, err)
+		// Get items for all lists at once using array parameter
+		itemsQuery := `
+			SELECT id, list_id, name, description,
+				metadata, external_id,
+				weight, last_chosen, chosen_count,
+				latitude, longitude, address,
+				created_at, updated_at, deleted_at
+			FROM list_items
+			WHERE list_id = ANY($1) AND deleted_at IS NULL`
+
+		itemRows, err := tx.Query(itemsQuery, pq.Array(listIDs))
+		if err != nil {
+			return fmt.Errorf("error loading list items: %w", err)
+		}
+		defer safeClose(itemRows)
+
+		// Map to store items by list ID
+		itemsByListID := make(map[uuid.UUID][]*models.ListItem)
+
+		for itemRows.Next() {
+			item := &models.ListItem{}
+			var metadata []byte
+			if err := itemRows.Scan(
+				&item.ID, &item.ListID, &item.Name, &item.Description,
+				&metadata, &item.ExternalID,
+				&item.Weight, &item.LastChosen, &item.ChosenCount,
+				&item.Latitude, &item.Longitude, &item.Address,
+				&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
+			); err != nil {
+				return fmt.Errorf("error scanning list item: %w", err)
 			}
-			list.Owners = owners
+
+			if len(metadata) > 0 {
+				if err := json.Unmarshal(metadata, &item.Metadata); err != nil {
+					return fmt.Errorf("error decoding item metadata: %w", err)
+				}
+			} else {
+				item.Metadata = make(models.JSONMap)
+			}
+
+			itemsByListID[item.ListID] = append(itemsByListID[item.ListID], item)
+		}
+
+		if err = itemRows.Err(); err != nil {
+			return fmt.Errorf("error iterating list items: %w", err)
+		}
+
+		// Get owners for all lists at once
+		ownersQuery := `
+			SELECT list_id, owner_id, owner_type, created_at, updated_at, deleted_at
+			FROM list_owners
+			WHERE list_id = ANY($1) AND deleted_at IS NULL`
+
+		ownerRows, err := tx.Query(ownersQuery, pq.Array(listIDs))
+		if err != nil {
+			return fmt.Errorf("error loading list owners: %w", err)
+		}
+		defer safeClose(ownerRows)
+
+		// Map to store owners by list ID
+		ownersByListID := make(map[uuid.UUID][]*models.ListOwner)
+
+		for ownerRows.Next() {
+			owner := &models.ListOwner{}
+			if err := ownerRows.Scan(
+				&owner.ListID,
+				&owner.OwnerID,
+				&owner.OwnerType,
+				&owner.CreatedAt,
+				&owner.UpdatedAt,
+				&owner.DeletedAt,
+			); err != nil {
+				return fmt.Errorf("error scanning list owner: %w", err)
+			}
+			ownersByListID[owner.ListID] = append(ownersByListID[owner.ListID], owner)
+		}
+
+		if err = ownerRows.Err(); err != nil {
+			return fmt.Errorf("error iterating list owners: %w", err)
+		}
+
+		// Attach items and owners to each list
+		for _, list := range lists {
+			list.Items = itemsByListID[list.ID]
+			list.Owners = ownersByListID[list.ID]
 		}
 
 		return nil
@@ -1478,10 +1592,22 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 	ctx := context.Background()
 	opts := DefaultTransactionOptions()
 
+	fmt.Printf("ShareWithTribe: Using schema %s\n", testutil.GetCurrentTestSchema())
+
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Validate share
 		if err := share.Validate(); err != nil {
+			fmt.Printf("ShareWithTribe: Validation failed: %v\n", err)
 			return err
+		}
+
+		// Debug the search path
+		var searchPath string
+		err := tx.QueryRow("SHOW search_path").Scan(&searchPath)
+		if err != nil {
+			fmt.Printf("Error getting search_path in ShareWithTribe: %v\n", err)
+		} else {
+			fmt.Printf("ShareWithTribe: Current search_path: %s\n", searchPath)
 		}
 
 		// Check if list exists and is not deleted
@@ -1491,11 +1617,13 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 			WHERE id = $1 AND deleted_at IS NULL`
 
 		var exists bool
-		err := tx.QueryRow(query, share.ListID).Scan(&exists)
+		err = tx.QueryRow(query, share.ListID).Scan(&exists)
 		if err == sql.ErrNoRows {
+			fmt.Printf("ShareWithTribe: List not found: %s\n", share.ListID)
 			return models.ErrNotFound
 		}
 		if err != nil {
+			fmt.Printf("ShareWithTribe: Error checking list existence: %v\n", err)
 			return fmt.Errorf("error checking list existence: %w", err)
 		}
 
@@ -1507,9 +1635,11 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 
 		err = tx.QueryRow(query, share.TribeID).Scan(&exists)
 		if err == sql.ErrNoRows {
+			fmt.Printf("ShareWithTribe: Tribe not found: %s\n", share.TribeID)
 			return models.ErrNotFound
 		}
 		if err != nil {
+			fmt.Printf("ShareWithTribe: Error checking tribe existence: %v\n", err)
 			return fmt.Errorf("error checking tribe existence: %w", err)
 		}
 
@@ -1521,22 +1651,26 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 
 		err = tx.QueryRow(query, share.UserID).Scan(&exists)
 		if err == sql.ErrNoRows {
+			fmt.Printf("ShareWithTribe: User not found: %s\n", share.UserID)
 			return models.ErrNotFound
 		}
 		if err != nil {
+			fmt.Printf("ShareWithTribe: Error checking user existence: %v\n", err)
 			return fmt.Errorf("error checking user existence: %w", err)
 		}
 
 		// Check if there's an existing share (including soft-deleted ones)
 		var existingShare bool
 		var isDeleted bool
+		var currentVersion int
 		err = tx.QueryRow(`
 			SELECT 
 				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2),
-				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NOT NULL)
+				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NOT NULL),
+				COALESCE((SELECT version FROM list_sharing WHERE list_id = $1 AND tribe_id = $2), 0)
 			`,
 			share.ListID, share.TribeID,
-		).Scan(&existingShare, &isDeleted)
+		).Scan(&existingShare, &isDeleted, &currentVersion)
 		if err != nil {
 			return fmt.Errorf("error checking existing share: %w", err)
 		}
@@ -1548,7 +1682,8 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 				SET user_id = $1,
 					expires_at = $2,
 					updated_at = NOW(),
-					deleted_at = NULL
+					deleted_at = NULL,
+					version = version + 1
 				WHERE list_id = $3 AND tribe_id = $4`,
 				share.UserID, share.ExpiresAt, share.ListID, share.TribeID,
 			)
@@ -1560,8 +1695,9 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 			_, err = tx.Exec(`
 				INSERT INTO list_sharing (
 					list_id, tribe_id, user_id,
-					created_at, updated_at, expires_at
-				) VALUES ($1, $2, $3, NOW(), NOW(), $4)`,
+					created_at, updated_at, expires_at,
+					version
+				) VALUES ($1, $2, $3, NOW(), NOW(), $4, 1)`,
 				share.ListID,
 				share.TribeID,
 				share.UserID,

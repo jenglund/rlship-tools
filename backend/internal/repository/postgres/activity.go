@@ -286,73 +286,94 @@ func (r *ActivityRepository) List(offset, limit int) ([]*models.Activity, error)
 
 // AddOwner adds an owner to an activity
 func (r *ActivityRepository) AddOwner(activityID, ownerID uuid.UUID, ownerType models.OwnerType) error {
-	query := `
-		INSERT INTO activity_owners (activity_id, owner_id, owner_type, created_at)
-		VALUES ($1, $2, $3, $4)`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	_, err := r.GetQueryDB().Exec(query, activityID, ownerID, ownerType, time.Now())
-	if err != nil {
-		return fmt.Errorf("error adding activity owner: %w", err)
-	}
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			INSERT INTO activity_owners (activity_id, owner_id, owner_type, created_at)
+			VALUES ($1, $2, $3, $4)`
 
-	return nil
+		_, err := tx.Exec(query, activityID, ownerID, ownerType, time.Now())
+		if err != nil {
+			return fmt.Errorf("error adding activity owner: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // RemoveOwner removes an owner from an activity
 func (r *ActivityRepository) RemoveOwner(activityID, ownerID uuid.UUID) error {
-	query := `
-		UPDATE activity_owners
-		SET deleted_at = $1
-		WHERE activity_id = $2 AND owner_id = $3 AND deleted_at IS NULL`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 
-	result, err := r.GetQueryDB().Exec(query, time.Now(), activityID, ownerID)
-	if err != nil {
-		return fmt.Errorf("error removing activity owner: %w", err)
-	}
+	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			UPDATE activity_owners
+			SET deleted_at = $1
+			WHERE activity_id = $2 AND owner_id = $3 AND deleted_at IS NULL`
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("error checking rows affected: %w", err)
-	}
+		result, err := tx.Exec(query, time.Now(), activityID, ownerID)
+		if err != nil {
+			return fmt.Errorf("error removing activity owner: %w", err)
+		}
 
-	if rowsAffected == 0 {
-		return fmt.Errorf("activity owner not found")
-	}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("error checking rows affected: %w", err)
+		}
 
-	return nil
+		if rowsAffected == 0 {
+			return fmt.Errorf("activity owner not found")
+		}
+
+		return nil
+	})
 }
 
 // GetOwners retrieves all owners of an activity
 func (r *ActivityRepository) GetOwners(activityID uuid.UUID) ([]*models.ActivityOwner, error) {
-	query := `
-		SELECT activity_id, owner_id, owner_type, created_at, deleted_at
-		FROM activity_owners
-		WHERE activity_id = $1 AND deleted_at IS NULL`
-
-	rows, err := r.GetQueryDB().Query(query, activityID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting activity owners: %w", err)
-	}
-	defer safeClose(rows)
-
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 	var owners []*models.ActivityOwner
-	for rows.Next() {
-		owner := &models.ActivityOwner{}
-		scanErr := rows.Scan(
-			&owner.ActivityID,
-			&owner.OwnerID,
-			&owner.OwnerType,
-			&owner.CreatedAt,
-			&owner.DeletedAt,
-		)
-		if scanErr != nil {
-			return nil, fmt.Errorf("error scanning activity owner row: %w", scanErr)
-		}
-		owners = append(owners, owner)
-	}
 
-	if rowErr := rows.Err(); rowErr != nil {
-		return nil, fmt.Errorf("error iterating activity owner rows: %w", rowErr)
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT activity_id, owner_id, owner_type, created_at, deleted_at
+			FROM activity_owners
+			WHERE activity_id = $1 AND deleted_at IS NULL`
+
+		rows, err := tx.Query(query, activityID)
+		if err != nil {
+			return fmt.Errorf("error getting activity owners: %w", err)
+		}
+		defer safeClose(rows)
+
+		for rows.Next() {
+			owner := &models.ActivityOwner{}
+			scanErr := rows.Scan(
+				&owner.ActivityID,
+				&owner.OwnerID,
+				&owner.OwnerType,
+				&owner.CreatedAt,
+				&owner.DeletedAt,
+			)
+			if scanErr != nil {
+				return fmt.Errorf("error scanning activity owner row: %w", scanErr)
+			}
+			owners = append(owners, owner)
+		}
+
+		if rowErr := rows.Err(); rowErr != nil {
+			return fmt.Errorf("error iterating activity owner rows: %w", rowErr)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return owners, nil
@@ -360,51 +381,62 @@ func (r *ActivityRepository) GetOwners(activityID uuid.UUID) ([]*models.Activity
 
 // GetUserActivities retrieves all activities owned by a user
 func (r *ActivityRepository) GetUserActivities(userID uuid.UUID) ([]*models.Activity, error) {
-	query := `
-		SELECT a.id, a.type, a.name, a.description, a.visibility, a.metadata, a.created_at, a.updated_at, a.deleted_at
-		FROM activities a
-		JOIN activity_owners ao ON ao.activity_id = a.id
-		WHERE ao.owner_id = $1 
-		AND ao.owner_type = 'user'
-		AND ao.deleted_at IS NULL
-		AND a.deleted_at IS NULL
-		ORDER BY a.created_at DESC`
-
-	rows, err := r.GetQueryDB().Query(query, userID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting user activities: %w", err)
-	}
-	defer safeClose(rows)
-
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
 	var activities []*models.Activity
-	for rows.Next() {
-		activity := &models.Activity{}
-		var metadataBytes []byte
-		if err := rows.Scan(
-			&activity.ID,
-			&activity.Type,
-			&activity.Name,
-			&activity.Description,
-			&activity.Visibility,
-			&metadataBytes,
-			&activity.CreatedAt,
-			&activity.UpdatedAt,
-			&activity.DeletedAt,
-		); err != nil {
-			return nil, fmt.Errorf("error scanning activity row: %w", err)
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT a.id, a.type, a.name, a.description, a.visibility, a.metadata, a.created_at, a.updated_at, a.deleted_at
+			FROM activities a
+			JOIN activity_owners ao ON ao.activity_id = a.id
+			WHERE ao.owner_id = $1 
+			AND ao.owner_type = 'user'
+			AND ao.deleted_at IS NULL
+			AND a.deleted_at IS NULL
+			ORDER BY a.created_at DESC`
+
+		rows, err := tx.Query(query, userID)
+		if err != nil {
+			return fmt.Errorf("error getting user activities: %w", err)
+		}
+		defer safeClose(rows)
+
+		for rows.Next() {
+			activity := &models.Activity{}
+			var metadataBytes []byte
+			if err := rows.Scan(
+				&activity.ID,
+				&activity.Type,
+				&activity.Name,
+				&activity.Description,
+				&activity.Visibility,
+				&metadataBytes,
+				&activity.CreatedAt,
+				&activity.UpdatedAt,
+				&activity.DeletedAt,
+			); err != nil {
+				return fmt.Errorf("error scanning activity row: %w", err)
+			}
+
+			metadata, metadataErr := convertMetadata(metadataBytes)
+			if metadataErr != nil {
+				return metadataErr
+			}
+			activity.Metadata = metadata
+
+			activities = append(activities, activity)
 		}
 
-		metadata, metadataErr := convertMetadata(metadataBytes)
-		if metadataErr != nil {
-			return nil, metadataErr
+		if err = rows.Err(); err != nil {
+			return fmt.Errorf("error iterating activity rows: %w", err)
 		}
-		activity.Metadata = metadata
 
-		activities = append(activities, activity)
-	}
+		return nil
+	})
 
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating activity rows: %w", err)
+	if err != nil {
+		return nil, err
 	}
 
 	return activities, nil
@@ -412,51 +444,62 @@ func (r *ActivityRepository) GetUserActivities(userID uuid.UUID) ([]*models.Acti
 
 // GetTribeActivities retrieves all activities owned by a tribe
 func (r *ActivityRepository) GetTribeActivities(tribeID uuid.UUID) ([]*models.Activity, error) {
-	query := `
-		SELECT a.id, a.type, a.name, a.description, a.visibility, a.metadata, a.created_at, a.updated_at, a.deleted_at
-		FROM activities a
-		JOIN activity_owners ao ON ao.activity_id = a.id
-		WHERE ao.owner_id = $1 
-		AND ao.owner_type = 'tribe'
-		AND ao.deleted_at IS NULL
-		AND a.deleted_at IS NULL
-		ORDER BY a.created_at DESC`
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+	var activities []*models.Activity
 
-	rows, err := r.GetQueryDB().Query(query, tribeID)
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		query := `
+			SELECT a.id, a.type, a.name, a.description, a.visibility, a.metadata, a.created_at, a.updated_at, a.deleted_at
+			FROM activities a
+			JOIN activity_owners ao ON ao.activity_id = a.id
+			WHERE ao.owner_id = $1 
+			AND ao.owner_type = 'tribe'
+			AND ao.deleted_at IS NULL
+			AND a.deleted_at IS NULL
+			ORDER BY a.created_at DESC`
+
+		rows, err := tx.Query(query, tribeID)
+		if err != nil {
+			return fmt.Errorf("error getting tribe activities: %w", err)
+		}
+		defer safeClose(rows)
+
+		for rows.Next() {
+			activity := &models.Activity{}
+			var metadataBytes []byte
+			if err := rows.Scan(
+				&activity.ID,
+				&activity.Type,
+				&activity.Name,
+				&activity.Description,
+				&activity.Visibility,
+				&metadataBytes,
+				&activity.CreatedAt,
+				&activity.UpdatedAt,
+				&activity.DeletedAt,
+			); err != nil {
+				return fmt.Errorf("error scanning activity row: %w", err)
+			}
+
+			metadata, metadataErr := convertMetadata(metadataBytes)
+			if metadataErr != nil {
+				return metadataErr
+			}
+			activity.Metadata = metadata
+
+			activities = append(activities, activity)
+		}
+
+		if err = rows.Err(); err != nil {
+			return fmt.Errorf("error iterating activity rows: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("error getting tribe activities: %w", err)
-	}
-	defer safeClose(rows)
-
-	var activities []*models.Activity
-	for rows.Next() {
-		activity := &models.Activity{}
-		var metadataBytes []byte
-		if err := rows.Scan(
-			&activity.ID,
-			&activity.Type,
-			&activity.Name,
-			&activity.Description,
-			&activity.Visibility,
-			&metadataBytes,
-			&activity.CreatedAt,
-			&activity.UpdatedAt,
-			&activity.DeletedAt,
-		); err != nil {
-			return nil, fmt.Errorf("error scanning activity row: %w", err)
-		}
-
-		metadata, metadataErr := convertMetadata(metadataBytes)
-		if metadataErr != nil {
-			return nil, metadataErr
-		}
-		activity.Metadata = metadata
-
-		activities = append(activities, activity)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating activity rows: %w", err)
 	}
 
 	return activities, nil

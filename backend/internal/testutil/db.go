@@ -371,18 +371,12 @@ func (db *SchemaDB) ExecContext(ctx context.Context, query string, args ...inter
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	// Lock to prevent concurrent schema changes
-	db.mu.Lock()
-	// Set search path for this connection
-	_, err := db.DB.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
-	db.mu.Unlock()
+	// Combine search path with the query to make it atomic
+	searchPathQuery := fmt.Sprintf("SET search_path TO %s; %s",
+		pq.QuoteIdentifier(db.schemaName), query)
 
-	if err != nil {
-		return nil, fmt.Errorf("error setting search path: %w", err)
-	}
-
-	// Execute the query
-	return db.DB.ExecContext(childCtx, query, args...)
+	// Execute the query with search path included
+	return db.DB.ExecContext(childCtx, searchPathQuery, args...)
 }
 
 // Query overrides the default Query method to set the search path
@@ -400,18 +394,12 @@ func (db *SchemaDB) QueryContext(ctx context.Context, query string, args ...inte
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	// Lock to prevent concurrent schema changes
-	db.mu.Lock()
-	// Set search path for this connection
-	_, err := db.DB.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
-	db.mu.Unlock()
+	// Combine search path with the query to make it atomic
+	searchPathQuery := fmt.Sprintf("SET search_path TO %s; %s",
+		pq.QuoteIdentifier(db.schemaName), query)
 
-	if err != nil {
-		return nil, fmt.Errorf("error setting search path: %w", err)
-	}
-
-	// Execute the query
-	return db.DB.QueryContext(childCtx, query, args...)
+	// Execute the query with search path included
+	return db.DB.QueryContext(childCtx, searchPathQuery, args...)
 }
 
 // QueryRow overrides the default QueryRow method to set the search path
@@ -429,19 +417,13 @@ func (db *SchemaDB) QueryRowContext(ctx context.Context, query string, args ...i
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	// Lock to prevent concurrent schema changes
-	db.mu.Lock()
-	// Set search path for this connection
-	_, err := db.DB.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
-	db.mu.Unlock()
+	// Clone the query to include search path directly in it to avoid race conditions
+	// with setting search path and then executing query
+	searchPathQuery := fmt.Sprintf("SET search_path TO %s; %s",
+		pq.QuoteIdentifier(db.schemaName), query)
 
-	if err != nil {
-		// We can't return an error from QueryRowContext directly, so just log it
-		log.Printf("Error setting search path in QueryRowContext: %v", err)
-	}
-
-	// Execute the query
-	return db.DB.QueryRowContext(childCtx, query, args...)
+	// Execute the query directly with search path included
+	return db.DB.QueryRowContext(childCtx, searchPathQuery, args...)
 }
 
 // Begin overrides the default Begin method to set the search path on the transaction
@@ -466,11 +448,23 @@ func (db *SchemaDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, 
 	}
 
 	// Set search path in the transaction
-	_, err = tx.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	_, err = tx.ExecContext(childCtx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
 	if err != nil {
 		tx.Rollback()
 		return nil, fmt.Errorf("error setting search path in transaction: %w", err)
 	}
+
+	// Verify search path was set correctly
+	var searchPath string
+	err = tx.QueryRowContext(childCtx, "SHOW search_path").Scan(&searchPath)
+	if err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("error verifying search path in transaction: %w", err)
+	}
+
+	// Debug output
+	log.Printf("Transaction started with search_path: %s (schema: %s)",
+		searchPath, db.schemaName)
 
 	return tx, nil
 }
@@ -500,6 +494,10 @@ func UnwrapDB(db *SchemaDB) *sql.DB {
 		// Log the error but continue
 		log.Printf("Warning: Failed to set search path in UnwrapDB: %v", err)
 	}
+
+	// Store the schema name in the global variable so it can be retrieved when needed
+	currentTestDBName = db.schemaName
+	log.Printf("UnwrapDB: Set current schema to %s", db.schemaName)
 
 	return db.DB
 }

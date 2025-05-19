@@ -548,3 +548,79 @@ func timePtr(t time.Time) *time.Time {
 }
 
 // Note: intPtr is already defined in list_test.go, so we're using that one
+
+// TestSchemaPathOnDirectQueries verifies that methods previously using direct DB queries
+// correctly use the transaction manager to set the schema path
+func TestSchemaPathOnDirectQueries(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+
+	repo := NewListRepository(db)
+	listRepo, ok := repo.(*ListRepository)
+	require.True(t, ok)
+
+	// Create a test user
+	testUser := testutil.CreateTestUser(t, db)
+
+	ownerType := models.OwnerTypeUser
+
+	// Add a test list with items
+	list := &models.List{
+		Name:          "Schema Path Test List",
+		Type:          models.ListTypeGeneral,
+		OwnerID:       &testUser.ID,
+		OwnerType:     &ownerType,
+		Visibility:    models.VisibilityPrivate,
+		DefaultWeight: 1.0,
+		SyncStatus:    models.ListSyncStatusNone,
+		SyncSource:    models.SyncSourceNone,
+	}
+	err := listRepo.Create(list)
+	require.NoError(t, err)
+
+	// Add test item
+	item := &models.ListItem{
+		ListID: list.ID,
+		Name:   "Test Item",
+		Weight: 1.0,
+	}
+	err = listRepo.AddItem(item)
+	require.NoError(t, err)
+
+	// Test List method (previously used direct query)
+	lists, err := listRepo.List(0, 10)
+	require.NoError(t, err)
+	require.NotEmpty(t, lists)
+	found := false
+	for _, l := range lists {
+		if l.ID == list.ID {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "List should be found in results")
+
+	// Test RemoveItem method (previously used direct query)
+	err = listRepo.RemoveItem(list.ID, item.ID)
+	require.NoError(t, err)
+
+	// Verify item was removed
+	items, err := listRepo.GetItems(list.ID)
+	require.NoError(t, err)
+	require.Empty(t, items)
+
+	// Test GetEligibleItems (previously used direct query)
+	// First add a new item since we removed the previous one
+	newItem := &models.ListItem{
+		ListID: list.ID,
+		Name:   "New Test Item",
+		Weight: 1.0,
+	}
+	err = listRepo.AddItem(newItem)
+	require.NoError(t, err)
+
+	// Now test GetEligibleItems with the list ID
+	eligible, err := listRepo.GetEligibleItems([]uuid.UUID{list.ID}, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, eligible)
+}

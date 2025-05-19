@@ -140,11 +140,15 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			return fmt.Errorf("error verifying search_path in transaction: %w", err)
 		}
 
-		// In a test environment, ensure the test schema is in the search path
-		if testSchema != "" && !strings.Contains(txSearchPath, testSchema) {
-			configCancel()
-			safeClose(tx)
-			return fmt.Errorf("test schema not in transaction search_path: expected %s in %s", testSchema, txSearchPath)
+		// Log the transaction search path for debugging
+		if testSchema != "" {
+			fmt.Printf("Transaction search_path: %s (expected test schema: %s)\n", txSearchPath, testSchema)
+			if !strings.Contains(txSearchPath, testSchema) {
+				configCancel()
+				safeClose(tx)
+				return fmt.Errorf("test schema not in transaction search_path: expected %s in %s",
+					testSchema, txSearchPath)
+			}
 		}
 
 		// Configuration is done, release the config context

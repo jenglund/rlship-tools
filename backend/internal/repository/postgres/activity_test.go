@@ -507,3 +507,65 @@ func TestActivityOwnerManagement(t *testing.T) {
 		assert.True(t, foundOwner, "The manually added owner should be found")
 	})
 }
+
+// TestActivitySchemaPathOnDirectQueries verifies that methods previously using direct DB queries
+// correctly use the transaction manager to set the schema path
+func TestActivitySchemaPathOnDirectQueries(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.TeardownTestDB(t, db)
+
+	// Create a test user
+	testUser := testutil.CreateTestUser(t, db)
+
+	repo := NewActivityRepository(db)
+	activityRepo, ok := repo.(*ActivityRepository)
+	require.True(t, ok)
+
+	// Create a test activity
+	activity := &models.Activity{
+		UserID:      testUser.ID,
+		Type:        models.ActivityTypeEvent,
+		Name:        "Test Schema Path Activity",
+		Description: "Activity for testing schema path handling",
+		Visibility:  models.VisibilityPrivate,
+		Metadata:    models.JSONMap{"test": "data"},
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	err := activityRepo.Create(activity)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, activity.ID)
+
+	// Test AddOwner (previously used direct query)
+	err = activityRepo.AddOwner(activity.ID, testUser.ID, models.OwnerTypeUser)
+	require.NoError(t, err)
+
+	// Test GetOwners (previously used direct query)
+	owners, err := activityRepo.GetOwners(activity.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, owners)
+	require.Equal(t, testUser.ID, owners[0].OwnerID)
+
+	// Test GetUserActivities (previously used direct query)
+	activities, err := activityRepo.GetUserActivities(testUser.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, activities)
+	found := false
+	for _, a := range activities {
+		if a.ID == activity.ID {
+			found = true
+			break
+		}
+	}
+	require.True(t, found, "Activity should be found in user activities")
+
+	// Test RemoveOwner (previously used direct query)
+	err = activityRepo.RemoveOwner(activity.ID, testUser.ID)
+	require.NoError(t, err)
+
+	// Verify owner was removed
+	owners, err = activityRepo.GetOwners(activity.ID)
+	require.NoError(t, err)
+	require.Empty(t, owners)
+}
