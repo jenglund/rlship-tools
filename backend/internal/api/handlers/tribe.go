@@ -573,9 +573,10 @@ func (h *TribeHandler) DeleteTribe(c *gin.Context) {
 	response.GinNoContent(c)
 }
 
-// AddMemberRequest represents the add member request body
+// AddMemberRequest represents the request to add a member to a tribe
 type AddMemberRequest struct {
 	UserID uuid.UUID `json:"user_id" binding:"required"`
+	Force  bool      `json:"force,omitempty"` // Force reinvitation if user was previously a member
 }
 
 // AddMember adds a user to a tribe
@@ -618,6 +619,19 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 			response.GinBadRequest(c, "User is already a member of this tribe")
 			return
 		}
+	}
+
+	// Check if the user was previously a member but has been removed
+	wasFormerMember, err := h.repos.Tribes.CheckFormerTribeMember(tribeID, req.UserID)
+	if err != nil {
+		response.GinInternalError(c, err)
+		return
+	}
+
+	// If user was a former member and force flag is not set, return a special error
+	if wasFormerMember && !req.Force {
+		response.GinError(c, 409, "former_member", "User was previously a member of this tribe. Set force=true to reinvite them.")
+		return
 	}
 
 	// Verify that the user exists

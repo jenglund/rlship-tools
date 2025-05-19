@@ -923,6 +923,94 @@ func TestTribeRepository(t *testing.T) {
 			assert.Equal(t, appleTribe.ID, results[0].ID)
 		})
 	})
+
+	t.Run("CheckFormerTribeMember", func(t *testing.T) {
+		t.Run("user was never a member", func(t *testing.T) {
+			// Create new tribe and user
+			now := time.Now()
+			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        "Test Tribe Former Member " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Visibility:  models.VisibilityPrivate,
+				Description: "A test tribe",
+				Metadata:    models.JSONMap{},
+			}
+			err := repo.Create(tribe)
+			require.NoError(t, err)
+
+			// User who was never a member
+			randomUser := &models.User{
+				ID:          uuid.New(),
+				FirebaseUID: "test_check_former_" + uuid.New().String()[:8],
+				Email:       "test_check_former_" + uuid.New().String()[:8] + "@example.com",
+				Provider:    "test",
+				Name:        "Test Former User",
+				AvatarURL:   "",
+				LastLogin:   &now,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			}
+			err = userRepo.Create(randomUser)
+			require.NoError(t, err)
+
+			// Check if user was a former member - should be false
+			wasFormer, err := repo.CheckFormerTribeMember(tribe.ID, randomUser.ID)
+			require.NoError(t, err)
+			assert.False(t, wasFormer, "User should not be detected as a former member")
+		})
+
+		t.Run("user was a former member", func(t *testing.T) {
+			// Create new tribe and user
+			now := time.Now()
+			tribe := &models.Tribe{
+				BaseModel: models.BaseModel{
+					ID:        uuid.New(),
+					CreatedAt: now,
+					UpdatedAt: now,
+				},
+				Name:        "Test Tribe Former Member " + uuid.New().String()[:8],
+				Type:        models.TribeTypeCouple,
+				Visibility:  models.VisibilityPrivate,
+				Description: "A test tribe",
+				Metadata:    models.JSONMap{},
+			}
+			err := repo.Create(tribe)
+			require.NoError(t, err)
+
+			// Create another user
+			formerMember := &models.User{
+				ID:          uuid.New(),
+				FirebaseUID: "test_former_member_" + uuid.New().String()[:8],
+				Email:       "test_former_member_" + uuid.New().String()[:8] + "@example.com",
+				Provider:    "test",
+				Name:        "Test Former Member",
+				AvatarURL:   "",
+				LastLogin:   &now,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			}
+			err = userRepo.Create(formerMember)
+			require.NoError(t, err)
+
+			// Add the user to the tribe
+			err = repo.AddMember(tribe.ID, formerMember.ID, models.MembershipFull, nil, nil)
+			require.NoError(t, err)
+
+			// Then remove the user
+			err = repo.RemoveMember(tribe.ID, formerMember.ID)
+			require.NoError(t, err)
+
+			// Check if user was a former member - should be true
+			wasFormer, err := repo.CheckFormerTribeMember(tribe.ID, formerMember.ID)
+			require.NoError(t, err)
+			assert.True(t, wasFormer, "User should be detected as a former member")
+		})
+	})
 }
 
 // Helper function to create test tribes of a specific type

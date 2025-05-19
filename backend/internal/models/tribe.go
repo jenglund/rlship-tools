@@ -173,6 +173,7 @@ type TribeRepository interface {
 	RemoveMember(tribeID, userID uuid.UUID) error
 	GetMembers(tribeID uuid.UUID) ([]*TribeMember, error)
 	GetUserTribes(userID uuid.UUID) ([]*Tribe, error)
+	CheckFormerTribeMember(tribeID, userID uuid.UUID) (bool, error)
 
 	// Queries
 	GetByType(tribeType TribeType, offset, limit int) ([]*Tribe, error)

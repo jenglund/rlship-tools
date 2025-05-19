@@ -1112,3 +1112,34 @@ func (r *TribeRepository) Search(query string, offset, limit int) ([]*models.Tri
 
 	return tribes, nil
 }
+
+// CheckFormerTribeMember checks if a user was previously a member of a tribe (has a deleted_at value)
+func (r *TribeRepository) CheckFormerTribeMember(tribeID, userID uuid.UUID) (bool, error) {
+	ctx := context.Background()
+	opts := DefaultTransactionOptions()
+
+	var wasFormerMember bool
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Check if user was previously a member (has deleted_at value)
+		query := `
+			SELECT EXISTS(
+				SELECT 1 FROM tribe_members 
+				WHERE tribe_id = $1 
+				AND user_id = $2 
+				AND deleted_at IS NOT NULL
+			)`
+
+		err := tx.QueryRow(query, tribeID, userID).Scan(&wasFormerMember)
+		if err != nil {
+			return fmt.Errorf("error checking for former member: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return false, err
+	}
+
+	return wasFormerMember, nil
+}

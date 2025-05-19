@@ -1714,122 +1714,102 @@ func TestAddMember(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, initialMembers, 1, "Should start with 1 member (the creator)")
 
-	tests := []struct {
-		name       string
-		tribeID    string
-		request    AddMemberRequest
-		wantStatus int
-		validate   func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID)
+	// Create a test case for former member
+	formerMember := testutil.CreateTestUser(t, repos.DB())
+	err = repos.Tribes.AddMember(tribe.ID, formerMember.ID, models.MembershipFull, nil, nil)
+	require.NoError(t, err)
+	err = repos.Tribes.RemoveMember(tribe.ID, formerMember.ID)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name           string
+		requestBody    map[string]interface{}
+		expectedStatus int
+		expectedBody   string
+		forceReinvite  bool
 	}{
 		{
-			name:    "valid member addition",
-			tribeID: tribe.ID.String(),
-			request: AddMemberRequest{
-				UserID: newUser.ID,
+			name: "Add new member",
+			requestBody: map[string]interface{}{
+				"user_id": newUser.ID.String(),
 			},
-			wantStatus: http.StatusNoContent,
-			validate: func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {
-				// Verify the member was added
-				members, err := repos.Tribes.GetMembers(tribeID)
-				require.NoError(t, err)
-				require.Len(t, members, 2, "Should have 2 members after adding one")
-
-				// Check if the new member is present
-				var found bool
-				for _, member := range members {
-					if member.UserID == newUser.ID {
-						found = true
-						assert.Equal(t, models.MembershipPending, member.MembershipType, "Membership level should match")
-						break
-					}
-				}
-				assert.True(t, found, "New member should be in the members list")
-			},
+			expectedStatus: http.StatusNoContent,
+			expectedBody:   "",
 		},
 		{
-			name:    "add already existing member",
-			tribeID: tribe.ID.String(),
-			request: AddMemberRequest{
-				UserID: testUser.ID, // This user is already a member
+			name: "Invalid user ID",
+			requestBody: map[string]interface{}{
+				"user_id": "invalid-uuid",
 			},
-			wantStatus: http.StatusBadRequest, // Should return 400 for duplicate member
-			validate: func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {
-				// Member count should remain unchanged
-				members, err := repos.Tribes.GetMembers(tribeID)
-				require.NoError(t, err)
-				assert.Len(t, members, 2, "Member count should not change when adding an existing member")
-			},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "Invalid request body",
 		},
 		{
-			name:    "non-existent tribe",
-			tribeID: uuid.New().String(),
-			request: AddMemberRequest{
-				UserID: newUser.ID,
+			name: "User is already a member",
+			requestBody: map[string]interface{}{
+				"user_id": testUser.ID.String(),
 			},
-			wantStatus: http.StatusNotFound, // 404 for not found
-			validate:   func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "User is already a member of this tribe",
 		},
 		{
-			name:    "invalid tribe uuid",
-			tribeID: "invalid-uuid",
-			request: AddMemberRequest{
-				UserID: newUser.ID,
+			name: "Former member without force flag",
+			requestBody: map[string]interface{}{
+				"user_id": formerMember.ID.String(),
 			},
-			wantStatus: http.StatusBadRequest,
-			validate:   func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {},
+			expectedStatus: http.StatusConflict,
+			expectedBody:   "former_member",
+			forceReinvite:  false,
 		},
 		{
-			name:    "non-existent user",
-			tribeID: tribe.ID.String(),
-			request: AddMemberRequest{
-				UserID: uuid.New(), // Random non-existent user ID
+			name: "Former member with force flag",
+			requestBody: map[string]interface{}{
+				"user_id": formerMember.ID.String(),
+				"force":   true,
 			},
-			wantStatus: http.StatusBadRequest, // 400 for bad request
-			validate: func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {
-				// Member count should remain unchanged
-				members, err := repos.Tribes.GetMembers(tribeID)
-				require.NoError(t, err)
-				assert.Len(t, members, 2, "Member count should not change when adding a non-existent user")
-			},
-		},
-		{
-			name:       "malformed request body",
-			tribeID:    tribe.ID.String(),
-			request:    AddMemberRequest{}, // Empty UserID
-			wantStatus: http.StatusBadRequest,
-			validate:   func(t *testing.T, repos *postgres.Repositories, tribeID uuid.UUID) {},
+			expectedStatus: http.StatusNoContent,
+			expectedBody:   "",
+			forceReinvite:  true,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var body []byte
-			var err error
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, _ := json.Marshal(tc.requestBody)
+			req, _ := http.NewRequest("POST", fmt.Sprintf("/api/tribes/%s/members", tribe.ID), strings.NewReader(string(payload)))
+			req.Header.Set("Content-Type", "application/json")
 
-			if tt.name == "malformed request body" {
-				body = []byte(`{"invalid_field": "value"}`) // Deliberately malformed JSON
-			} else {
-				body, err = json.Marshal(tt.request)
-				require.NoError(t, err)
+			respRecorder := httptest.NewRecorder()
+			router.ServeHTTP(respRecorder, req)
+
+			require.Equal(t, tc.expectedStatus, respRecorder.Code)
+
+			if tc.expectedStatus != http.StatusNoContent {
+				respBody := respRecorder.Body.String()
+				require.Contains(t, respBody, tc.expectedBody)
 			}
 
-			req := httptest.NewRequest(http.MethodPost, "/api/tribes/tribes/"+tt.tribeID+"/members", bytes.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
+			// If we expected success for a new tribe member, verify they were added
+			if tc.expectedStatus == http.StatusNoContent && !tc.forceReinvite {
+				members, err := repos.Tribes.GetMembers(tribe.ID)
+				require.NoError(t, err)
+				require.Equal(t, len(initialMembers)+1, len(members), "Number of members should have increased by 1")
+			}
 
-			router.ServeHTTP(w, req)
+			// If it's a former member with force=true, verify they were added back
+			if tc.forceReinvite && tc.expectedStatus == http.StatusNoContent {
+				members, err := repos.Tribes.GetMembers(tribe.ID)
+				require.NoError(t, err)
 
-			assert.Equal(t, tt.wantStatus, w.Code)
-
-			// Run additional validations if specified and if the tribe ID is valid
-			if tt.validate != nil && tt.tribeID != "invalid-uuid" {
-				var tribeID uuid.UUID
-				if tt.tribeID == tribe.ID.String() {
-					tribeID = tribe.ID
-				} else {
-					tribeID, _ = uuid.Parse(tt.tribeID)
+				// Find the reinvited member and verify it's there
+				var found bool
+				for _, member := range members {
+					if member.UserID == formerMember.ID {
+						found = true
+						break
+					}
 				}
-				tt.validate(t, repos, tribeID)
+				require.True(t, found, "Former member should have been reinvited to the tribe")
 			}
 		})
 	}

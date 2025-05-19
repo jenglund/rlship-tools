@@ -90,11 +90,11 @@ const tribeService = {
   },
 
   // Add a member to a tribe
-  addTribeMember: async (tribeId, userId) => {
+  addTribeMember: async (tribeId, userId, force = false) => {
     try {
       const response = await axios.post(
         `${API_URL}/tribes/${tribeId}/members`,
-        { user_id: userId },
+        { user_id: userId, force },
         { headers: getAuthHeader() }
       );
       return response.data.data;
