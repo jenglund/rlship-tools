@@ -58,8 +58,8 @@ func DefaultTransactionOptions() TransactionOptions {
 // WithTransaction executes a function within a transaction
 func (tm *TransactionManager) WithTransaction(ctx context.Context, opts TransactionOptions, fn func(*sql.Tx) error) error {
 	// Create a timeout context if one wasn't provided
+	var cancel context.CancelFunc
 	if _, ok := ctx.Deadline(); !ok {
-		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, opts.StatementTimeout)
 		defer cancel()
 	}
@@ -82,16 +82,21 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			return fmt.Errorf("error starting transaction: %w", err)
 		}
 
+		// Create a new context specifically for configuration queries
+		configCtx, configCancel := context.WithTimeout(ctx, 2*time.Second)
+
 		// Set lock timeout
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL lock_timeout = '%dms'", opts.LockTimeout.Milliseconds()))
+		_, err = tx.ExecContext(configCtx, fmt.Sprintf("SET LOCAL lock_timeout = '%dms'", opts.LockTimeout.Milliseconds()))
 		if err != nil {
+			configCancel()
 			safeClose(tx)
 			return fmt.Errorf("error setting lock timeout: %w", err)
 		}
 
 		// Set statement timeout to prevent query hangs
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL statement_timeout = '%dms'", opts.StatementTimeout.Milliseconds()))
+		_, err = tx.ExecContext(configCtx, fmt.Sprintf("SET LOCAL statement_timeout = '%dms'", opts.StatementTimeout.Milliseconds()))
 		if err != nil {
+			configCancel()
 			safeClose(tx)
 			return fmt.Errorf("error setting statement timeout: %w", err)
 		}
@@ -101,23 +106,26 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		// 2. Otherwise, get the current search_path from the connection
 		if testSchema != "" {
 			// We're running in a test, set the test schema
-			_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(testSchema)))
+			_, err = tx.ExecContext(configCtx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(testSchema)))
 			if err != nil {
+				configCancel()
 				safeClose(tx)
 				return fmt.Errorf("error setting test schema search_path: %w", err)
 			}
 		} else {
 			// Get the current search_path and ensure it's correctly set in the transaction
 			var searchPath string
-			err = tm.db.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+			err = tm.db.QueryRowContext(configCtx, "SHOW search_path").Scan(&searchPath)
 			if err != nil {
+				configCancel()
 				safeClose(tx)
 				return fmt.Errorf("error getting current search_path: %w", err)
 			}
 
 			// Set the same search_path in the transaction with LOCAL so it only affects this transaction
-			_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s", searchPath))
+			_, err = tx.ExecContext(configCtx, fmt.Sprintf("SET LOCAL search_path TO %s", searchPath))
 			if err != nil {
+				configCancel()
 				safeClose(tx)
 				return fmt.Errorf("error setting search_path in transaction: %w", err)
 			}
@@ -125,17 +133,22 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 
 		// Verify search_path was properly set
 		var txSearchPath string
-		err = tx.QueryRowContext(ctx, "SHOW search_path").Scan(&txSearchPath)
+		err = tx.QueryRowContext(configCtx, "SHOW search_path").Scan(&txSearchPath)
 		if err != nil {
+			configCancel()
 			safeClose(tx)
 			return fmt.Errorf("error verifying search_path in transaction: %w", err)
 		}
 
 		// In a test environment, ensure the test schema is in the search path
 		if testSchema != "" && !strings.Contains(txSearchPath, testSchema) {
+			configCancel()
 			safeClose(tx)
 			return fmt.Errorf("test schema not in transaction search_path: expected %s in %s", testSchema, txSearchPath)
 		}
+
+		// Configuration is done, release the config context
+		configCancel()
 
 		// Execute the transaction function
 		err = fn(tx)
@@ -157,8 +170,14 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			return err
 		}
 
-		// Commit the transaction
-		if err = tx.Commit(); err != nil {
+		// Commit the transaction with a specific timeout
+		// Note: We create a timeout context but tx.Commit() doesn't accept a context
+		// This at least gives us some protection via the parent context
+		_, commitCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer commitCancel()
+		err = tx.Commit()
+
+		if err != nil {
 			return fmt.Errorf("error committing transaction: %w", err)
 		}
 

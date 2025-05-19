@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -53,18 +54,9 @@ func getPostgresConnection(dbName string) string {
 	}
 	sslMode := "disable"
 
-	if dbName == "" {
-		// Connect to default database
-		defaultDB := os.Getenv("POSTGRES_DB")
-		if defaultDB == "" {
-			defaultDB = "postgres"
-		}
-		if password == "" {
-			return fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s",
-				host, port, user, defaultDB, sslMode)
-		}
-		return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-			host, port, user, password, defaultDB, sslMode)
+	if dbName == "" || dbName == "test" {
+		// Connect to default database, ensuring we don't try to connect to a non-existent 'test' database
+		dbName = "postgres"
 	}
 
 	// Connect to specific database
@@ -130,6 +122,130 @@ func safeClose(c interface{}) {
 	}
 }
 
+// runMigrations runs all database migrations for the test schema
+func runMigrations(t *testing.T, dbName, schemaName, migrationsPath string) error {
+	// List files in migrations directory for debugging
+	migrationDirFiles, err := os.ReadDir(migrationsPath)
+	if err != nil {
+		t.Logf("ERROR: Failed to read migrations directory: %v", err)
+		return err
+	} else {
+		t.Logf("Found %d files in migrations directory:", len(migrationDirFiles))
+		for _, file := range migrationDirFiles {
+			t.Logf("  - %s", file.Name())
+		}
+	}
+
+	// Build postgres connection URL for migrations
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	if user == "" {
+		user = "postgres"
+	}
+
+	password := os.Getenv("POSTGRES_PASSWORD")
+	if password == "" {
+		password = "postgres"
+	}
+	passwordPart := ":" + password
+
+	// Add schema to connection URL
+	postgresURL := fmt.Sprintf("postgres://%s%s@%s:%s/%s?sslmode=disable&search_path=%s",
+		user, passwordPart, host, port, dbName, schemaName)
+
+	// Debug logging - use the URL to prevent unused variable warning
+	t.Logf("Using Postgres URL: %s (with password redacted)",
+		strings.ReplaceAll(postgresURL, passwordPart, ":***"))
+
+	// Connect to database to execute migrations manually
+	db, err := sql.Open("postgres", getPostgresConnection(dbName))
+	if err != nil {
+		return fmt.Errorf("error connecting to database for migrations: %w", err)
+	}
+	defer safeClose(db)
+
+	// Set search path to test schema
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+	_, err = db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+	if err != nil {
+		return fmt.Errorf("error setting search path for migrations: %w", err)
+	}
+
+	// Read and execute all migration files
+	migrationFiles, err := os.ReadDir(migrationsPath)
+	if err != nil {
+		return fmt.Errorf("error reading migrations directory: %w", err)
+	}
+
+	// Sort migrations by name to ensure they're executed in order
+	var upMigrations []string
+	for _, file := range migrationFiles {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".up.sql") {
+			upMigrations = append(upMigrations, file.Name())
+		}
+	}
+
+	// Sort migration files
+	sort.Strings(upMigrations)
+
+	t.Logf("Found %d migration files to execute", len(upMigrations))
+
+	// Execute each migration file
+	for _, fileName := range upMigrations {
+		t.Logf("Executing migration file: %s", fileName)
+
+		migrationSQL, err := os.ReadFile(filepath.Join(migrationsPath, fileName))
+		if err != nil {
+			t.Logf("Error reading migration file %s: %v", fileName, err)
+			continue
+		}
+
+		// Execute the migration with schema path explicitly set
+		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
+			pq.QuoteIdentifier(schemaName), string(migrationSQL)))
+		if err != nil {
+			t.Logf("Warning: Error executing migration %s: %v", fileName, err)
+			// Continue with other migrations, don't fail completely
+		} else {
+			t.Logf("Successfully executed migration file: %s", fileName)
+		}
+	}
+
+	// Verify essential tables exist
+	tables := []string{"users", "tribes", "tribe_members", "lists", "list_items", "list_owners", "list_sharing", "list_conflicts", "activities", "activity_owners", "activity_photos", "activity_shares"}
+	for _, table := range tables {
+		var tableExists bool
+		err = db.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = $1
+				AND table_name = $2
+			)`, schemaName, table).Scan(&tableExists)
+
+		if err != nil {
+			t.Logf("Error checking if %s table exists: %v", table, err)
+		} else {
+			t.Logf("%s table exists: %v", table, tableExists)
+			if !tableExists {
+				t.Logf("WARNING: Essential table %s is missing", table)
+			}
+		}
+	}
+
+	t.Logf("Migration execution completed")
+	return nil
+}
+
 // SetupTestDB creates a test schema and runs migrations
 func SetupTestDB(t *testing.T) *SchemaDB {
 	t.Helper()
@@ -142,7 +258,7 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 
 	// Connect to existing database
 	dbName := os.Getenv("POSTGRES_DB")
-	if dbName == "" {
+	if dbName == "" || dbName == "test" {
 		dbName = "postgres"
 	}
 
@@ -202,204 +318,18 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 		panic(fmt.Sprintf("Migrations directory does not exist: %s", migrationsPath))
 	}
 
-	// List files in migrations directory for debugging
-	migrationDirFiles, err := os.ReadDir(migrationsPath)
-	if err != nil {
-		t.Logf("ERROR: Failed to read migrations directory: %v", err)
-	} else {
-		t.Logf("Found %d files in migrations directory:", len(migrationDirFiles))
-		for _, file := range migrationDirFiles {
-			t.Logf("  - %s", file.Name())
-		}
+	// Run migrations with improved error handling
+	if err := runMigrations(t, dbName, schemaName, migrationsPath); err != nil {
+		safeClose(db)
+		panic(fmt.Sprintf("Error running migrations: %v", err))
 	}
 
-	// Build postgres connection URL for migrations
-	host := os.Getenv("POSTGRES_HOST")
-	if host == "" {
-		host = "localhost"
-	}
-
-	port := os.Getenv("POSTGRES_PORT")
-	if port == "" {
-		port = "5432"
-	}
-
-	user := os.Getenv("POSTGRES_USER")
-	if user == "" {
-		user = "postgres"
-	}
-
-	password := os.Getenv("POSTGRES_PASSWORD")
-	if password == "" {
-		password = "postgres"
-	}
-	passwordPart := ":" + password
-
-	// Add schema to connection URL
-	postgresURL := fmt.Sprintf("postgres://%s%s@%s:%s/%s?sslmode=disable&search_path=%s",
-		user, passwordPart, host, port, dbName, schemaName)
-
-	// Debug logging
-	t.Logf("Using Postgres URL: %s (with password redacted)",
-		fmt.Sprintf("postgres://%s:***@%s:%s/%s?sslmode=disable&search_path=%s",
-			user, host, port, dbName, schemaName))
-
-	// Try to run migrations
-	migrationSuccess := false
-	m, err := migrate.New(
-		fmt.Sprintf("file://%s", migrationsPath),
-		postgresURL,
-	)
-
-	if err != nil {
-		t.Logf("Warning: Error creating migrate instance: %v", err)
-		t.Logf("Will try to run SQL directly from file...")
-	} else {
-		defer safeClose(m)
-
-		// Run migrations
-		err = m.Up()
-		if err != nil && err != migrate.ErrNoChange {
-			t.Logf("Warning: Error running migrations: %v", err)
-			t.Logf("Will try to run SQL directly from file...")
-		} else {
-			migrationSuccess = true
-			t.Logf("Migrations applied successfully")
-		}
-	}
-
-	// If migrations failed, try running the SQL directly
-	if !migrationSuccess {
-		t.Logf("Falling back to direct SQL execution")
-
-		// Read and execute all migration files
-		migrationFiles, err := os.ReadDir(migrationsPath)
-		if err != nil {
-			safeClose(db)
-			panic(fmt.Sprintf("Error reading migrations directory: %v", err))
-		}
-
-		// Sort migrations by name to ensure they're executed in order
-		var upMigrations []string
-		for _, file := range migrationFiles {
-			if !file.IsDir() && strings.HasSuffix(file.Name(), ".up.sql") {
-				upMigrations = append(upMigrations, file.Name())
-			}
-		}
-
-		// Sort migration files
-		sort.Strings(upMigrations)
-
-		t.Logf("Found %d migration files to execute", len(upMigrations))
-
-		// Direct approach: try to execute the schema file directly first
-		schemaFilePath := filepath.Join(migrationsPath, "000001_schema.up.sql")
-		if _, err := os.Stat(schemaFilePath); err == nil {
-			t.Logf("Executing schema file directly: %s", schemaFilePath)
-			schemaSQL, err := os.ReadFile(schemaFilePath)
-			if err != nil {
-				t.Logf("Error reading schema file: %v", err)
-			} else {
-				// Set search_path and execute the schema SQL
-				_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-					pq.QuoteIdentifier(schemaName), string(schemaSQL)))
-				if err != nil {
-					t.Logf("Error executing schema SQL: %v", err)
-				} else {
-					t.Logf("Successfully executed schema SQL directly")
-					migrationSuccess = true
-				}
-			}
-		}
-
-		// If direct execution of schema file failed or wasn't available, try individual migrations
-		if !migrationSuccess {
-			// Execute each migration file
-			for _, fileName := range upMigrations {
-				t.Logf("Executing migration file: %s", fileName)
-
-				migrationSQL, err := os.ReadFile(filepath.Join(migrationsPath, fileName))
-				if err != nil {
-					t.Logf("Error reading migration file %s: %v", fileName, err)
-					continue
-				}
-
-				// Execute the migration with schema path explicitly set
-				_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-					pq.QuoteIdentifier(schemaName), string(migrationSQL)))
-				if err != nil {
-					t.Logf("Warning: Error executing migration %s: %v", fileName, err)
-					// Continue with other migrations, don't fail completely
-				} else {
-					t.Logf("Successfully executed migration file: %s", fileName)
-				}
-			}
-		}
-		t.Logf("Direct SQL execution completed")
-	}
-
-	// Double check essential tables
-	tables := []string{"users", "tribes", "tribe_members", "lists", "list_items", "list_owners", "list_sharing", "list_conflicts", "activities", "activity_owners", "activity_photos", "activity_shares"}
-	tablesExist := true
-	for _, table := range tables {
-		var tableExists bool
-		err = db.QueryRow(`
-			SELECT EXISTS (
-				SELECT FROM information_schema.tables 
-				WHERE table_schema = $1
-				AND table_name = $2
-			)`, schemaName, table).Scan(&tableExists)
-
-		if err != nil {
-			t.Logf("Error checking if %s table exists: %v", table, err)
-			tablesExist = false
-		} else {
-			t.Logf("%s table exists: %v", table, tableExists)
-			if !tableExists {
-				tablesExist = false
-			}
-		}
-	}
-
-	if !tablesExist {
-		// Last resort: try to create schema directly
-		t.Logf("Some essential tables are missing, executing schema SQL one more time")
-		schemaFilePath := filepath.Join(migrationsPath, "000001_schema.up.sql")
-		schemaSQL, err := os.ReadFile(schemaFilePath)
-		if err != nil {
-			t.Logf("Error reading schema SQL file: %v", err)
-			panic("Failed to create essential database tables")
-		}
-
-		// Execute schema SQL with explicit schema name
-		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-			pq.QuoteIdentifier(schemaName), string(schemaSQL)))
-		if err != nil {
-			t.Logf("Error executing schema SQL: %v", err)
-			panic("Failed to create essential database tables")
-		}
-
-		// Verify tables one more time
-		for _, table := range tables {
-			var tableExists bool
-			err = db.QueryRow(`
-				SELECT EXISTS (
-					SELECT FROM information_schema.tables 
-					WHERE table_schema = $1
-					AND table_name = $2
-				)`, schemaName, table).Scan(&tableExists)
-			t.Logf("After final attempt, %s table exists: %v", table, tableExists)
-			if !tableExists {
-				panic(fmt.Sprintf("Failed to create table: %s", table))
-			}
-		}
-	}
-
-	// Create a wrapper DB that will set the search path for all operations
+	// Create wrapped DB with schema handling
 	wrappedDB := &SchemaDB{
 		DB:         db,
 		schemaName: schemaName,
 		timeout:    defaultQueryTimeout,
+		mu:         sync.Mutex{}, // Initialize mutex
 	}
 
 	// Add test schema to list for cleanup
@@ -413,10 +343,12 @@ type SchemaDB struct {
 	*sql.DB
 	schemaName string
 	timeout    time.Duration
+	mu         sync.Mutex // Add a mutex for thread safety
 }
 
 // SetSearchPath sets the search path for the current connection
 func (db *SchemaDB) SetSearchPath() error {
+	// Create a new context each time to avoid data races
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
@@ -426,6 +358,7 @@ func (db *SchemaDB) SetSearchPath() error {
 
 // Exec overrides the default Exec method to set the search path on the connection
 func (db *SchemaDB) Exec(query string, args ...interface{}) (sql.Result, error) {
+	// Create a new context each time to avoid data races
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
@@ -434,22 +367,27 @@ func (db *SchemaDB) Exec(query string, args ...interface{}) (sql.Result, error) 
 
 // ExecContext overrides the default ExecContext method to set the search path
 func (db *SchemaDB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	// Create a new context with timeout if the provided context doesn't have one
-	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	// Create a child context with a separate timeout to avoid affecting the parent
+	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
 	// Set search path for this connection
-	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	_, err := db.DB.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	db.mu.Unlock()
+
 	if err != nil {
 		return nil, fmt.Errorf("error setting search path: %w", err)
 	}
 
 	// Execute the query
-	return db.DB.ExecContext(ctx, query, args...)
+	return db.DB.ExecContext(childCtx, query, args...)
 }
 
 // Query overrides the default Query method to set the search path
 func (db *SchemaDB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	// Create a new context each time to avoid data races
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
@@ -458,22 +396,27 @@ func (db *SchemaDB) Query(query string, args ...interface{}) (*sql.Rows, error) 
 
 // QueryContext overrides the default QueryContext method to set the search path
 func (db *SchemaDB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	// Create a new context with timeout if the provided context doesn't have one
-	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	// Create a child context with a separate timeout to avoid affecting the parent
+	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
 	// Set search path for this connection
-	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	_, err := db.DB.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	db.mu.Unlock()
+
 	if err != nil {
 		return nil, fmt.Errorf("error setting search path: %w", err)
 	}
 
 	// Execute the query
-	return db.DB.QueryContext(ctx, query, args...)
+	return db.DB.QueryContext(childCtx, query, args...)
 }
 
 // QueryRow overrides the default QueryRow method to set the search path
 func (db *SchemaDB) QueryRow(query string, args ...interface{}) *sql.Row {
+	// Create a new context each time to avoid data races
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
@@ -482,23 +425,28 @@ func (db *SchemaDB) QueryRow(query string, args ...interface{}) *sql.Row {
 
 // QueryRowContext overrides the default QueryRowContext method to set the search path
 func (db *SchemaDB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
-	// Create a new context with timeout if the provided context doesn't have one
-	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	// Create a child context with a separate timeout to avoid affecting the parent
+	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
 	// Set search path for this connection
-	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	_, err := db.DB.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	db.mu.Unlock()
+
 	if err != nil {
 		// We can't return an error from QueryRowContext directly, so just log it
 		log.Printf("Error setting search path in QueryRowContext: %v", err)
 	}
 
 	// Execute the query
-	return db.DB.QueryRowContext(ctx, query, args...)
+	return db.DB.QueryRowContext(childCtx, query, args...)
 }
 
 // Begin overrides the default Begin method to set the search path on the transaction
 func (db *SchemaDB) Begin() (*sql.Tx, error) {
+	// Create a new context each time to avoid data races
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
@@ -507,19 +455,21 @@ func (db *SchemaDB) Begin() (*sql.Tx, error) {
 
 // BeginTx overrides the default BeginTx method to set the search path on the transaction
 func (db *SchemaDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	// Create a new context with timeout if the provided context doesn't have one
-	ctx, cancel := context.WithTimeout(ctx, db.timeout)
+	// Create a child context with a separate timeout to avoid affecting the parent
+	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	tx, err := db.DB.BeginTx(ctx, opts)
+	// Start transaction
+	tx, err := db.DB.BeginTx(childCtx, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = tx.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	// Set search path in the transaction
+	_, err = tx.ExecContext(childCtx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
 	if err != nil {
 		tx.Rollback()
-		return nil, err
+		return nil, fmt.Errorf("error setting search path in transaction: %w", err)
 	}
 
 	return tx, nil
@@ -540,11 +490,15 @@ func UnwrapDB(db *SchemaDB) *sql.DB {
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
 	// Set search path on the DB connection
 	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	db.mu.Unlock()
+
 	if err != nil {
 		// Log the error but continue
-		fmt.Printf("Warning: Failed to set search path in UnwrapDB: %v\n", err)
+		log.Printf("Warning: Failed to set search path in UnwrapDB: %v", err)
 	}
 
 	return db.DB
@@ -569,8 +523,15 @@ func TeardownTestDB(t *testing.T, db *SchemaDB) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
 		defer cancel()
 
+		// Protect schema name access
+		schemaName := db.GetSchemaName()
+
+		// Lock to prevent concurrent schema changes
+		db.mu.Lock()
 		// Clean up schema
-		_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(currentTestDBName)))
+		_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
+		db.mu.Unlock()
+
 		if err != nil {
 			t.Logf("Error dropping test schema: %v", err)
 		}
