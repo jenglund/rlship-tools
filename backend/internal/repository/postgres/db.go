@@ -1,11 +1,15 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/jenglund/rlship-tools/internal/testutil"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
 
@@ -28,10 +32,46 @@ func (r *BaseRepository) GetDB() interface{} {
 func (r *BaseRepository) GetQueryDB() *sql.DB {
 	switch db := r.db.(type) {
 	case *sql.DB:
+		// Check if we're in a test context and should use a specific schema
+		if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+			fmt.Printf("GetQueryDB for *sql.DB: Setting search path to test schema: %s\n", testSchema)
+			// Try to set the search path - but don't fail if it doesn't work
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			_, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(testSchema)))
+			if err != nil {
+				fmt.Printf("Warning: Failed to set search path in GetQueryDB: %v\n", err)
+			}
+		}
 		return db
 	case *testutil.SchemaDB:
 		// Always use the UnwrapDB method to ensure search path is set
-		return testutil.UnwrapDB(db)
+		sqlDB := testutil.UnwrapDB(db)
+
+		// Double-check that search path is set correctly
+		if sqlDB != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			var searchPath string
+			err := sqlDB.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+			if err != nil {
+				fmt.Printf("Warning: Error checking search path in GetQueryDB: %v\n", err)
+			} else {
+				schemaName := db.GetSchemaName()
+				if !strings.Contains(searchPath, schemaName) {
+					fmt.Printf("Warning: Schema %s not in search path (%s), attempting to fix\n",
+						schemaName, searchPath)
+
+					if err := db.SetSearchPath(); err != nil {
+						fmt.Printf("Error setting search path: %v\n", err)
+					}
+				}
+			}
+		}
+
+		return sqlDB
 	default:
 		if r.db == nil {
 			return nil
@@ -46,6 +86,21 @@ func (r *BaseRepository) GetSchemaDB() *testutil.SchemaDB {
 		return db
 	}
 	return nil
+}
+
+// GetSchemaName returns the current schema name, if available
+func (r *BaseRepository) GetSchemaName() string {
+	if db, ok := r.db.(*testutil.SchemaDB); ok {
+		return db.GetSchemaName()
+	}
+
+	// Check for current test schema
+	if schema := testutil.GetCurrentTestSchema(); schema != "" {
+		return schema
+	}
+
+	// Default to public schema
+	return "public"
 }
 
 // NewDB creates a new database connection

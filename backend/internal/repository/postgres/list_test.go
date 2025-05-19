@@ -20,11 +20,44 @@ func setupTestDB(t *testing.T) *sql.DB {
 }
 
 func TestListRepository(t *testing.T) {
+	// Set up test database with a unique schema
 	db := testutil.SetupTestDB(t)
 	defer testutil.TeardownTestDB(t, db)
 
-	repo := NewListRepository(testutil.UnwrapDB(db))
-	testUser := testutil.CreateTestUser(t, db)
+	// Verify schema context before starting the test
+	testSchema := db.GetSchemaName()
+	var currentSchema string
+	err := db.QueryRow("SELECT current_schema()").Scan(&currentSchema)
+	require.NoError(t, err)
+	assert.Equal(t, testSchema, currentSchema, "Schema should be correctly set before tests")
+	t.Logf("Starting ListRepository tests with schema: %s", currentSchema)
+
+	repo := NewListRepository(db)
+	userRepo := NewUserRepository(db)
+	tribeRepo := NewTribeRepository(db)
+
+	// Create test user for ownership
+	testUser := &models.User{
+		ID:          uuid.New(),
+		FirebaseUID: fmt.Sprintf("test-user-%s", uuid.New().String()[:8]),
+		Email:       fmt.Sprintf("test-%s@example.com", uuid.New().String()[:8]),
+		Name:        "Test User",
+		Provider:    models.AuthProviderGoogle,
+	}
+	err = userRepo.Create(testUser)
+	require.NoError(t, err)
+
+	// Create test tribe for ownership
+	testTribe := &models.Tribe{
+		BaseModel: models.BaseModel{
+			ID: uuid.New(),
+		},
+		Name:       fmt.Sprintf("Test Tribe %s", uuid.New().String()[:8]),
+		Type:       models.TribeTypeCouple,
+		Visibility: models.VisibilityPrivate,
+	}
+	err = tribeRepo.Create(testTribe)
+	require.NoError(t, err)
 
 	maxItems := 100
 	cooldownDays := 7

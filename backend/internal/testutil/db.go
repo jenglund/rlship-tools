@@ -21,12 +21,13 @@ import (
 	"github.com/lib/pq"
 )
 
+// Add a global mutex to protect schema name access
 var (
-	testDBs []string
+	testDBs           []string
+	testDBsMutex      sync.Mutex // Mutex to protect testDBs
+	currentTestDBName string
+	currentDBMutex    sync.Mutex // Mutex to protect currentTestDBName
 )
-
-// Track current test database name
-var currentTestDBName string
 
 // Default timeout for database operations to prevent test hangs
 var defaultQueryTimeout = 10 * time.Second
@@ -210,15 +211,37 @@ func runMigrations(t *testing.T, dbName, schemaName, migrationsPath string) erro
 			continue
 		}
 
-		// Execute the migration with schema path explicitly set
-		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s; %s",
-			pq.QuoteIdentifier(schemaName), string(migrationSQL)))
+		// Create a transaction for each migration
+		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
-			t.Logf("Warning: Error executing migration %s: %v", fileName, err)
-			// Continue with other migrations, don't fail completely
-		} else {
-			t.Logf("Successfully executed migration file: %s", fileName)
+			t.Logf("Error starting transaction for migration %s: %v", fileName, err)
+			continue
 		}
+
+		// Set the search path in the transaction
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
+		if err != nil {
+			t.Logf("Error setting search path in transaction for migration %s: %v", fileName, err)
+			tx.Rollback()
+			continue
+		}
+
+		// Execute the migration within the transaction
+		_, err = tx.ExecContext(ctx, string(migrationSQL))
+		if err != nil {
+			t.Logf("Error executing migration %s: %v", fileName, err)
+			tx.Rollback()
+			continue
+		}
+
+		// Commit the transaction
+		err = tx.Commit()
+		if err != nil {
+			t.Logf("Error committing transaction for migration %s: %v", fileName, err)
+			continue
+		}
+
+		t.Logf("Successfully executed migration file: %s", fileName)
 	}
 
 	// Verify essential tables exist
@@ -253,8 +276,10 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	// Create a unique test schema name
 	schemaName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 
-	// Store current schema name for cleanup
+	// Store current schema name for cleanup - with mutex protection
+	currentDBMutex.Lock()
 	currentTestDBName = schemaName
+	currentDBMutex.Unlock()
 
 	// Connect to existing database
 	dbName := os.Getenv("POSTGRES_DB")
@@ -332,8 +357,10 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 		mu:         sync.Mutex{}, // Initialize mutex
 	}
 
-	// Add test schema to list for cleanup
+	// Add test schema to list for cleanup - with mutex protection
+	testDBsMutex.Lock()
 	testDBs = append(testDBs, schemaName)
+	testDBsMutex.Unlock()
 
 	return wrappedDB
 }
@@ -352,11 +379,30 @@ func (db *SchemaDB) SetSearchPath() error {
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
-	return err
+	if err != nil {
+		return fmt.Errorf("error setting search path: %w", err)
+	}
+
+	// Verify search path was set correctly
+	var searchPath string
+	err = db.DB.QueryRowContext(ctx, "SHOW search_path").Scan(&searchPath)
+	if err != nil {
+		return fmt.Errorf("error verifying search path: %w", err)
+	}
+
+	if !strings.Contains(searchPath, db.schemaName) {
+		return fmt.Errorf("schema not in search path: expected %s in %s", db.schemaName, searchPath)
+	}
+
+	return nil
 }
 
-// Exec overrides the default Exec method to set the search path on the connection
+// Exec overrides the default Exec method to set the search path
 func (db *SchemaDB) Exec(query string, args ...interface{}) (sql.Result, error) {
 	// Create a new context each time to avoid data races
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
@@ -371,12 +417,14 @@ func (db *SchemaDB) ExecContext(ctx context.Context, query string, args ...inter
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	// Combine search path with the query to make it atomic
-	searchPathQuery := fmt.Sprintf("SET search_path TO %s; %s",
-		pq.QuoteIdentifier(db.schemaName), query)
+	// First set the search path
+	err := db.SetSearchPath()
+	if err != nil {
+		return nil, fmt.Errorf("error setting search path: %w", err)
+	}
 
-	// Execute the query with search path included
-	return db.DB.ExecContext(childCtx, searchPathQuery, args...)
+	// Execute the query as a separate operation
+	return db.DB.ExecContext(childCtx, query, args...)
 }
 
 // Query overrides the default Query method to set the search path
@@ -394,12 +442,14 @@ func (db *SchemaDB) QueryContext(ctx context.Context, query string, args ...inte
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	// Combine search path with the query to make it atomic
-	searchPathQuery := fmt.Sprintf("SET search_path TO %s; %s",
-		pq.QuoteIdentifier(db.schemaName), query)
+	// First set the search path
+	err := db.SetSearchPath()
+	if err != nil {
+		return nil, fmt.Errorf("error setting search path: %w", err)
+	}
 
-	// Execute the query with search path included
-	return db.DB.QueryContext(childCtx, searchPathQuery, args...)
+	// Execute the query as a separate operation
+	return db.DB.QueryContext(childCtx, query, args...)
 }
 
 // QueryRow overrides the default QueryRow method to set the search path
@@ -417,13 +467,15 @@ func (db *SchemaDB) QueryRowContext(ctx context.Context, query string, args ...i
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
-	// Clone the query to include search path directly in it to avoid race conditions
-	// with setting search path and then executing query
-	searchPathQuery := fmt.Sprintf("SET search_path TO %s; %s",
-		pq.QuoteIdentifier(db.schemaName), query)
+	// Set the search path first
+	err := db.SetSearchPath()
+	if err != nil {
+		// Since QueryRow doesn't return an error, log it
+		log.Printf("Error setting search path in QueryRowContext: %v", err)
+	}
 
-	// Execute the query directly with search path included
-	return db.DB.QueryRowContext(childCtx, searchPathQuery, args...)
+	// Execute the query as a separate operation
+	return db.DB.QueryRowContext(childCtx, query, args...)
 }
 
 // Begin overrides the default Begin method to set the search path on the transaction
@@ -441,29 +493,53 @@ func (db *SchemaDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, 
 	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
 	defer cancel()
 
+	// Lock to ensure consistent schema setting
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
 	// Start transaction
 	tx, err := db.DB.BeginTx(childCtx, opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
 
-	// Set search path in the transaction
+	// Set LOCAL search path in the transaction
+	// Use LOCAL to avoid affecting other sessions
 	_, err = tx.ExecContext(childCtx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
 	if err != nil {
-		tx.Rollback()
+		// In case of error, safely rollback
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil {
+			log.Printf("Error rolling back transaction: %v", rollbackErr)
+		}
 		return nil, fmt.Errorf("error setting search path in transaction: %w", err)
 	}
 
-	// Verify search path was set correctly
+	// Verify search path was set correctly (without consuming any results)
 	var searchPath string
-	err = tx.QueryRowContext(childCtx, "SHOW search_path").Scan(&searchPath)
+	err = tx.QueryRowContext(childCtx, "SELECT current_schema").Scan(&searchPath)
 	if err != nil {
-		tx.Rollback()
+		// In case of error, safely rollback
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil {
+			log.Printf("Error rolling back transaction: %v", rollbackErr)
+		}
 		return nil, fmt.Errorf("error verifying search path in transaction: %w", err)
 	}
 
+	// Verify the schema was set correctly
+	if searchPath != db.schemaName {
+		// In case of mismatch, safely rollback
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil {
+			log.Printf("Error rolling back transaction: %v", rollbackErr)
+		}
+		return nil, fmt.Errorf("schema mismatch in transaction: got %s, expected %s",
+			searchPath, db.schemaName)
+	}
+
 	// Debug output
-	log.Printf("Transaction started with search_path: %s (schema: %s)",
+	fmt.Printf("Transaction search_path: %s (expected test schema: %s)\n",
 		searchPath, db.schemaName)
 
 	return tx, nil
@@ -516,34 +592,51 @@ func (db *SchemaDB) GetSchemaName() string {
 func TeardownTestDB(t *testing.T, db *SchemaDB) {
 	t.Helper()
 
-	if db != nil && currentTestDBName != "" {
-		// Create context with timeout
-		ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
-		defer cancel()
+	if db == nil {
+		return
+	}
 
-		// Protect schema name access
-		schemaName := db.GetSchemaName()
+	// Protect access to schema name
+	currentDBMutex.Lock()
+	schemaName := ""
+	if db != nil {
+		schemaName = db.GetSchemaName()
+	}
+	currentDBMutex.Unlock()
 
-		// Lock to prevent concurrent schema changes
-		db.mu.Lock()
-		// Clean up schema
-		_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
-		db.mu.Unlock()
+	if schemaName == "" {
+		return
+	}
 
-		if err != nil {
-			t.Logf("Error dropping test schema: %v", err)
-		}
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
 
-		// Close the database connection
-		safeClose(db.DB)
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
+	// Clean up schema
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
+	db.mu.Unlock()
 
-		// Clear the current test schema name
+	if err != nil {
+		t.Logf("Error dropping test schema: %v", err)
+	}
+
+	// Close the database connection
+	safeClose(db.DB)
+
+	// Clear the current test schema name
+	currentDBMutex.Lock()
+	if currentTestDBName == schemaName {
 		currentTestDBName = ""
 	}
+	currentDBMutex.Unlock()
 }
 
 // GetCurrentTestSchema returns the name of the current test schema
 func GetCurrentTestSchema() string {
+	currentDBMutex.Lock()
+	defer currentDBMutex.Unlock()
 	return currentTestDBName
 }
 

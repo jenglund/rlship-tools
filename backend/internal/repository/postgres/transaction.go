@@ -71,6 +71,7 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 	var testSchema string
 	if currentSchema := testutil.GetCurrentTestSchema(); currentSchema != "" {
 		testSchema = currentSchema
+		fmt.Printf("WithTransaction: Using test schema: %s\n", testSchema)
 	}
 
 	for attempt := 0; attempt <= opts.MaxRetries; attempt++ {
@@ -157,7 +158,6 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		// Execute the transaction function
 		err = fn(tx)
 
-		// Check for deadlock or lock timeout
 		if err != nil {
 			safeClose(tx)
 
@@ -177,8 +177,24 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		// Commit the transaction with a specific timeout
 		// Note: We create a timeout context but tx.Commit() doesn't accept a context
 		// This at least gives us some protection via the parent context
-		_, commitCancel := context.WithTimeout(ctx, 5*time.Second)
+		commitCtx, commitCancel := context.WithTimeout(ctx, 5*time.Second)
 		defer commitCancel()
+
+		// Verify search_path is still correctly set before committing
+		var finalSearchPath string
+		err = tx.QueryRowContext(commitCtx, "SHOW search_path").Scan(&finalSearchPath)
+		if err != nil {
+			safeClose(tx)
+			return fmt.Errorf("error verifying search_path before commit: %w", err)
+		}
+
+		// For test schemas, verify it's still in the search path
+		if testSchema != "" && !strings.Contains(finalSearchPath, testSchema) {
+			safeClose(tx)
+			return fmt.Errorf("test schema lost in transaction before commit: expected %s in %s",
+				testSchema, finalSearchPath)
+		}
+
 		err = tx.Commit()
 
 		if err != nil {
