@@ -119,7 +119,7 @@ func safeClose(c interface{}) {
 }
 
 // SetupTestDB creates a test schema and runs migrations
-func SetupTestDB(t *testing.T) *sql.DB {
+func SetupTestDB(t *testing.T) *SchemaDB {
 	t.Helper()
 
 	// Create a unique test schema name
@@ -163,6 +163,13 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error setting search path: %v", err))
+	}
+
+	// Create a prepared statement that will set the search path for every new connection
+	_, err = db.Exec(fmt.Sprintf("PREPARE set_search_path AS SET search_path TO %s",
+		pq.QuoteIdentifier(schemaName)))
+	if err != nil {
+		t.Logf("Warning: Failed to create prepared statement for search path: %v", err)
 	}
 
 	// Run migrations
@@ -317,7 +324,7 @@ func SetupTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Double check essential tables
-	tables := []string{"users", "lists", "list_items", "list_owners", "list_sharing", "list_conflicts"}
+	tables := []string{"users", "tribes", "tribe_members", "lists", "list_items", "list_owners", "list_sharing", "list_conflicts", "activities", "activity_owners", "activity_photos", "activity_shares"}
 	tablesExist := true
 	for _, table := range tables {
 		var tableExists bool
@@ -373,25 +380,73 @@ func SetupTestDB(t *testing.T) *sql.DB {
 		}
 	}
 
+	// Create a wrapper DB that will set the search path for all operations
+	wrappedDB := &SchemaDB{
+		DB:         db,
+		schemaName: schemaName,
+	}
+
 	// Add test schema to list for cleanup
 	testDBs = append(testDBs, schemaName)
 
-	return db
+	return wrappedDB
+}
+
+// SchemaDB wraps a *sql.DB to ensure the search path is set for all operations
+type SchemaDB struct {
+	*sql.DB
+	schemaName string
+}
+
+// Ensure common DB methods set the search path
+
+func (db *SchemaDB) Exec(query string, args ...interface{}) (sql.Result, error) {
+	return db.DB.Exec(fmt.Sprintf("SET search_path TO %s; %s",
+		pq.QuoteIdentifier(db.schemaName), query), args...)
+}
+
+func (db *SchemaDB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	return db.DB.Query(fmt.Sprintf("SET search_path TO %s; %s",
+		pq.QuoteIdentifier(db.schemaName), query), args...)
+}
+
+func (db *SchemaDB) QueryRow(query string, args ...interface{}) *sql.Row {
+	return db.DB.QueryRow(fmt.Sprintf("SET search_path TO %s; %s",
+		pq.QuoteIdentifier(db.schemaName), query), args...)
+}
+
+func (db *SchemaDB) Begin() (*sql.Tx, error) {
+	tx, err := db.DB.Begin()
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	return tx, nil
+}
+
+func (db *SchemaDB) Close() error {
+	return db.DB.Close()
 }
 
 // TeardownTestDB cleans up the test schema
-func TeardownTestDB(t *testing.T, db *sql.DB) {
+func TeardownTestDB(t *testing.T, db *SchemaDB) {
 	t.Helper()
 
 	if db != nil && currentTestDBName != "" {
 		// Clean up schema
-		_, err := db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(currentTestDBName)))
+		_, err := db.DB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(currentTestDBName)))
 		if err != nil {
 			t.Logf("Error dropping test schema: %v", err)
 		}
 
 		// Close the database connection
-		safeClose(db)
+		safeClose(db.DB)
 
 		// Clear the current test schema name
 		currentTestDBName = ""

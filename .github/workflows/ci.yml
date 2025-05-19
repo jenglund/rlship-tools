@@ -71,7 +71,11 @@ jobs:
     - name: Debug migrations directory
       run: |
         echo "Checking backend/migrations directory:"
-        ls -la ./migrations
+        cd .. && ls -la ./migrations || true
+        cd backend && ls -la ./migrations
+        echo "Absolute path:"
+        echo "$GITHUB_WORKSPACE/backend/migrations"
+        ls -la "$GITHUB_WORKSPACE/backend/migrations"
       
     - name: Run tests with verbosity
       run: go test -v ./...
