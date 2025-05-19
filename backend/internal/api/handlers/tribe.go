@@ -639,21 +639,44 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 func (h *TribeHandler) RemoveMember(c *gin.Context) {
 	tribeID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
+		fmt.Printf("[DEBUG] RemoveMember: Invalid tribe ID: %v\n", c.Param("id"))
 		response.GinBadRequest(c, "Invalid tribe ID")
 		return
 	}
 
 	userID, err := uuid.Parse(c.Param("userId"))
 	if err != nil {
+		fmt.Printf("[DEBUG] RemoveMember: Invalid user ID: %v\n", c.Param("userId"))
 		response.GinBadRequest(c, "Invalid user ID")
 		return
 	}
 
-	if err := h.repos.Tribes.RemoveMember(tribeID, userID); err != nil {
+	fmt.Printf("[DEBUG] RemoveMember: tribeID=%s, userID=%s\n", tribeID, userID)
+
+	// Check if tribe exists before attempting removal
+	_, tribeErr := h.repos.Tribes.GetByID(tribeID)
+	if tribeErr != nil {
+		fmt.Printf("[DEBUG] RemoveMember: Tribe existence error: %v\n", tribeErr)
+		if tribeErr.Error() == "tribe not found" {
+			response.GinNotFound(c, "Tribe not found")
+			return
+		}
+		response.GinInternalError(c, tribeErr)
+		return
+	}
+
+	err = h.repos.Tribes.RemoveMember(tribeID, userID)
+	if err != nil {
+		fmt.Printf("[DEBUG] RemoveMember: RemoveMember error: %v\n", err)
+		if err.Error() == "tribe member not found" {
+			response.GinBadRequest(c, "Tribe member not found")
+			return
+		}
 		response.GinInternalError(c, err)
 		return
 	}
 
+	fmt.Printf("[DEBUG] RemoveMember: Successfully removed user %s from tribe %s\n", userID, tribeID)
 	response.GinNoContent(c)
 }
 

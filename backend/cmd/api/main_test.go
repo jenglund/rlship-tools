@@ -379,17 +379,16 @@ func TestSetupRouter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	mockDB := &sql.DB{}
 	repos := postgres.NewRepositories(mockDB)
-	firebaseAuth := &middleware.FirebaseAuth{}
-
-	// Use our test version of setupRouter
-	router := testSetupRouter(repos, firebaseAuth)
+	// Pass nil for firebaseAuth to avoid issues with uninitialized struct
+	router := testSetupRouter(repos, nil)
 	assert.NotNil(t, router)
 
 	// Instead of trying to test specific routes, which can vary between Gin versions,
 	// let's just make a minimal assertion that we have some routes
 	routes := router.Routes()
-	assert.NotEmpty(t, routes)
-
+	if len(routes) == 0 {
+		t.Fatalf("No routes registered! Registered routes: %+v", routes)
+	}
 	// Debug: print out all routes
 	t.Logf("Found %d routes", len(routes))
 	for i, route := range routes {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1914,6 +1915,19 @@ func TestRemoveMember(t *testing.T) {
 
 			router.ServeHTTP(w, req)
 
+			fmt.Printf("[DEBUG] TestRemoveMember: Test '%s' - Status: %d, Body: %s\n", tt.name, w.Code, w.Body.String())
+
+			members, err := repos.Tribes.GetMembers(tribe.ID)
+			if err != nil {
+				fmt.Printf("[DEBUG] TestRemoveMember: Error getting members after '%s': %v\n", tt.name, err)
+			} else {
+				fmt.Printf("[DEBUG] TestRemoveMember: Members after '%s': ", tt.name)
+				for _, m := range members {
+					fmt.Printf("%s ", m.UserID)
+				}
+				fmt.Printf("\n")
+			}
+
 			assert.Equal(t, tt.wantStatus, w.Code)
 
 			// If the test was for successful removal, verify the member was removed
@@ -3062,15 +3076,29 @@ func TestListMyTribes_CurrentUserMembershipType(t *testing.T) {
 	require.NoError(t, repos.Tribes.Create(tribe))
 	require.NoError(t, repos.Tribes.AddMember(tribe.ID, testUser.ID, models.MembershipPending, nil, nil))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/tribes/my", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tribes/tribes/my", nil)
 	w := httptest.NewRecorder()
+
+	// Set up context values for authentication
+	req = req.WithContext(context.WithValue(req.Context(), "firebase_uid", testUser.FirebaseUID))
+	req = req.WithContext(context.WithValue(req.Context(), "user_id", testUser.ID))
+
 	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Logf("Unexpected status code: %d", w.Code)
+		t.Logf("Response body: %s", w.Body.String())
+	}
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp struct {
 		Data []map[string]interface{} `json:"data"`
 	}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	if err != nil {
+		t.Logf("Failed to unmarshal response: %v", err)
+		t.Logf("Raw response body: %s", w.Body.String())
+	}
+	require.NoError(t, err)
 	found := false
 	for _, tribe := range resp.Data {
 		if tribe["name"] == "Pending Tribe" {

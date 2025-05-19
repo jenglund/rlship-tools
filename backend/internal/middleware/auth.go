@@ -85,6 +85,10 @@ func (fa *FirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 // RequireAuth returns a middleware that requires Firebase authentication
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, exists := c.Get("firebase_uid"); !exists {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
 		c.Next()
 	}
 }
