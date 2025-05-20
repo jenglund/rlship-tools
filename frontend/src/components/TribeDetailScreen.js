@@ -62,7 +62,13 @@ const TribeDetailScreen = () => {
         if (tribeData.current_user_membership_type === 'pending' || tribeData.pending_invitation) {
           setMembers([]);
           setCurrentUserMember(null);
-          setInviter(null);
+          
+          // Handle inviter information directly from the tribe response
+          if (tribeData.inviter) {
+            setInviter(tribeData.inviter);
+          } else {
+            setInviter(null);
+          }
           return;
         }
         

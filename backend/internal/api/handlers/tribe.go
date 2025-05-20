@@ -418,10 +418,12 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 
 	isMember := false
 	var currentMembership models.MembershipType
+	var currentMember *models.TribeMember
 	for _, member := range tribe.Members {
 		if member.UserID == userID {
 			isMember = true
 			currentMembership = member.MembershipType
+			currentMember = member
 			tribe.CurrentUserMembershipType = member.MembershipType
 			break
 		}
@@ -441,6 +443,27 @@ func (h *TribeHandler) GetTribe(c *gin.Context) {
 			"pending_invitation":           true,
 			"current_user_membership_type": tribe.CurrentUserMembershipType,
 		}
+
+		// Include invitation information if available
+		if currentMember != nil {
+			if currentMember.InvitedAt != nil {
+				minimal["invited_at"] = currentMember.InvitedAt
+			}
+
+			if currentMember.InvitedBy != nil {
+				minimal["invited_by"] = currentMember.InvitedBy
+
+				// Try to get the inviter's name
+				inviter, err := h.repos.Users.GetByID(*currentMember.InvitedBy)
+				if err == nil && inviter != nil {
+					minimal["inviter"] = map[string]interface{}{
+						"id":   inviter.ID,
+						"name": inviter.Name,
+					}
+				}
+			}
+		}
+
 		response.GinSuccess(c, minimal)
 		return
 	}
