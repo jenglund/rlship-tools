@@ -67,9 +67,9 @@ func (h *ListHandler) RegisterRoutes(r chi.Router) {
 		r.Get("/shared/{tribeID}", h.GetSharedLists)
 
 		// New handlers
-		r.Get("/{id}/shares", h.GetListShares)
-		r.Post("/{id}/share/{tribeID}", h.ShareListWithTribe)
-		r.Delete("/{id}/share/{tribeID}", h.UnshareListWithTribe)
+		r.Get("/{listID}/shares", h.GetListShares)
+		r.Post("/{listID}/share/{tribeID}", h.ShareListWithTribe)
+		r.Delete("/{listID}/share/{tribeID}", h.UnshareListWithTribe)
 	})
 }
 
@@ -580,7 +580,7 @@ func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
 
 // GetListShares handles retrieving all shares for a list
 func (h *ListHandler) GetListShares(w http.ResponseWriter, r *http.Request) {
-	listID, err := uuid.Parse(chi.URLParam(r, "id"))
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid list ID")
 		return
@@ -646,7 +646,7 @@ func (h *ListHandler) handleError(w http.ResponseWriter, err error) {
 
 // ShareListWithTribe handles the request to share a list with a tribe
 func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request) {
-	listID, err := uuid.Parse(chi.URLParam(r, "id"))
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid list ID")
 		return
@@ -689,7 +689,7 @@ func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request)
 
 // UnshareListWithTribe handles the request to unshare a list from a tribe
 func (h *ListHandler) UnshareListWithTribe(w http.ResponseWriter, r *http.Request) {
-	listID, err := uuid.Parse(chi.URLParam(r, "id"))
+	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid list ID")
 		return

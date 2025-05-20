@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, ListGroup, Button, Spinner, Alert } from 'react-bootstrap';
+import { useList } from '../contexts/ListContext';
 import listService from '../services/listService';
 
 const ListSharesView = ({ listId }) => {
@@ -7,23 +8,27 @@ const ListSharesView = ({ listId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   
-  useEffect(() => {
-    fetchListShares();
-  }, [listId]);
+  const { getListShares } = useList();
   
-  const fetchListShares = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await listService.getListShares(listId);
-      setShares(data || []);
-    } catch (err) {
-      console.error('Error fetching list shares:', err);
-      setError('Failed to load list shares');
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    const fetchListShares = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Use the context method for mock data instead of direct service call
+        const data = await getListShares(listId);
+        setShares(data || []);
+      } catch (err) {
+        console.error('Error fetching list shares:', err);
+        setError('Failed to load list shares');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchListShares();
+  }, [listId, getListShares]);
   
   const handleUnshare = async (tribeID) => {
     try {

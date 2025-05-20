@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import listService from '../services/listService';
 
@@ -22,22 +22,22 @@ export const ListProvider = ({ children }) => {
   const { currentUser } = useAuth();
 
   // Helper function to handle errors consistently
-  const handleError = (errorMessage, operation, err) => {
+  const handleError = useCallback((errorMessage, operation, err) => {
     console.error(`Error ${operation}:`, err);
     setError(errorMessage);
     return err;
-  };
+  }, []);
 
   // Helper function to set operation loading state
-  const setOperationLoading = (operation, isLoading) => {
+  const setOperationLoading = useCallback((operation, isLoading) => {
     setOperations(prev => ({
       ...prev,
       [operation]: isLoading
     }));
-  };
+  }, []);
 
   // Fetch user's lists
-  const fetchUserLists = async () => {
+  const fetchUserLists = useCallback(async () => {
     if (!currentUser || !currentUser.id) return;
 
     try {
@@ -55,10 +55,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, handleError]);
 
   // Fetch lists shared with the user's tribes
-  const fetchSharedLists = async () => {
+  const fetchSharedLists = useCallback(async () => {
     if (!currentUser || !currentUser.id) return;
 
     try {
@@ -75,10 +75,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser, handleError]);
 
   // Fetch a specific list and its items
-  const fetchListDetails = async (listId) => {
+  const fetchListDetails = useCallback(async (listId) => {
     try {
       setLoading(true);
       setError(null);
@@ -108,10 +108,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [handleError]);
 
   // Create a new list
-  const createList = async (listData) => {
+  const createList = useCallback(async (listData) => {
     try {
       setOperationLoading('creating', true);
       setError(null);
@@ -131,10 +131,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setOperationLoading('creating', false);
     }
-  };
+  }, [handleError, setOperationLoading]);
 
   // Update a list
-  const updateList = async (listId, listData) => {
+  const updateList = useCallback(async (listId, listData) => {
     try {
       setOperationLoading('updating', true);
       setError(null);
@@ -161,10 +161,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setOperationLoading('updating', false);
     }
-  };
+  }, [currentList, handleError, setOperationLoading]);
 
   // Delete a list
-  const deleteList = async (listId) => {
+  const deleteList = useCallback(async (listId) => {
     try {
       setOperationLoading('deleting', true);
       setError(null);
@@ -187,10 +187,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setOperationLoading('deleting', false);
     }
-  };
+  }, [currentList, handleError, setOperationLoading]);
 
   // Add an item to a list
-  const addListItem = async (listId, itemData) => {
+  const addListItem = useCallback(async (listId, itemData) => {
     try {
       setLoading(true);
       setError(null);
@@ -230,10 +230,10 @@ export const ListProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentList, handleError]);
 
   // Update a list item
-  const updateListItem = async (listId, itemId, itemData) => {
+  const updateListItem = useCallback(async (listId, itemId, itemData) => {
     try {
       setLoading(true);
       setError(null);
@@ -254,16 +254,14 @@ export const ListProvider = ({ children }) => {
       
       return updatedItem;
     } catch (err) {
-      console.error('Error updating list item:', err);
-      setError('Failed to update item. Please try again later.');
-      throw err;
+      throw handleError('Failed to update item. Please try again later.', 'updating list item', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentList, handleError]);
 
   // Delete a list item
-  const deleteListItem = async (listId, itemId) => {
+  const deleteListItem = useCallback(async (listId, itemId) => {
     try {
       setLoading(true);
       setError(null);
@@ -294,13 +292,50 @@ export const ListProvider = ({ children }) => {
       
       return true;
     } catch (err) {
-      console.error('Error deleting list item:', err);
-      setError('Failed to delete item. Please try again later.');
-      throw err;
+      throw handleError('Failed to delete item. Please try again later.', 'deleting list item', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentList, handleError]);
+
+  // Get list shares (mocked implementation)
+  const getListShares = useCallback(async (listId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      // Here we would normally call the API, but for now we'll use placeholder data
+      // const shares = await listService.getListShares(listId);
+      
+      // Return empty array for most lists
+      if (listId !== '1') {
+        return [];
+      }
+      
+      // Return mock data for list with ID 1
+      const mockShares = [
+        { 
+          id: '101', 
+          listId, 
+          tribeId: '201', 
+          tribeName: 'Family', 
+          sharedAt: new Date().toISOString() 
+        },
+        { 
+          id: '102', 
+          listId, 
+          tribeId: '202', 
+          tribeName: 'Friends', 
+          sharedAt: new Date().toISOString() 
+        }
+      ];
+      
+      return mockShares;
+    } catch (err) {
+      throw handleError('Failed to get list shares. Please try again later.', 'getting list shares', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [handleError]);
 
   const value = {
     userLists,
@@ -318,7 +353,8 @@ export const ListProvider = ({ children }) => {
     deleteList,
     addListItem,
     updateListItem,
-    deleteListItem
+    deleteListItem,
+    getListShares
   };
 
   return (

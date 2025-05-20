@@ -14,40 +14,42 @@ const ShareListModal = ({ show, onHide, listId }) => {
   const [success, setSuccess] = useState(null);
   
   const { currentUser } = useAuth();
+  const { getListShares } = useList();
   
   // Load user tribes when modal opens
   useEffect(() => {
     if (show) {
+      const fetchUserTribes = async () => {
+        try {
+          setLoading(true);
+          const data = await tribeService.getUserTribes();
+          setTribes(data || []);
+        } catch (err) {
+          console.error('Error fetching tribes:', err);
+          setError('Failed to load your tribes. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      const fetchListShares = async () => {
+        try {
+          setSharesLoading(true);
+          // Use context method instead of direct service call
+          const data = await getListShares(listId);
+          setSharedWith(data || []);
+        } catch (err) {
+          console.error('Error fetching list shares:', err);
+          setError('Failed to load list shares. Please try again.');
+        } finally {
+          setSharesLoading(false);
+        }
+      };
+      
       fetchUserTribes();
       fetchListShares();
     }
-  }, [show, listId]);
-  
-  const fetchUserTribes = async () => {
-    try {
-      setLoading(true);
-      const data = await tribeService.getUserTribes();
-      setTribes(data || []);
-    } catch (err) {
-      console.error('Error fetching tribes:', err);
-      setError('Failed to load your tribes. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const fetchListShares = async () => {
-    try {
-      setSharesLoading(true);
-      const data = await listService.getListShares(listId);
-      setSharedWith(data || []);
-    } catch (err) {
-      console.error('Error fetching list shares:', err);
-      setError('Failed to load list shares. Please try again.');
-    } finally {
-      setSharesLoading(false);
-    }
-  };
+  }, [show, listId, getListShares]);
   
   const handleShare = async (tribeID) => {
     try {
