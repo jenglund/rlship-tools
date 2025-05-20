@@ -116,7 +116,7 @@ const ShareListModal = ({ show, onHide, listId }) => {
           <ListGroup className="mb-3">
             {sharedWith.map(tribe => (
               <ListGroup.Item key={tribe.id} className="d-flex justify-content-between align-items-center">
-                {tribe.name}
+                {tribe.name || tribe.tribeName || 'Unknown Tribe'}
                 <Button 
                   variant="outline-danger" 
                   size="sm" 

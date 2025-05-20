@@ -82,26 +82,87 @@ export const ListProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
-      // Here we would normally call the API, but for now we'll use placeholder data
+      // Here we would normally call the API, but for now we'll use placeholder data based on the ID
       // const list = await listService.getListDetails(listId);
-      const list = {
-        id: listId,
-        name: 'Restaurants to Try',
-        description: 'Places we want to try for date night',
-        type: 'location',
-        ownerType: 'user',
-        ownerId: '1',
-        visibility: 'private'
-      };
+      
+      // Use hardcoded mock data for specific list IDs
+      let list;
+      let items;
+      
+      // Determine which list data to return based on ID
+      switch(listId) {
+        case '1':
+          list = {
+            id: '1',
+            name: 'Restaurants to Try',
+            description: 'Places we want to try for date night',
+            type: 'location',
+            ownerType: 'user',
+            ownerId: '1',
+            visibility: 'private'
+          };
+          
+          items = [
+            { id: '1', name: 'Sushi Place', description: 'Great sushi restaurant downtown', metadata: { location: 'Downtown', cuisine: 'Japanese' } },
+            { id: '2', name: 'Italian Bistro', description: 'Authentic Italian food', metadata: { location: 'Westside', cuisine: 'Italian' } },
+            { id: '3', name: 'Taco Shop', description: 'Best tacos in town', metadata: { location: 'Eastside', cuisine: 'Mexican' } }
+          ];
+          break;
+          
+        case '2':
+          list = {
+            id: '2',
+            name: 'Movies to Watch',
+            description: 'Our watch list for movie nights',
+            type: 'media',
+            ownerType: 'user',
+            ownerId: '1',
+            visibility: 'private'
+          };
+          
+          items = [
+            { id: '4', name: 'The Matrix', description: 'Sci-fi classic', metadata: { genre: 'Sci-fi', year: '1999' } },
+            { id: '5', name: 'Inception', description: 'Mind-bending thriller', metadata: { genre: 'Thriller', year: '2010' } }
+          ];
+          break;
+          
+        case '3':
+          list = {
+            id: '3',
+            name: 'Game Night Ideas',
+            description: 'Board games to play with friends',
+            type: 'activity',
+            ownerType: 'user',
+            ownerId: '1',
+            visibility: 'shared'
+          };
+          
+          items = [
+            { id: '6', name: 'Catan', description: 'Classic strategy game', metadata: { players: '3-4', duration: '1-2 hours' } },
+            { id: '7', name: 'Codenames', description: 'Word association game', metadata: { players: '4+', duration: '15-30 minutes' } },
+            { id: '8', name: 'Pandemic', description: 'Cooperative game', metadata: { players: '2-4', duration: '45 minutes' } }
+          ];
+          break;
+          
+        default:
+          // For any other ID, create a generic list with the ID
+          list = {
+            id: listId,
+            name: `List ${listId}`,
+            description: `This is list ${listId}`,
+            type: 'general',
+            ownerType: 'user',
+            ownerId: '1',
+            visibility: 'private'
+          };
+          
+          items = [
+            { id: 'default-1', name: 'Sample Item 1', description: 'This is a sample item', metadata: {} },
+            { id: 'default-2', name: 'Sample Item 2', description: 'This is another sample item', metadata: {} }
+          ];
+      }
+      
       setCurrentList(list);
-
-      // Fetch items for this list
-      // const items = await listService.getListItems(listId);
-      const items = [
-        { id: '1', name: 'Sushi Place', description: 'Great sushi restaurant downtown', metadata: { location: 'Downtown', cuisine: 'Japanese' } },
-        { id: '2', name: 'Italian Bistro', description: 'Authentic Italian food', metadata: { location: 'Westside', cuisine: 'Italian' } },
-        { id: '3', name: 'Taco Shop', description: 'Best tacos in town', metadata: { location: 'Eastside', cuisine: 'Mexican' } }
-      ];
       setCurrentListItems(items);
     } catch (err) {
       handleError('Failed to load list details. Please try again later.', 'fetching list details', err);
@@ -306,30 +367,67 @@ export const ListProvider = ({ children }) => {
       // Here we would normally call the API, but for now we'll use placeholder data
       // const shares = await listService.getListShares(listId);
       
-      // Return empty array for most lists
-      if (listId !== '1') {
-        return [];
+      // Provide different share data based on list ID
+      switch (listId) {
+        case '1':
+          // Return mock data for Restaurants list
+          return [
+            { 
+              id: '101', 
+              listId, 
+              tribeId: '201',
+              name: 'Family',
+              tribeName: 'Family', 
+              sharedAt: new Date().toISOString() 
+            },
+            { 
+              id: '102', 
+              listId, 
+              tribeId: '202', 
+              name: 'Friends',
+              tribeName: 'Friends', 
+              sharedAt: new Date().toISOString() 
+            }
+          ];
+          
+        case '2':
+          // Return mock data for Movies list
+          return [
+            { 
+              id: '103', 
+              listId, 
+              tribeId: '203',
+              name: 'Movie Club',
+              tribeName: 'Movie Club', 
+              sharedAt: new Date().toISOString() 
+            }
+          ];
+          
+        case '3':
+          // Return mock data for Game Night list
+          return [
+            { 
+              id: '104', 
+              listId, 
+              tribeId: '202',
+              name: 'Friends',
+              tribeName: 'Friends', 
+              sharedAt: new Date().toISOString() 
+            },
+            { 
+              id: '105', 
+              listId, 
+              tribeId: '204', 
+              name: 'Game Group',
+              tribeName: 'Game Group', 
+              sharedAt: new Date().toISOString() 
+            }
+          ];
+          
+        default:
+          // Return empty array for any other list ID
+          return [];
       }
-      
-      // Return mock data for list with ID 1
-      const mockShares = [
-        { 
-          id: '101', 
-          listId, 
-          tribeId: '201', 
-          tribeName: 'Family', 
-          sharedAt: new Date().toISOString() 
-        },
-        { 
-          id: '102', 
-          listId, 
-          tribeId: '202', 
-          tribeName: 'Friends', 
-          sharedAt: new Date().toISOString() 
-        }
-      ];
-      
-      return mockShares;
     } catch (err) {
       throw handleError('Failed to get list shares. Please try again later.', 'getting list shares', err);
     } finally {

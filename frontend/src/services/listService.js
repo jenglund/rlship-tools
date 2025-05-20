@@ -140,6 +140,39 @@ const listService = {
       const response = await axios.get(`${API_URL}/v1/lists/${listID}/shares`, {
         headers: getAuthHeader()
       });
+      
+      // If we have share data and it doesn't already include tribe names
+      if (response.data.data && response.data.data.length > 0) {
+        // Fetch tribe details for each share to get the tribe names
+        const sharesWithNames = await Promise.all(
+          response.data.data.map(async (share) => {
+            try {
+              // Only fetch tribe details if we don't already have the name
+              if (!share.name && !share.tribeName && share.tribeId) {
+                const tribeResponse = await axios.get(`${API_URL}/tribes/${share.tribeId}`, {
+                  headers: getAuthHeader()
+                });
+                
+                if (tribeResponse.data && tribeResponse.data.data) {
+                  // Add the tribe name to the share object
+                  return {
+                    ...share,
+                    name: tribeResponse.data.data.name,
+                    tribeName: tribeResponse.data.data.name
+                  };
+                }
+              }
+              return share;
+            } catch (err) {
+              console.warn(`Couldn't fetch tribe details for ${share.tribeId}:`, err);
+              return share;
+            }
+          })
+        );
+        
+        return sharesWithNames;
+      }
+      
       return response.data.data;
     } catch (error) {
       console.error(`Error fetching shares for list ${listID}:`, error);

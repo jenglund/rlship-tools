@@ -73,7 +73,7 @@ const ListSharesView = ({ listId }) => {
         {shares.map(tribe => (
           <ListGroup.Item key={tribe.id} className="d-flex justify-content-between align-items-center">
             <div>
-              <strong>{tribe.name}</strong>
+              <strong>{tribe.name || tribe.tribeName || 'Unknown Tribe'}</strong>
               {tribe.description && <p className="text-muted mb-0">{tribe.description}</p>}
             </div>
             <Button 
