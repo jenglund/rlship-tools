@@ -58,20 +58,44 @@ const TribeDetailScreen = () => {
         const tribeData = await tribeService.getTribeById(id);
         setTribe(tribeData);
 
-        // If the user is pending, do not fetch members
+        // If the user is pending, try to get inviter information
         if (tribeData.current_user_membership_type === 'pending' || tribeData.pending_invitation) {
-          setMembers([]);
-          setCurrentUserMember(null);
+          console.log('Pending invitation data:', tribeData);
           
-          // Handle inviter information directly from the tribe response
+          // First check if inviter info is directly in the tribe data
           if (tribeData.inviter) {
+            console.log('Found inviter in tribe data:', tribeData.inviter);
             setInviter(tribeData.inviter);
+          } else if (tribeData.invited_by) {
+            // If we have invited_by ID but not the full inviter object, try to fetch the user
+            console.log('Found invited_by ID, fetching user details:', tribeData.invited_by);
+            try {
+              // Get tribe members to find the inviter
+              const membersData = await tribeService.getTribeMembers(id);
+              const inviterMember = membersData.find(m => m.user_id === tribeData.invited_by);
+              
+              if (inviterMember && inviterMember.user) {
+                console.log('Found inviter from members list:', inviterMember.user);
+                setInviter({
+                  id: tribeData.invited_by,
+                  name: inviterMember.user.name || inviterMember.display_name,
+                  ...inviterMember.user
+                });
+              }
+            } catch (err) {
+              console.error('Error fetching inviter details:', err);
+            }
           } else {
+            console.log('No inviter information found in tribe data');
             setInviter(null);
           }
+          
+          setMembers([]);
+          setCurrentUserMember(null);
           return;
         }
         
+        // Rest of the function unchanged for non-pending users
         // Get tribe members
         const membersData = await tribeService.getTribeMembers(id);
         setMembers(membersData);
@@ -91,6 +115,7 @@ const TribeDetailScreen = () => {
             );
             
             if (inviterMember) {
+              console.log('Found inviter for pending member:', inviterMember.user);
               setInviter(inviterMember.user);
             }
           }
@@ -171,11 +196,36 @@ const TribeDetailScreen = () => {
   if (
     (tribe.current_user_membership_type === 'pending' || tribe.pending_invitation)
   ) {
+    // Find inviter data in the tribe response
+    let inviterData = inviter;
+    
+    // If inviter data didn't come from backend directly, try to find it in members list
+    if (!inviterData && tribe.invited_by) {
+      // Find inviter in members list if available
+      if (members && members.length > 0) {
+        const foundInviter = members.find(m => m.user_id === tribe.invited_by);
+        if (foundInviter) {
+          inviterData = {
+            id: foundInviter.user_id,
+            name: foundInviter.user?.name || foundInviter.display_name,
+            ...foundInviter.user
+          };
+        }
+      }
+    }
+    
+    console.log('Rendering PendingInvitationView with:', {
+      tribe: tribe,
+      invitedBy: inviterData,
+      invitedAt: tribe.invited_at,
+      invitedById: tribe.invited_by
+    });
+    
     return (
       <div className="container tribe-detail-container">
         <PendingInvitationView 
           tribe={tribe} 
-          invitedBy={inviter}
+          invitedBy={inviterData}
           invitedAt={tribe.invited_at || (currentUserMember && currentUserMember.invited_at)}
         />
       </div>
@@ -221,7 +271,13 @@ const TribeDetailScreen = () => {
                   <p>{member.user.email}</p>
                   <p>
                     <strong>Invited by:</strong> {member.invited_by ? (
-                      <a href={`/tribes/${tribe.id}/members/${member.invited_by}`}>{/* We'll resolve display name in the profile page */}View Profile</a>
+                      <a href={`/tribes/${tribe.id}/members/${member.invited_by}`}>
+                        {(() => {
+                          // Find the inviter in the members list
+                          const inviter = members.find(m => m.user_id === member.invited_by);
+                          return inviter ? (inviter.user?.name || inviter.display_name || 'View Profile') : 'View Profile';
+                        })()}
+                      </a>
                     ) : 'Unknown'}
                   </p>
                   <p>

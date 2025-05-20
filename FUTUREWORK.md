@@ -217,7 +217,13 @@ Recently implemented a "pending" status for tribe members who have been invited 
      - Fixed context cancellation issues in transaction management
    - All repository and API tests now pass successfully
 
-2. **Improve Backend Test Coverage**
+2. **✅ Fixed Tribe Member Invitation Data (COMPLETED)**
+   - Fixed issue with the `invited_by` field not being properly set when inviting new members to a tribe
+   - Updated the `AddMember` handler to correctly extract the user ID from the context using the `getUserIDFromContext` helper
+   - Ensured consistency in how the user ID is accessed and used across different handlers
+   - This fixes the frontend display of "Invited by" information for all tribe members, not just tribe creators
+
+3. **Improve Backend Test Coverage**
    - Add tests for edge cases in repository methods
    - Improve context-based testing approach
    - Standardize test fixtures and setup/teardown
@@ -226,27 +232,27 @@ Recently implemented a "pending" status for tribe members who have been invited 
    - Implement test coverage tracking and reporting
    - Add race condition detection for concurrent operations
 
-3. **Transaction Management Enhancement**
+4. **Transaction Management Enhancement**
    - Review transaction retry mechanism for robustness
    - Implement more comprehensive error handling for transactions
    - Add better logging for transaction failures
    - Consider implementing a deadlock detection system
    - Improve connection pooling configuration
 
-4. **API Enhancements**
+5. **API Enhancements**
    - Implement comprehensive request validation
    - Add consistent error handling patterns
    - Improve API documentation
    - Add endpoints to support the authentication and tribe viewing flow
 
-5. **Authentication Implementation**
+6. **Authentication Implementation**
    - Replace development authentication with proper Firebase authentication
    - Set up Firebase project with appropriate security rules
    - Configure Firebase authentication for both web and mobile clients
    - Implement proper error handling for authentication failures
    - Add user session management and token refresh functionality
 
-6. **Advanced Features**
+7. **Advanced Features**
    - Implement per-tribe display names
    - Enhance list synchronization with external sources (Google Maps)
    - Add support for tribe preferences and settings

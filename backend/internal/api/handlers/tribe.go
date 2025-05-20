@@ -641,15 +641,15 @@ func (h *TribeHandler) AddMember(c *gin.Context) {
 		return
 	}
 
-	// Get the current user as the inviter
-	inviterID := c.GetString("user_id")
-	var inviter *uuid.UUID
-	if inviterID != "" {
-		uid, err := uuid.Parse(inviterID)
-		if err == nil {
-			inviter = &uid
-		}
+	// Get the current user as the inviter using the getUserIDFromContext helper
+	inviterID, err := getUserIDFromContext(c)
+	if err != nil {
+		response.GinUnauthorized(c, "Authentication required")
+		return
 	}
+
+	// Use inviterID directly
+	inviter := &inviterID
 
 	// Verify that the user exists
 	if _, err := h.repos.Users.GetByID(req.UserID); err != nil {

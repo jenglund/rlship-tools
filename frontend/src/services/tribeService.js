@@ -30,6 +30,7 @@ const tribeService = {
       const response = await axios.get(`${API_URL}/tribes/${tribeId}`, {
         headers: getAuthHeader()
       });
+      console.log('Tribe data response:', response.data);
       return response.data.data;
     } catch (error) {
       console.error(`Error fetching tribe ${tribeId}:`, error);
