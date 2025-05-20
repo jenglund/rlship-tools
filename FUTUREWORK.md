@@ -208,16 +208,17 @@ Recently implemented a "pending" status for tribe members who have been invited 
 ## Backend Development Priorities
 
 1. **Enhance Database Schema Isolation and Test Stability**
-   - Extend the context-aware schema management approach to all repository methods
-   - Improve the transaction manager to better handle concurrent operations
-   - Add cleanup mechanisms to ensure schemas are properly isolated and cleaned up between tests
-   - Fix remaining failing tests related to schema isolation:
-     - `TestDatabaseOperations/concurrent_operations`
-     - `TestSchemaHandling/transaction_schema_handling`
-     - `TestSchemaHandling/transaction_rollback_schema_handling`
-     - `TestTestingInfrastructure/Test_data_generation`
-   - Consider using dependency injection instead of global variables for test configuration
-   - Add better logging and error tracking for database operations to aid debugging
+   - Fix remaining failing tests related to schema isolation and connection handling:
+     - `TestDatabaseOperations/concurrent_operations` - Failing with "relation does not exist" error
+     - `TestDatabaseOperations/transaction_rollback` - Failing with "driver: bad connection" error
+     - `TestSchemaHandling/transaction_schema_handling` - Failing with "context canceled" error
+     - `TestSchemaHandling/transaction_rollback_schema_handling` - Failing with "driver: bad connection" error
+   - Improve connection pooling to prevent "bad connection" errors in tests
+   - Add proper context cancellation handling to ensure transactions are rolled back correctly
+   - Add better connection cleanup to prevent resource leaks
+   - Implement consistent error handling for database connections and transactions
+   - Create more defensive transaction management for concurrent operations
+   - Add better schema isolation for concurrent test executions
 
 2. **Enhance Database Operations**
    - Add transaction boundaries for multi-step operations

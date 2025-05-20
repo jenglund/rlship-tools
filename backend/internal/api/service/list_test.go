@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -653,6 +654,22 @@ func (m *MockListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe,
 
 func (m *MockListRepository) GetListsBySource(source string) ([]*models.List, error) {
 	args := m.Called(source)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetUserListsWithContext(ctx context.Context, userID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetTribeListsWithContext(ctx context.Context, tribeID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(ctx, tribeID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

@@ -37,12 +37,18 @@ This document tracks the current known issues in the Tribe project that need to 
 
 ### Database Test Failures
 - **Issue**: Several database-related tests are still failing:
-  - `TestDatabaseOperations/concurrent_operations` - Failing with "relation does not exist" error
-  - `TestSchemaHandling/transaction_schema_handling` - Failing with "bad connection" error
-  - `TestSchemaHandling/transaction_rollback_schema_handling` - Failing with "context canceled" error
-  - `TestTestingInfrastructure/Test_data_generation` - Failing with "context canceled" error
-- **Status**: These failures are likely related to the same schema isolation issues we've been fixing
-- **Resolution Plan**: Extend the context-aware schema management approach to fix these tests
+  - `TestDatabaseOperations/concurrent_operations` - Failing with "relation 'concurrent_test' does not exist" error
+  - `TestDatabaseOperations/transaction_rollback` - Failing with "driver: bad connection" error
+  - `TestSchemaHandling/transaction_schema_handling` - Failing with "context canceled" error
+  - `TestSchemaHandling/transaction_rollback_schema_handling` - Failing with "driver: bad connection" error
+- **Status**: These failures are related to:
+  - Connection pooling and connection lifecycle management
+  - Transaction handling in concurrent scenarios 
+  - Schema context propagation between transactions
+- **Resolution Plan**: 
+  - Fix connection handling in transaction management to prevent "bad connection" errors
+  - Improve context cancellation to ensure proper transaction rollback
+  - Extend the context-aware schema management approach to handle concurrent operations
 - **Priority**: Medium
 
 ### Mock Repository Coverage Gaps
@@ -68,6 +74,11 @@ This document tracks the current known issues in the Tribe project that need to 
 - **Priority**: Low
 
 ## Recently Fixed Issues
+
+### Mock Repository Implementation Issue
+- **Issue**: Tests in `internal/api/service` were failing to compile because the mock `ListRepository` in `list_test.go` was missing the `GetTribeListsWithContext` and `GetUserListsWithContext` methods that were added to the `models.ListRepository` interface.
+- **Resolution**: Added the missing methods to the mock implementation, ensuring it properly implements the updated interface.
+- **Fixed Date**: May 19, 2025
 
 ### Schema Context Management in Repository Tests
 - **Issue**: Tests like `TestListRepository_GetUserLists` and `TestListRepository_GetTribeLists` were failing or being skipped due to schema isolation problems.
