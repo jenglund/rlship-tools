@@ -42,11 +42,11 @@ This document provides a prioritized checklist of action items for implementing 
   - **Approach**: Implement the following methods:
     ```javascript
     getListShares(listID)
-    shareListWithTribe(listID, tribeId)
-    unshareListWithTribe(listID, tribeId)
+    shareListWithTribe(listID, tribeID)
+    unshareListWithTribe(listID, tribeID)
     getSharedListsForTribe(tribeID)
     ```
-  - **Technical Details**: Note the parameter inconsistencies between `tribeId` and `tribeID`
+  - **Technical Details**: Note the parameter inconsistencies between `tribeID` variable names in the backend
 
 - [ ] **Test service methods with API endpoints**
   - **Objective**: Verify that all service methods correctly interact with the backend

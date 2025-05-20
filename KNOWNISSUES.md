@@ -132,4 +132,17 @@ This document tracks the current known issues in the Tribe project that need to 
 ### Documentation Updates
 - **Issue**: DESIGN.md and README.md needed updates to reflect current architecture
 - **Status**: ✅ FIXED - Documentation has been updated
-- **Priority**: Completed 
+- **Priority**: Completed
+
+## Resolved Issues
+
+### Standardization of `tribeID` Parameter
+- **Status**: Fixed ✅
+- **Description**: Inconsistent naming between `tribeId` and `tribeID` in both frontend and backend code was causing confusion and potential bugs.
+- **Resolution**: Standardized all occurrences to use `tribeID` consistently:
+  - Frontend: Updated all services and components to use `tribeID`
+  - Backend: Updated all route definitions and parameter retrieval in handlers to use `tribeID`
+
+## Current Issues
+
+<!-- Add any ongoing issues here --> 

@@ -148,27 +148,27 @@ const listService = {
   },
 
   // Share a list with a tribe
-  shareListWithTribe: async (listID, tribeId) => {
+  shareListWithTribe: async (listID, tribeID) => {
     try {
-      const response = await axios.post(`${API_URL}/v1/lists/${listID}/share/${tribeId}`, {}, {
+      const response = await axios.post(`${API_URL}/v1/lists/${listID}/share/${tribeID}`, {}, {
         headers: getAuthHeader()
       });
       return response.data.data;
     } catch (error) {
-      console.error(`Error sharing list ${listID} with tribe ${tribeId}:`, error);
+      console.error(`Error sharing list ${listID} with tribe ${tribeID}:`, error);
       throw error;
     }
   },
 
   // Unshare a list with a tribe
-  unshareListWithTribe: async (listID, tribeId) => {
+  unshareListWithTribe: async (listID, tribeID) => {
     try {
-      await axios.delete(`${API_URL}/v1/lists/${listID}/share/${tribeId}`, {
+      await axios.delete(`${API_URL}/v1/lists/${listID}/share/${tribeID}`, {
         headers: getAuthHeader()
       });
       return true;
     } catch (error) {
-      console.error(`Error unsharing list ${listID} from tribe ${tribeId}:`, error);
+      console.error(`Error unsharing list ${listID} from tribe ${tribeID}:`, error);
       throw error;
     }
   },

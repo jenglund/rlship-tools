@@ -1,7 +1,7 @@
 # Fix Backend Test Failures in List Repository
 
 ## Summary
-This PR addresses the failures in backend tests, specifically in the List Repository component. The primary issues were related to schema isolation and database connection handling, causing tests to fail with "bad connection" errors or requiring tests to be skipped.
+This PR addresses the failures in backend tests, specifically in the List Repository component. The primary issues were related to schema isolation and database connection handling, causing tests to fail with "bad connection" errors or requiring tests to be skipped. Additionally, it standardizes the use of `tribeID` throughout the codebase, fixing inconsistencies between `tribeId` and `tribeID` naming.
 
 ## Changes Made
 
@@ -27,6 +27,13 @@ This PR addresses the failures in backend tests, specifically in the List Reposi
 - Updated tests to use these context-aware methods
 - Fixed schema/field mismatch issues in the `loadListData` method
 
+### Parameter Naming Standardization
+- Standardized all occurrences of `tribeId` to `tribeID` for consistency:
+  - Updated route definitions in list and activity handlers
+  - Updated parameter retrieval in handler functions
+  - Updated tests to use consistent parameter naming
+  - Documented the standardization in KNOWNISSUES.md
+
 ### Documentation
 - Updated `HOW_TO_FIX_TESTS_2.md` with a comprehensive explanation of the fixes
 - Updated `KNOWNISSUES.md` to reflect the current state of the codebase
@@ -38,6 +45,7 @@ The following tests that were previously failing or being skipped are now passin
 - `TestListRepository_GetTribeLists`
 - `TestListRepository_GetUserLists`
 - `TestListRepository_ShareWithTribe`
+- All `TestListHandler` tests with standardized `tribeID` naming
 
 ## Remaining Issues
 There are still some test failures in other parts of the codebase that need addressing, which have been documented in `KNOWNISSUES.md` for future work.

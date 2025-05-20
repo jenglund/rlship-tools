@@ -25,13 +25,13 @@ const ListSharesView = ({ listId }) => {
     }
   };
   
-  const handleUnshare = async (tribeId) => {
+  const handleUnshare = async (tribeID) => {
     try {
       setError(null);
-      await listService.unshareListWithTribe(listId, tribeId);
+      await listService.unshareListWithTribe(listId, tribeID);
       
       // Update the local state
-      setShares(prev => prev.filter(tribe => tribe.id !== tribeId));
+      setShares(prev => prev.filter(tribe => tribe.id !== tribeID));
     } catch (err) {
       console.error('Error unsharing list:', err);
       setError('Failed to unshare list');

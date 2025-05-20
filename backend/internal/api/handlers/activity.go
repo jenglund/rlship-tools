@@ -39,7 +39,7 @@ func (h *ActivityHandler) RegisterRoutes(r *gin.RouterGroup) {
 
 		// Activity sharing
 		activities.POST("/:id/share", h.ShareActivity)
-		activities.DELETE("/:id/share/:tribeId", h.UnshareActivity)
+		activities.DELETE("/:id/share/:tribeID", h.UnshareActivity)
 		activities.GET("/shared", h.ListSharedActivities)
 	}
 }
@@ -354,7 +354,7 @@ func (h *ActivityHandler) UnshareActivity(c *gin.Context) {
 		return
 	}
 
-	tribeID, err := uuid.Parse(c.Param("tribeId"))
+	tribeID, err := uuid.Parse(c.Param("tribeID"))
 	if err != nil {
 		response.GinBadRequest(c, "Invalid tribe ID")
 		return

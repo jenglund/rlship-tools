@@ -49,18 +49,18 @@ const ShareListModal = ({ show, onHide, listId }) => {
     }
   };
   
-  const handleShare = async (tribeId) => {
+  const handleShare = async (tribeID) => {
     try {
       setError(null);
       setSuccess(null);
       
-      await listService.shareListWithTribe(listId, tribeId);
+      await listService.shareListWithTribe(listId, tribeID);
       
       // Update the shared with list
       setSharedWith(prev => {
         // Avoid duplicates
-        if (!prev.find(tribe => tribe.id === tribeId)) {
-          const tribe = tribes.find(t => t.id === tribeId);
+        if (!prev.find(tribe => tribe.id === tribeID)) {
+          const tribe = tribes.find(t => t.id === tribeID);
           return [...prev, tribe];
         }
         return prev;
@@ -73,15 +73,15 @@ const ShareListModal = ({ show, onHide, listId }) => {
     }
   };
   
-  const handleUnshare = async (tribeId) => {
+  const handleUnshare = async (tribeID) => {
     try {
       setError(null);
       setSuccess(null);
       
-      await listService.unshareListWithTribe(listId, tribeId);
+      await listService.unshareListWithTribe(listId, tribeID);
       
       // Update the shared with list
-      setSharedWith(prev => prev.filter(tribe => tribe.id !== tribeId));
+      setSharedWith(prev => prev.filter(tribe => tribe.id !== tribeID));
       
       setSuccess(`List unshared successfully!`);
     } catch (err) {
@@ -90,8 +90,8 @@ const ShareListModal = ({ show, onHide, listId }) => {
     }
   };
   
-  const isShared = (tribeId) => {
-    return sharedWith.some(tribe => tribe.id === tribeId);
+  const isShared = (tribeID) => {
+    return sharedWith.some(tribe => tribe.id === tribeID);
   };
   
   return (

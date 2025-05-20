@@ -748,7 +748,7 @@ func TestListHandler(t *testing.T) {
 				// Setup Chi route context with URL params
 				rctx := chi.NewRouteContext()
 				rctx.URLParams.Add("id", tc.listID)
-				rctx.URLParams.Add("tribeId", tc.tribeID)
+				rctx.URLParams.Add("tribeID", tc.tribeID)
 				req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 				// Setup authentication if provided
@@ -986,7 +986,7 @@ func TestListHandler(t *testing.T) {
 				// Setup Chi route context with URL params
 				rctx := chi.NewRouteContext()
 				rctx.URLParams.Add("id", tc.listID)
-				rctx.URLParams.Add("tribeId", tc.tribeID)
+				rctx.URLParams.Add("tribeID", tc.tribeID)
 				req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 				// Setup authentication if provided

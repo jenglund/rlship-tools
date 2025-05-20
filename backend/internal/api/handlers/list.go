@@ -68,8 +68,8 @@ func (h *ListHandler) RegisterRoutes(r chi.Router) {
 
 		// New handlers
 		r.Get("/{id}/shares", h.GetListShares)
-		r.Post("/{id}/share/{tribeId}", h.ShareListWithTribe)
-		r.Delete("/{id}/share/{tribeId}", h.UnshareListWithTribe)
+		r.Post("/{id}/share/{tribeID}", h.ShareListWithTribe)
+		r.Delete("/{id}/share/{tribeID}", h.UnshareListWithTribe)
 	})
 }
 
@@ -652,7 +652,7 @@ func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeId"))
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
 		return
@@ -695,7 +695,7 @@ func (h *ListHandler) UnshareListWithTribe(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeId"))
+	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
 		return
