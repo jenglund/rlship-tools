@@ -16,6 +16,9 @@ const defaultCenter = {
 // Google Maps API key should be stored in environment variable
 const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '';
 
+// Use the same libraries as LocationPicker to avoid conflicts
+const libraries = ['places'];
+
 const LocationMapView = ({ items = [], onItemClick = null }) => {
   const [map, setMap] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -24,7 +27,8 @@ const LocationMapView = ({ items = [], onItemClick = null }) => {
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: apiKey
+    googleMapsApiKey: apiKey,
+    libraries
   });
 
   // Reset bounds when items change

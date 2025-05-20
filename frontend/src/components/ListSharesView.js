@@ -1,16 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { Card, ListGroup, Button, Spinner, Alert } from 'react-bootstrap';
+import { Card, ListGroup, Button, Spinner, Alert, Badge } from 'react-bootstrap';
 import { useList } from '../contexts/ListContext';
+import { useAuth } from '../contexts/AuthContext';
 import listService from '../services/listService';
 
 const ListSharesView = ({ listId }) => {
   const [shares, setShares] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isOwner, setIsOwner] = useState(false);
+  const [ownerInfo, setOwnerInfo] = useState(null);
   
-  const { getListShares } = useList();
+  const { getListShares, currentList } = useList();
+  const { currentUser } = useAuth();
   
   useEffect(() => {
+    const fetchListOwnership = async () => {
+      if (!currentList) return;
+      
+      // Check if the current user is the owner
+      const isCurrentUserOwner = currentList.ownerId === currentUser?.id && 
+                                currentList.ownerType === 'user';
+      setIsOwner(isCurrentUserOwner);
+      
+      // Set owner info for display
+      if (currentList.ownerType === 'user') {
+        setOwnerInfo({
+          type: 'User',
+          id: currentList.ownerId,
+          displayName: currentList.ownerId === currentUser?.id ? 'You' : 'Another User'
+        });
+      } else if (currentList.ownerType === 'tribe') {
+        // In a real app, we would fetch the tribe name
+        setOwnerInfo({
+          type: 'Tribe',
+          id: currentList.ownerId,
+          displayName: 'Tribe'
+        });
+      }
+    };
+    
     const fetchListShares = async () => {
       try {
         setLoading(true);
@@ -27,8 +56,9 @@ const ListSharesView = ({ listId }) => {
       }
     };
     
+    fetchListOwnership();
     fetchListShares();
-  }, [listId, getListShares]);
+  }, [listId, getListShares, currentList, currentUser]);
   
   const handleUnshare = async (tribeID) => {
     try {
@@ -54,39 +84,60 @@ const ListSharesView = ({ listId }) => {
   if (error) {
     return <Alert variant="danger">{error}</Alert>;
   }
-  
-  if (shares.length === 0) {
-    return (
+
+  // Always show the ownership info
+  return (
+    <>
+      {/* Ownership information */}
       <Card className="mb-4">
-        <Card.Header>Shared With</Card.Header>
+        <Card.Header>List Ownership</Card.Header>
         <Card.Body>
-          <p className="text-muted mb-0">This list is not shared with any tribes.</p>
+          {ownerInfo ? (
+            <div className="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>Owner:</strong> {ownerInfo.displayName}
+                <Badge bg="info" className="ms-2">{ownerInfo.type}</Badge>
+              </div>
+              {isOwner && (
+                <Badge bg="success">You own this list</Badge>
+              )}
+            </div>
+          ) : (
+            <p className="text-muted mb-0">Ownership information unavailable</p>
+          )}
         </Card.Body>
       </Card>
-    );
-  }
-  
-  return (
-    <Card className="mb-4">
-      <Card.Header>Shared With</Card.Header>
-      <ListGroup variant="flush">
-        {shares.map(tribe => (
-          <ListGroup.Item key={tribe.id} className="d-flex justify-content-between align-items-center">
-            <div>
-              <strong>{tribe.name || tribe.tribeName || 'Unknown Tribe'}</strong>
-              {tribe.description && <p className="text-muted mb-0">{tribe.description}</p>}
-            </div>
-            <Button 
-              variant="outline-danger" 
-              size="sm" 
-              onClick={() => handleUnshare(tribe.id)}
-            >
-              Unshare
-            </Button>
-          </ListGroup.Item>
-        ))}
-      </ListGroup>
-    </Card>
+      
+      {/* Sharing information - only visible to the owner */}
+      {isOwner && (
+        <Card className="mb-4">
+          <Card.Header>Shared With</Card.Header>
+          {shares.length === 0 ? (
+            <Card.Body>
+              <p className="text-muted mb-0">This list is not shared with any tribes.</p>
+            </Card.Body>
+          ) : (
+            <ListGroup variant="flush">
+              {shares.map(tribe => (
+                <ListGroup.Item key={tribe.id} className="d-flex justify-content-between align-items-center">
+                  <div>
+                    <strong>{tribe.name || tribe.tribeName || 'Unknown Tribe'}</strong>
+                    {tribe.description && <p className="text-muted mb-0">{tribe.description}</p>}
+                  </div>
+                  <Button 
+                    variant="outline-danger" 
+                    size="sm" 
+                    onClick={() => handleUnshare(tribe.id)}
+                  >
+                    Unshare
+                  </Button>
+                </ListGroup.Item>
+              ))}
+            </ListGroup>
+          )}
+        </Card>
+      )}
+    </>
   );
 };
 

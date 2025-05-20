@@ -98,7 +98,7 @@ export const ListProvider = ({ children }) => {
             description: 'Places we want to try for date night',
             type: 'location',
             ownerType: 'user',
-            ownerId: '1',
+            ownerId: currentUser?.id || '1', // Use current user as owner
             visibility: 'private'
           };
           
@@ -116,7 +116,7 @@ export const ListProvider = ({ children }) => {
             description: 'Our watch list for movie nights',
             type: 'media',
             ownerType: 'user',
-            ownerId: '1',
+            ownerId: currentUser?.id || '1', // Use current user as owner
             visibility: 'private'
           };
           
@@ -132,8 +132,8 @@ export const ListProvider = ({ children }) => {
             name: 'Game Night Ideas',
             description: 'Board games to play with friends',
             type: 'activity',
-            ownerType: 'user',
-            ownerId: '1',
+            ownerType: 'tribe',
+            ownerId: '201', // Cooking Club tribe is the owner
             visibility: 'shared'
           };
           
@@ -152,7 +152,7 @@ export const ListProvider = ({ children }) => {
             description: `This is list ${listId}`,
             type: 'general',
             ownerType: 'user',
-            ownerId: '1',
+            ownerId: currentUser?.id || '1', // Use current user as owner
             visibility: 'private'
           };
           
@@ -169,7 +169,7 @@ export const ListProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [handleError]);
+  }, [currentUser, handleError]);
 
   // Create a new list
   const createList = useCallback(async (listData) => {
@@ -367,6 +367,30 @@ export const ListProvider = ({ children }) => {
       // Here we would normally call the API, but for now we'll use placeholder data
       // const shares = await listService.getListShares(listId);
       
+      // Mock user tribes with meaningful names
+      const mockUserTribes = [
+        { 
+          id: '201', 
+          name: 'Cooking Club',
+          description: 'Tribe for sharing cooking ideas and recipes'
+        },
+        { 
+          id: '202', 
+          name: 'Book Club',
+          description: 'Monthly book discussions'
+        },
+        { 
+          id: '203', 
+          name: 'Movie Club',
+          description: 'Weekly movie nights'
+        },
+        { 
+          id: '204', 
+          name: 'Game Group',
+          description: 'Board and video game enthusiasts'
+        }
+      ];
+      
       // Provide different share data based on list ID
       switch (listId) {
         case '1':
@@ -376,16 +400,16 @@ export const ListProvider = ({ children }) => {
               id: '101', 
               listId, 
               tribeId: '201',
-              name: 'Family',
-              tribeName: 'Family', 
+              name: 'Cooking Club',
+              tribeName: 'Cooking Club', 
               sharedAt: new Date().toISOString() 
             },
             { 
               id: '102', 
               listId, 
               tribeId: '202', 
-              name: 'Friends',
-              tribeName: 'Friends', 
+              name: 'Book Club',
+              tribeName: 'Book Club', 
               sharedAt: new Date().toISOString() 
             }
           ];
@@ -410,8 +434,8 @@ export const ListProvider = ({ children }) => {
               id: '104', 
               listId, 
               tribeId: '202',
-              name: 'Friends',
-              tribeName: 'Friends', 
+              name: 'Book Club',
+              tribeName: 'Book Club', 
               sharedAt: new Date().toISOString() 
             },
             { 

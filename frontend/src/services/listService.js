@@ -93,6 +93,19 @@ const listService = {
     }
   },
 
+  // Get list owners
+  getListOwners: async (listID) => {
+    try {
+      const response = await axios.get(`${API_URL}/v1/lists/${listID}/owners`, {
+        headers: getAuthHeader()
+      });
+      return response.data.data;
+    } catch (error) {
+      console.error(`Error fetching owners for list ${listID}:`, error);
+      throw error;
+    }
+  },
+
   // Add a new item to a list
   addListItem: async (listID, itemData) => {
     try {
