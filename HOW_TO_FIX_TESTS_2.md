@@ -24,11 +24,26 @@ The backend tests were failing due to several issues:
 
 3. Fixed temporary table creation in schema handling tests
 
-## Remaining Issues
+4. Fixed the `not-null constraint` issue in the `tribes` table:
+   - Updated fixture creation in `fixtures.go` to use valid JSON objects for metadata
+   - Fixed test models to include proper metadata fields
+   - Ensured all tribe creation functions initialize metadata properly
 
-1. Fix the `not-null constraint` issue in the `tribes` table - there's a null value in the `metadata` column being inserted during tests
+5. Fixed context cancellation issues:
+   - Updated repository methods to use the context from SchemaContext properly
+   - Fixed methods like `ShareWithTribe`, `UnshareWithTribe`, `GetListShares`, `GetSharedTribes`
+   - Properly propagated context through transaction management
 
-2. Continue testing all backend functionality with improved schema handling
+## Current Status
+
+✅ All PostgreSQL repository tests are now passing
+
+## Next Steps
+
+1. Run the full test suite to identify any remaining issues
+2. Improve test cleanup to properly remove test schemas
+3. Enhance error handling for edge cases
+4. Review and update documentation to reflect the new schema handling approach
 
 ## How to Fix
 
@@ -47,12 +62,10 @@ Additional features added:
 3. Better error reporting
 4. Schema-qualified query methods for safety
 
-### Issue 3: Not-null Constraint in Tribes Table
+### Issue 3: Proper Metadata Handling
 
-The test error shows: "null value in column 'metadata' of relation 'tribes' violates not-null constraint"
-
-To fix this issue:
-1. Check test data setup in repository tests
-2. Ensure all required fields have default values
-3. Update any test helpers that create tribes to include metadata
-4. Make sure test fixtures provide all required fields 
+To prevent metadata-related constraint violations:
+1. Always initialize JSONMap fields with at least an empty object (`{}`)
+2. Use JSONMap literals like `models.JSONMap{"test": "value"}` to create valid metadata
+3. Update test fixture creation to always provide valid metadata objects
+4. Verify metadata handling in both test and production code 

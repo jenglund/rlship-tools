@@ -55,6 +55,7 @@ func TestListRepository(t *testing.T) {
 		Name:       fmt.Sprintf("Test Tribe %s", uuid.New().String()[:8]),
 		Type:       models.TribeTypeCouple,
 		Visibility: models.VisibilityPrivate,
+		Metadata:   models.JSONMap{"test": "test_tribe_fixture"},
 	}
 	err = tribeRepo.Create(testTribe)
 	require.NoError(t, err)

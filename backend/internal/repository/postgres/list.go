@@ -1616,13 +1616,22 @@ func (r *ListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error
 
 // ShareWithTribe shares a list with a tribe
 func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-
-	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	// Get test schema context if available
+	var ctx context.Context
 	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
 		fmt.Printf("ShareWithTribe: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+		// Use context with schema for better isolation
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(context.Background())
+		} else {
+			ctx = context.Background()
+		}
+	} else {
+		ctx = context.Background()
 	}
+
+	opts := DefaultTransactionOptions()
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Validate share
@@ -1735,13 +1744,22 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 
 // UnshareWithTribe removes a tribe's access to a list
 func (r *ListRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-
-	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	// Get test schema context if available
+	var ctx context.Context
 	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
 		fmt.Printf("UnshareWithTribe: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+		// Use context with schema for better isolation
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(context.Background())
+		} else {
+			ctx = context.Background()
+		}
+	} else {
+		ctx = context.Background()
 	}
+
+	opts := DefaultTransactionOptions()
 
 	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		// Mark the share record as deleted
@@ -1780,14 +1798,23 @@ func (r *ListRepository) UnshareWithTribe(listID, tribeID uuid.UUID) error {
 
 // GetListShares retrieves all shares for a list
 func (r *ListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, error) {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-	var shares []*models.ListShare
-
-	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	// Get test schema context if available
+	var ctx context.Context
 	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
 		fmt.Printf("GetListShares: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+		// Use context with schema for better isolation
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(context.Background())
+		} else {
+			ctx = context.Background()
+		}
+	} else {
+		ctx = context.Background()
 	}
+
+	opts := DefaultTransactionOptions()
+	var shares []*models.ListShare
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
@@ -1832,14 +1859,23 @@ func (r *ListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShare, e
 
 // GetSharedLists retrieves all lists shared with a tribe
 func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, error) {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-	var lists []*models.List
-
-	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	// Get test schema context if available
+	var ctx context.Context
 	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
 		fmt.Printf("GetSharedLists: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+		// Use context with schema for better isolation
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(context.Background())
+		} else {
+			ctx = context.Background()
+		}
+	} else {
+		ctx = context.Background()
 	}
+
+	opts := DefaultTransactionOptions()
+	var lists []*models.List
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `
@@ -2077,14 +2113,23 @@ func (r *ListRepository) GetListsByOwner(ownerID uuid.UUID, ownerType models.Own
 
 // GetSharedTribes retrieves all tribes that a list is shared with
 func (r *ListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, error) {
-	ctx := context.Background()
-	opts := DefaultTransactionOptions()
-	var tribes []*models.Tribe
-
-	// Only log the schema, don't try to verify it (TransactionManager handles this)
+	// Get test schema context if available
+	var ctx context.Context
 	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
 		fmt.Printf("GetSharedTribes: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+		// Use context with schema for better isolation
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(context.Background())
+		} else {
+			ctx = context.Background()
+		}
+	} else {
+		ctx = context.Background()
 	}
+
+	opts := DefaultTransactionOptions()
+	var tribes []*models.Tribe
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
 		query := `

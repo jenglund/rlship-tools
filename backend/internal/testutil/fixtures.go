@@ -120,7 +120,7 @@ func CreateTestTribe(t *testing.T, db interface{}, members []TestUser) TestTribe
 	_, err = tx.Exec(`
 		INSERT INTO tribes (id, name, description, type, visibility, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, tribe.ID, tribe.Name, "Test Description", models.TribeTypeCouple, models.VisibilityPrivate, "{}")
+	`, tribe.ID, tribe.Name, "Test Description", models.TribeTypeCouple, models.VisibilityPrivate, `{"test":"fixture"}`)
 	if err != nil {
 		t.Fatalf("error creating tribe: %v", err)
 	}
@@ -130,7 +130,7 @@ func CreateTestTribe(t *testing.T, db interface{}, members []TestUser) TestTribe
 		_, err = tx.Exec(`
 			INSERT INTO tribe_members (tribe_id, user_id, membership_type, metadata)
 			VALUES ($1, $2, $3, $4)
-		`, tribe.ID, member.ID, models.MembershipFull, "{}")
+		`, tribe.ID, member.ID, models.MembershipFull, `{"test":"member_fixture"}`)
 		if err != nil {
 			t.Fatalf("error adding member to tribe: %v", err)
 		}
@@ -183,7 +183,7 @@ func CreateTestList(t *testing.T, db interface{}, tribe TestTribe) TestList {
 	_, err = tx.Exec(`
 		INSERT INTO lists (id, name, type, owner_id, owner_type, visibility, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, list.ID, list.Name, list.Type, tribe.ID, models.OwnerTypeTribe, models.VisibilityPrivate, "{}")
+	`, list.ID, list.Name, list.Type, tribe.ID, models.OwnerTypeTribe, models.VisibilityPrivate, `{"test":"list_fixture"}`)
 	if err != nil {
 		t.Fatalf("Failed to create test list: %v", err)
 	}
