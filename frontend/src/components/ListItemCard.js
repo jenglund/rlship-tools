@@ -1,7 +1,10 @@
 import React from 'react';
 import { Card, Button, Badge } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
 
 const ListItemCard = ({ item, onEdit, onDelete }) => {
+  const navigate = useNavigate();
+  
   // Get appropriate icon based on item type or parent list type
   const getTypeIcon = (type) => {
     switch (type) {
@@ -18,6 +21,13 @@ const ListItemCard = ({ item, onEdit, onDelete }) => {
     }
   };
 
+  const handleClick = () => {
+    // Navigate to the detail view
+    if (item.id && item.listId) {
+      navigate(`/lists/${item.listId}/items/${item.id}`);
+    }
+  };
+
   const handleEdit = (e) => {
     e.stopPropagation();
     if (onEdit) {
@@ -29,6 +39,13 @@ const ListItemCard = ({ item, onEdit, onDelete }) => {
     e.stopPropagation();
     if (onDelete) {
       onDelete(item);
+    }
+  };
+
+  const handleViewDetails = (e) => {
+    e.stopPropagation();
+    if (item.id && item.listId) {
+      navigate(`/lists/${item.listId}/items/${item.id}`);
     }
   };
 
@@ -53,7 +70,11 @@ const ListItemCard = ({ item, onEdit, onDelete }) => {
   };
 
   return (
-    <Card className="h-100 shadow-sm item-card">
+    <Card 
+      className="h-100 shadow-sm item-card"
+      onClick={handleClick}
+      style={{ cursor: 'pointer' }}
+    >
       <Card.Body className="d-flex flex-column">
         <Card.Title className="text-break">
           {getTypeIcon(item.type || 'general')} {item.name}
@@ -67,6 +88,13 @@ const ListItemCard = ({ item, onEdit, onDelete }) => {
         </div>
         
         <div className="mt-3 d-flex flex-wrap gap-2 justify-content-end">
+          <Button 
+            variant="outline-secondary" 
+            size="sm"
+            onClick={handleViewDetails}
+          >
+            View Details
+          </Button>
           {onEdit && (
             <Button 
               variant="outline-primary" 

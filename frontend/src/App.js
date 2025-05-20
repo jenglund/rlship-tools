@@ -15,6 +15,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import TribeMemberProfileScreen from './components/TribeMemberProfileScreen';
 import ListsScreen from './components/ListsScreen';
 import ListDetailScreen from './components/ListDetailScreen';
+import ListItemDetailScreen from './components/ListItemDetailScreen';
 
 function App() {
   return (
@@ -71,6 +72,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ListDetailScreen />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/lists/:listID/items/:itemID" 
+              element={
+                <ProtectedRoute>
+                  <ListItemDetailScreen />
                 </ProtectedRoute>
               } 
             />

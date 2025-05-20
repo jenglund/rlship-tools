@@ -321,7 +321,7 @@ const ListDetailScreen = () => {
                 currentListItems.map(item => (
                   <Col key={item.id}>
                     <ListItemCard
-                      item={{...item, type: currentList.type}}
+                      item={{...item, type: currentList.type, listId: id}}
                       onEdit={() => handleEditItem(item)}
                       onDelete={() => handleDeleteItem(item)}
                     />

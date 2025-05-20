@@ -1,14 +1,7 @@
 import React, { useState } from 'react';
-import { Modal, Button, Form, Alert, Spinner } from 'react-bootstrap';
+import { Modal, Button, Form, Alert, Spinner, Card } from 'react-bootstrap';
 import { useList } from '../contexts/ListContext';
-
-const LIST_TYPES = [
-  { value: 'location', label: 'Locations' },
-  { value: 'activity', label: 'Activities' },
-  { value: 'media', label: 'Media' },
-  { value: 'food', label: 'Food & Recipes' },
-  { value: 'general', label: 'General' }
-];
+import { getListTypeOptions } from '../utils/listTypeUtils';
 
 const CreateListModal = ({ show, onHide }) => {
   const { createList, operations, error: contextError } = useList();
@@ -24,6 +17,8 @@ const CreateListModal = ({ show, onHide }) => {
   const isCreating = operations.creating;
   // Combine local and context errors
   const error = localError || contextError;
+  // Get list type options from utility
+  const listTypeOptions = getListTypeOptions();
 
   const resetForm = () => {
     setName('');
@@ -68,8 +63,30 @@ const CreateListModal = ({ show, onHide }) => {
     }
   };
 
+  const TypeOption = ({ option, isSelected }) => (
+    <Card 
+      className={`mb-2 type-option ${isSelected ? 'border-primary' : ''}`}
+      onClick={() => setType(option.value)}
+      style={{ 
+        cursor: 'pointer', 
+        borderWidth: isSelected ? '2px' : '1px',
+        backgroundColor: isSelected ? 'rgba(0, 123, 255, 0.05)' : 'white'
+      }}
+    >
+      <Card.Body className="d-flex align-items-center p-2">
+        <div className="me-3" style={{ color: option.icon.props ? option.icon.props.color : '' }}>
+          {option.icon}
+        </div>
+        <div>
+          <div className="fw-bold">{option.label}</div>
+          <small className="text-muted">{option.description}</small>
+        </div>
+      </Card.Body>
+    </Card>
+  );
+
   return (
-    <Modal show={show} onHide={handleClose} centered>
+    <Modal show={show} onHide={handleClose} centered size="lg">
       <Modal.Header closeButton>
         <Modal.Title>Create New List</Modal.Title>
       </Modal.Header>
@@ -111,18 +128,17 @@ const CreateListModal = ({ show, onHide }) => {
           
           <Form.Group className="mb-3">
             <Form.Label>List Type</Form.Label>
-            <Form.Select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              required
-              disabled={isCreating}
-            >
-              {LIST_TYPES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
+            
+            <div className="mt-2 mb-2">
+              {listTypeOptions.map((option) => (
+                <TypeOption 
+                  key={option.value} 
+                  option={option} 
+                  isSelected={type === option.value} 
+                />
               ))}
-            </Form.Select>
+            </div>
+            
             <Form.Text className="text-muted">
               Select a type that best describes the items in this list.
             </Form.Text>
