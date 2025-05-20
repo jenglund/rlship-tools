@@ -207,15 +207,15 @@ Recently implemented a "pending" status for tribe members who have been invited 
 
 ## Backend Development Priorities
 
-1. **Enhance Database Schema Isolation and Test Stability**
-   - Fix remaining issues with null constraint violations:
-     - Update tribe creation in tests to include required metadata field
-     - Add default values for required fields
-     - Ensure consistency between model structs and database schema
-   - Implement comprehensive test data generators that ensure all required fields are populated
-   - Add standard validation of model completeness before database operations
-   - Continue improving connection pooling to prevent connection issues
-   - Add more extensive documentation for testing patterns
+1. **✅ Database Schema Isolation and Test Stability (COMPLETED)**
+   - Fixed issues with null constraint violations:
+     - Updated tribe creation in tests to include required metadata field
+     - Added proper JSON objects for metadata in test fixtures
+     - Ensured consistency between model structs and database schema
+   - Fixed context handling in repository methods:
+     - Updated methods to use the schema context properly
+     - Fixed context cancellation issues in transaction management
+   - All repository and API tests now pass successfully
 
 2. **Improve Backend Test Coverage**
    - Add tests for edge cases in repository methods
@@ -226,29 +226,31 @@ Recently implemented a "pending" status for tribe members who have been invited 
    - Implement test coverage tracking and reporting
    - Add race condition detection for concurrent operations
 
-3. **API Enhancements**
+3. **Transaction Management Enhancement**
+   - Review transaction retry mechanism for robustness
+   - Implement more comprehensive error handling for transactions
+   - Add better logging for transaction failures
+   - Consider implementing a deadlock detection system
+   - Improve connection pooling configuration
+
+4. **API Enhancements**
    - Implement comprehensive request validation
    - Add consistent error handling patterns
    - Improve API documentation
-   - **NEW**: Add endpoints to support the authentication and tribe viewing flow
+   - Add endpoints to support the authentication and tribe viewing flow
 
-4. **Authentication Implementation**
+5. **Authentication Implementation**
    - Replace development authentication with proper Firebase authentication
    - Set up Firebase project with appropriate security rules
    - Configure Firebase authentication for both web and mobile clients
    - Implement proper error handling for authentication failures
    - Add user session management and token refresh functionality
 
-5. **Improve Test Coverage**
-   - Increase service layer test coverage (currently at 78.6%)
-   - Add tests for sync-related models (currently 0% coverage)
-   - Improve the mock repository implementations to increase test coverage
-   - Improve the database test utilities to better handle connection lifecycle
-
 6. **Advanced Features**
    - Implement per-tribe display names
    - Enhance list synchronization with external sources (Google Maps)
-   - Support for advanced interest indicators and scheduling
+   - Add support for tribe preferences and settings
+   - Implement activity planning and scheduling features
 
 ## Frontend Development Priorities
 

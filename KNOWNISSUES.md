@@ -14,8 +14,7 @@ This document tracks the current known issues in the Tribe project that need to 
   - `[DEP_WEBPACK_DEV_SERVER_CONSTRUCTOR]`: Using 'compiler' as first argument is deprecated
   - `[DEP_WEBPACK_DEV_SERVER_LISTEN]`: 'listen' method is deprecated
   - `[DEP_WEBPACK_DEV_SERVER_CLOSE]`: 'close' method is deprecated
-- **Status**: These warnings don't affect functionality and will be automatically resolved when webpack updates in a future release.
-- **Resolution Decision**: We've decided to accept these deprecation warnings rather than implement custom workarounds that may introduce other issues.
+- **Status**: Not critical but should be addressed in future updates
 - **Priority**: Low
 
 ### TypeScript Integration
@@ -34,15 +33,6 @@ This document tracks the current known issues in the Tribe project that need to 
 ### Linting Issues
 - **`govet shadow` errors**: The linter has identified 46 instances of variable shadowing across the backend codebase.
 - **Resolution Decision**: We've decided to keep the `govet shadow` linter disabled for the time being. This is a low-impact issue that would require significant time and resources to address for minimal reward.
-
-### Database Test Failures
-- **Issue**: Tests in the repository package are failing with null constraint violation errors:
-  - `TestListRepository` - Failing with "null value in column 'metadata' of relation 'tribes' violates not-null constraint" error
-- **Status**: After fixing the schema isolation and transaction handling issues, we now have a data integrity issue where tribe creation is failing due to missing required fields.
-- **Resolution Plan**: 
-  - Update test fixtures to ensure all required fields are populated
-  - Add default values for required fields in test helpers
-  - Check the tribe model to ensure consistency between code and database schema
 
 ### Mock Repository Coverage Gaps
 - The mock tribe repository implementation in `internal/testutil/mock_repositories.go` has several methods with 0% coverage:
@@ -67,6 +57,18 @@ This document tracks the current known issues in the Tribe project that need to 
 - **Priority**: Low
 
 ## Recently Fixed Issues
+
+### Database Test Failures
+- **Issue**: Several database tests were failing due to:
+  - NULL constraint violation in tribe metadata
+  - Context cancellation errors in transaction management
+  - Schema leakage between tests
+- **Status**: ✅ FIXED - All repository and API tests now pass successfully
+- **Fix Details**: 
+  - Updated fixture creation to properly initialize metadata fields
+  - Fixed context handling in repository methods to ensure proper schema usage
+  - Improved transaction management to prevent context cancellation issues
+- **Date Fixed**: 2025-05-19
 
 ### Backend Schema Isolation and Connection Handling
 - **Issue**: Tests were failing with "relation does not exist" and "driver: bad connection" errors due to improper schema isolation and connection handling.
@@ -120,4 +122,14 @@ This document tracks the current known issues in the Tribe project that need to 
 ### Data Race in Database Tests
 - **Issue**: There was a data race in the `TestDatabaseErrors/concurrent_database_operations` test due to improper mutex usage.
 - **Resolution**: Fixed by improving the concurrent database operations test to use proper synchronization and thread-safe patterns.
-- **Fixed Date**: May 18, 2025 
+- **Fixed Date**: May 18, 2025
+
+### External API Integration
+- **Issue**: Integration with Google Maps API needs better error handling and rate limiting
+- **Status**: Currently functional but needs improved resilience
+- **Priority**: Medium
+
+### Documentation Updates
+- **Issue**: DESIGN.md and README.md needed updates to reflect current architecture
+- **Status**: ✅ FIXED - Documentation has been updated
+- **Priority**: Completed 
