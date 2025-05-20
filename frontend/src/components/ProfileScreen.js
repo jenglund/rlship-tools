@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Card, Row, Col, Image, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
+import UserListsView from './UserListsView';
 import axios from 'axios';
 import config from '../config';
 
@@ -85,6 +86,9 @@ const ProfileScreen = () => {
           </Row>
         </Card.Body>
       </Card>
+
+      {/* User Lists Section */}
+      <UserListsView userId={currentUser.id} />
 
       <Card className="mt-4">
         <Card.Header as="h5">My Tribes</Card.Header>

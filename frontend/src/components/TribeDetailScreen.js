@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import tribeService from '../services/tribeService';
 import InviteMemberModal from './InviteMemberModal';
 import PendingInvitationView from './PendingInvitationView';
+import TribeSharedLists from './TribeSharedLists';
 import { useAuth } from '../contexts/AuthContext';
 
 const DeleteConfirmationModal = ({ show, onClose, onConfirm, tribeName }) => {
@@ -255,6 +256,10 @@ const TribeDetailScreen = () => {
           <p>{tribe.description}</p>
         </div>
       )}
+
+      <div className="shared-lists-section mb-4">
+        <TribeSharedLists tribeId={id} />
+      </div>
 
       <div className="tribe-members-section">
         <h2>Members</h2>

@@ -6,10 +6,13 @@ import { useList } from '../contexts/ListContext';
 import ListItemCard from './ListItemCard';
 import CreateListItemModal from './CreateListItemModal';
 import EditListItemModal from './EditListItemModal';
+import ShareListModal from './ShareListModal';
+import ListSharesView from './ListSharesView';
 
 const ListDetailScreen = () => {
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   
   const { id } = useParams();
@@ -46,8 +49,13 @@ const ListDetailScreen = () => {
   };
 
   const handleShareList = () => {
-    // This will be implemented later
-    console.log('Share list clicked');
+    setShowShareModal(true);
+  };
+
+  const handleCloseShareModal = () => {
+    setShowShareModal(false);
+    // Refresh list details to get updated shares
+    fetchListDetails(id);
   };
 
   const handleDeleteList = async () => {
@@ -127,6 +135,13 @@ const ListDetailScreen = () => {
             </Col>
           </Row>
 
+          {/* Sharing information */}
+          <Row className="mb-4">
+            <Col>
+              <ListSharesView listId={id} />
+            </Col>
+          </Row>
+
           <Row className="mb-4">
             <Col>
               <h2>Items</h2>
@@ -174,6 +189,12 @@ const ListDetailScreen = () => {
                   item={selectedItem}
                 />
               )}
+              
+              <ShareListModal
+                show={showShareModal}
+                onHide={handleCloseShareModal}
+                listId={id}
+              />
             </>
           )}
         </>
