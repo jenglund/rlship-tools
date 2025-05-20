@@ -14,5 +14,12 @@
   "dependencies": {
     "@react-google-maps/api": "^2.20.6",
     "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "axios-mock-adapter": "^2.1.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
   }
 }
