@@ -16,12 +16,24 @@ const listService = {
   // Create a new list
   createList: async (listData) => {
     try {
+      console.log(`Creating list with data:`, listData);
+      console.log(`API URL: ${API_URL}/v1/lists`);
       const response = await axios.post(`${API_URL}/v1/lists`, listData, {
         headers: getAuthHeader()
       });
+      console.log(`Successfully created list:`, response.data);
       return response.data.data;
     } catch (error) {
       console.error('Error creating list:', error);
+      console.error('Request details:', {
+        url: `${API_URL}/v1/lists`,
+        data: listData,
+        headers: getAuthHeader()
+      });
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   },
@@ -29,12 +41,23 @@ const listService = {
   // Get lists owned by the current user
   getUserLists: async (userID) => {
     try {
+      console.log(`Fetching lists for user: ${userID}`);
+      console.log(`API URL: ${API_URL}/v1/lists/user/${userID}`);
       const response = await axios.get(`${API_URL}/v1/lists/user/${userID}`, {
         headers: getAuthHeader()
       });
+      console.log(`Successfully fetched user lists:`, response.data);
       return response.data.data;
     } catch (error) {
       console.error(`Error fetching user lists for user ${userID}:`, error);
+      console.error('Request details:', {
+        url: `${API_URL}/v1/lists/user/${userID}`,
+        headers: getAuthHeader()
+      });
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   },
@@ -196,12 +219,23 @@ const listService = {
   // Share a list with a tribe
   shareListWithTribe: async (listID, tribeID) => {
     try {
+      console.log(`Sharing list ${listID} with tribe ${tribeID}`);
+      console.log(`API URL: ${API_URL}/v1/lists/${listID}/share/${tribeID}`);
       const response = await axios.post(`${API_URL}/v1/lists/${listID}/share/${tribeID}`, {}, {
         headers: getAuthHeader()
       });
+      console.log(`Successfully shared list:`, response.data);
       return response.data.data;
     } catch (error) {
       console.error(`Error sharing list ${listID} with tribe ${tribeID}:`, error);
+      console.error('Request details:', {
+        url: `${API_URL}/v1/lists/${listID}/share/${tribeID}`,
+        headers: getAuthHeader()
+      });
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   },
@@ -209,12 +243,23 @@ const listService = {
   // Unshare a list with a tribe
   unshareListWithTribe: async (listID, tribeID) => {
     try {
+      console.log(`Unsharing list ${listID} from tribe ${tribeID}`);
+      console.log(`API URL: ${API_URL}/v1/lists/${listID}/share/${tribeID}`);
       await axios.delete(`${API_URL}/v1/lists/${listID}/share/${tribeID}`, {
         headers: getAuthHeader()
       });
+      console.log(`Successfully unshared list`);
       return true;
     } catch (error) {
       console.error(`Error unsharing list ${listID} from tribe ${tribeID}:`, error);
+      console.error('Request details:', {
+        url: `${API_URL}/v1/lists/${listID}/share/${tribeID}`,
+        headers: getAuthHeader()
+      });
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   },

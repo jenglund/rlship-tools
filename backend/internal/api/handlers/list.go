@@ -3,7 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -75,18 +77,108 @@ func (h *ListHandler) RegisterRoutes(r chi.Router) {
 
 // CreateList handles the creation of a new list
 func (h *ListHandler) CreateList(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, err := getUserIDFromRequest(r)
+	if err != nil {
+		log.Printf("Error extracting user ID: %v", err)
+		response.Error(w, http.StatusUnauthorized, "Unable to determine user ID: "+err.Error())
+		return
+	}
+
+	log.Printf("Creating list for user ID: %s", userID)
+
 	var list models.List
 	if err := json.NewDecoder(r.Body).Decode(&list); err != nil {
+		log.Printf("Error decoding request body: %v", err)
 		response.Error(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
+	// Set owner to current user if not specified
+	if list.OwnerID == nil {
+		log.Printf("Owner ID not specified, setting to current user: %s", userID)
+		ownerType := models.OwnerTypeUser
+		list.OwnerID = &userID
+		list.OwnerType = &ownerType
+	} else {
+		log.Printf("Using provided owner ID: %s", *list.OwnerID)
+	}
+
+	if list.ID == uuid.Nil {
+		list.ID = uuid.New()
+		log.Printf("Generated new list ID: %s", list.ID)
+	}
+
+	// Set default values for required fields
+	if list.SyncStatus == "" {
+		log.Printf("Setting default SyncStatus: %s", models.ListSyncStatusNone)
+		list.SyncStatus = models.ListSyncStatusNone
+	}
+
+	if list.SyncSource == "" {
+		log.Printf("Setting default SyncSource: %s", models.SyncSourceNone)
+		list.SyncSource = models.SyncSourceNone
+	}
+
+	if list.DefaultWeight <= 0 {
+		log.Printf("Setting default DefaultWeight: %f", 1.0)
+		list.DefaultWeight = 1.0
+	}
+
+	if list.Type == "" {
+		log.Printf("Setting default Type: %s", models.ListTypeGeneral)
+		list.Type = models.ListTypeGeneral
+	}
+
+	if list.Visibility == "" {
+		log.Printf("Setting default Visibility: %s", models.VisibilityPrivate)
+		list.Visibility = models.VisibilityPrivate
+	}
+
+	log.Printf("Calling service.CreateList with list: %+v", list)
 	if err := h.service.CreateList(&list); err != nil {
+		log.Printf("Error creating list: %v", err)
 		response.Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	log.Printf("List created successfully with ID: %s", list.ID)
 	response.JSON(w, http.StatusCreated, list)
+}
+
+// getUserIDFromRequest extracts the user ID from the request context
+func getUserIDFromRequest(r *http.Request) (uuid.UUID, error) {
+	// Try to get user ID from context
+	userIDValue := r.Context().Value("user_id")
+	if userIDValue == nil {
+		// Try to get from header for development
+		userIDStr := r.Header.Get("X-User-ID")
+		if userIDStr != "" {
+			userID, err := uuid.Parse(userIDStr)
+			if err != nil {
+				return uuid.Nil, fmt.Errorf("invalid user ID format in header: %w", err)
+			}
+			return userID, nil
+		}
+		return uuid.Nil, fmt.Errorf("user ID not found in context or headers")
+	}
+
+	// Handle different types that might be in the context
+	switch v := userIDValue.(type) {
+	case string:
+		userID, err := uuid.Parse(v)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("invalid user ID format in context: %w", err)
+		}
+		return userID, nil
+
+	case uuid.UUID:
+		return v, nil
+
+	default:
+		log.Printf("Unexpected user ID type in context: %T", userIDValue)
+		return uuid.Nil, fmt.Errorf("user ID in context has unexpected type: %T", userIDValue)
+	}
 }
 
 // ListLists handles retrieving a paginated list of lists
@@ -468,9 +560,17 @@ func (h *ListHandler) GetTribeLists(w http.ResponseWriter, r *http.Request) {
 
 // ShareList handles sharing a list with a tribe
 func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
+	// Get the list ID from the URL
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid list ID")
+		return
+	}
+
+	// Get user ID from context
+	userID, err := getUserIDFromRequest(r)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "Unable to determine user ID: "+err.Error())
 		return
 	}
 
@@ -481,19 +581,6 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 
 	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		response.Error(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	// Get the user ID from the authenticated context
-	userIDValue := r.Context().Value(userIDKey)
-	if userIDValue == nil {
-		response.Error(w, http.StatusUnauthorized, "user not authenticated")
-		return
-	}
-
-	userID, ok := userIDValue.(uuid.UUID)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
 		return
 	}
 
@@ -526,8 +613,15 @@ func (h *ListHandler) ShareList(w http.ResponseWriter, r *http.Request) {
 	response.NoContent(w)
 }
 
-// UnshareList handles removing a list share from a tribe
+// UnshareList handles removing a list from a tribe
 func (h *ListHandler) UnshareList(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, err := getUserIDFromRequest(r)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "Unable to determine user ID: "+err.Error())
+		return
+	}
+
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid list ID")
@@ -537,19 +631,6 @@ func (h *ListHandler) UnshareList(w http.ResponseWriter, r *http.Request) {
 	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
-		return
-	}
-
-	// Get the user ID from the authenticated context
-	userIDValue := r.Context().Value(userIDKey)
-	if userIDValue == nil {
-		response.Error(w, http.StatusUnauthorized, "user not authenticated")
-		return
-	}
-
-	userID, ok := userIDValue.(uuid.UUID)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
 		return
 	}
 
@@ -587,7 +668,7 @@ func (h *ListHandler) GetListShares(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the user ID from the authenticated context
-	userIDValue := r.Context().Value(userIDKey)
+	userIDValue := r.Context().Value("user_id")
 	if userIDValue == nil {
 		response.Error(w, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -644,29 +725,25 @@ func (h *ListHandler) handleError(w http.ResponseWriter, err error) {
 	}
 }
 
-// ShareListWithTribe handles the request to share a list with a tribe
+// ShareListWithTribe handles sharing a list with a specific tribe
 func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, err := getUserIDFromRequest(r)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "Unable to determine user ID: "+err.Error())
+		return
+	}
+
+	// Get the list ID from the URL
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid list ID")
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
 		return
 	}
 
 	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
-		return
-	}
-
-	userIDValue := r.Context().Value(userIDKey)
-	if userIDValue == nil {
-		response.Error(w, http.StatusUnauthorized, "user not authenticated")
-		return
-	}
-
-	userID, ok := userIDValue.(uuid.UUID)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
 		return
 	}
 
@@ -687,29 +764,25 @@ func (h *ListHandler) ShareListWithTribe(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// UnshareListWithTribe handles the request to unshare a list from a tribe
+// UnshareListWithTribe handles unsharing a list from a specific tribe
 func (h *ListHandler) UnshareListWithTribe(w http.ResponseWriter, r *http.Request) {
+	// Get user ID from context
+	userID, err := getUserIDFromRequest(r)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "Unable to determine user ID: "+err.Error())
+		return
+	}
+
+	// Get the list ID from the URL
 	listID, err := uuid.Parse(chi.URLParam(r, "listID"))
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "invalid list ID")
+		response.Error(w, http.StatusBadRequest, "Invalid list ID")
 		return
 	}
 
 	tribeID, err := uuid.Parse(chi.URLParam(r, "tribeID"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "invalid tribe ID")
-		return
-	}
-
-	userIDValue := r.Context().Value(userIDKey)
-	if userIDValue == nil {
-		response.Error(w, http.StatusUnauthorized, "user not authenticated")
-		return
-	}
-
-	userID, ok := userIDValue.(uuid.UUID)
-	if !ok {
-		response.Error(w, http.StatusUnauthorized, "invalid user authentication")
 		return
 	}
 
