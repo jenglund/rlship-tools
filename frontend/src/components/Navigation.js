@@ -23,6 +23,7 @@ const Navigation = () => {
             {currentUser && (
               <>
                 <Nav.Link as={Link} to="/tribes">My Tribes</Nav.Link>
+                <Nav.Link as={Link} to="/lists">My Lists</Nav.Link>
                 <Nav.Link as={Link} to="/profile">My Profile</Nav.Link>
                 {isAdmin(currentUser) && (
                   <Nav.Link as={Link} to="/admin">Admin Panel</Nav.Link>

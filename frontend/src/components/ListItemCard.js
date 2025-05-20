@@ -1,0 +1,93 @@
+import React from 'react';
+import { Card, Button, Badge } from 'react-bootstrap';
+
+const ListItemCard = ({ item, onEdit, onDelete }) => {
+  // Get appropriate icon based on item type or parent list type
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case 'location':
+        return '📍';
+      case 'media':
+        return '🎬';
+      case 'activity':
+        return '🎮';
+      case 'food':
+        return '🍽️';
+      default:
+        return '📋';
+    }
+  };
+
+  const handleEdit = (e) => {
+    e.stopPropagation();
+    if (onEdit) {
+      onEdit(item);
+    }
+  };
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    if (onDelete) {
+      onDelete(item);
+    }
+  };
+
+  const renderMetadata = () => {
+    if (!item.metadata) return null;
+
+    return (
+      <div className="mt-2">
+        {Object.entries(item.metadata).map(([key, value]) => {
+          // Skip empty values or internal properties (those starting with _)
+          if (!value || key.startsWith('_')) return null;
+          
+          return (
+            <div key={key} className="text-muted small">
+              <strong>{key.charAt(0).toUpperCase() + key.slice(1)}: </strong>
+              {value}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <Card className="h-100">
+      <Card.Body>
+        <Card.Title>
+          {getTypeIcon(item.type || 'general')} {item.name}
+        </Card.Title>
+        {item.description && (
+          <Card.Text>{item.description}</Card.Text>
+        )}
+        
+        {renderMetadata()}
+        
+        <div className="mt-3 d-flex justify-content-end">
+          {onEdit && (
+            <Button 
+              variant="outline-primary" 
+              size="sm" 
+              className="me-2"
+              onClick={handleEdit}
+            >
+              Edit
+            </Button>
+          )}
+          {onDelete && (
+            <Button 
+              variant="outline-danger" 
+              size="sm"
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      </Card.Body>
+    </Card>
+  );
+};
+
+export default ListItemCard; 
