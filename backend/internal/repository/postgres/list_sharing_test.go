@@ -20,15 +20,12 @@ func setupTestWithSchema(t *testing.T) (*testutil.SchemaDB, func()) {
 	schemaDB := testutil.SetupTestDB(t)
 	schemaName := schemaDB.GetSchemaName()
 
-	// Get the schema context from registry or create a new one
-	var schemaCtx *testutil.SchemaContext
-	if ctx := testutil.GetSchemaContext(schemaName); ctx != nil {
-		schemaCtx = ctx
-	} else {
+	// Ensure the schema context exists for this schema
+	if ctx := testutil.GetSchemaContext(schemaName); ctx == nil {
 		// Create a new schema context and register it
-		schemaCtx = testutil.NewSchemaContext(schemaName)
+		newCtx := testutil.NewSchemaContext(schemaName)
 		testutil.SchemaContextMutex.Lock()
-		testutil.SchemaContexts[schemaName] = schemaCtx
+		testutil.SchemaContexts[schemaName] = newCtx
 		testutil.SchemaContextMutex.Unlock()
 	}
 

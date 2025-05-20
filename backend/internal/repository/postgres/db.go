@@ -10,7 +10,6 @@ import (
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/lib/pq"
-	_ "github.com/lib/pq"
 )
 
 // BaseRepository provides common functionality for all repositories

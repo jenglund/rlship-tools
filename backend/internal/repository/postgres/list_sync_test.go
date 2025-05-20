@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -437,22 +436,6 @@ func TestListRepository_ResolveConflict(t *testing.T) {
 		err = repo.ResolveConflict(conflict.ID)
 		assert.ErrorIs(t, err, models.ErrNotFound)
 	})
-}
-
-// setupTestListSync creates tables directly with hard-coded schema name for tests
-func setupTestListSync(t *testing.T, schemaName string) (*sql.DB, func()) {
-	t.Helper()
-
-	// Use testutil's SetupTestDB instead of direct DB creation
-	db := testutil.SetupTestDB(t)
-	sqlDB := testutil.UnwrapDB(db)
-
-	// Return a cleanup function that uses proper teardown
-	cleanup := func() {
-		testutil.TeardownTestDB(t, db)
-	}
-
-	return sqlDB, cleanup
 }
 
 func TestListRepository_GetListsBySyncSource(t *testing.T) {

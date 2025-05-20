@@ -805,7 +805,7 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 		var lists []*models.List
 
 		// Query directly from the test schema tables
-		query := fmt.Sprintf(`
+		query := `
 			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
 				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
 				l.default_weight, l.max_items, l.cooldown_days,
@@ -814,7 +814,7 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 			FROM lists l
 			WHERE l.sync_source = $1
 				AND l.deleted_at IS NULL
-			ORDER BY l.created_at DESC`)
+			ORDER BY l.created_at DESC`
 
 		rows, err := db.Query(query, googleMapsSource)
 		require.NoError(t, err)
@@ -843,11 +843,11 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 		// Verify the lists are returned
 		foundList1, foundList2 := false, false
 		for _, list := range lists {
-			switch list.SyncID {
-			case sourceID1:
+			switch list.ID {
+			case list1ID:
 				foundList1 = true
 				assert.Equal(t, "Test List 1", list.Name)
-			case sourceID2:
+			case list2ID:
 				foundList2 = true
 				assert.Equal(t, "Test List 2", list.Name)
 			}
@@ -858,11 +858,11 @@ func TestListRepository_GetListsBySource(t *testing.T) {
 
 	t.Run("no lists", func(t *testing.T) {
 		// Use direct SQL for the test instead of the repository
-		query := fmt.Sprintf(`
+		query := `
 			SELECT COUNT(*)
 			FROM lists
 			WHERE sync_source = $1
-				AND deleted_at IS NULL`)
+				AND deleted_at IS NULL`
 
 		var count int
 		err := db.QueryRow(query, unknownSource).Scan(&count)
@@ -1310,10 +1310,11 @@ func TestListRepository_GetUserLists(t *testing.T) {
 		// Verify the lists are the ones we expect
 		var foundList1, foundList2 bool
 		for _, list := range lists {
-			if list.ID == list1ID {
+			switch list.ID {
+			case list1ID:
 				foundList1 = true
 				assert.Equal(t, list1Name, list.Name)
-			} else if list.ID == list2ID {
+			case list2ID:
 				foundList2 = true
 				assert.Equal(t, list2Name, list.Name)
 			}

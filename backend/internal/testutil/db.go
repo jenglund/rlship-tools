@@ -86,35 +86,6 @@ func getPostgresConnection(dbName string) string {
 		host, port, user, password, dbName, sslMode)
 }
 
-// cleanupDatabase is now cleanupSchema and removes a schema instead of a database
-func cleanupDatabase(schemaName string) {
-	if schemaName == "" {
-		return
-	}
-
-	// Connect to database
-	dbName := os.Getenv("POSTGRES_DB")
-	if dbName == "" {
-		dbName = "postgres"
-	}
-
-	db, err := sql.Open("postgres", getPostgresConnection(dbName))
-	if err != nil {
-		return // Can't clean up if we can't connect
-	}
-	defer safeClose(db)
-
-	// Create a context with timeout to prevent hanging
-	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
-	defer cancel()
-
-	// Drop the schema
-	_, err = db.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
-	if err != nil {
-		log.Printf("Error dropping schema %s: %v", schemaName, err)
-	}
-}
-
 // safeClose helper for testutil package
 func safeClose(c interface{}) {
 	var err error
@@ -315,7 +286,7 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	t.Helper()
 
 	// Create a unique schema name for this test
-	schemaName := fmt.Sprintf("test_%s", strings.Replace(uuid.New().String(), "-", "_", -1))
+	schemaName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
 	t.Logf("SetupTestDB: Setting current test schema to %s", schemaName)
 
 	// Connect to the database

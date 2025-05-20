@@ -413,7 +413,7 @@ func TestSchemaHandling(t *testing.T) {
 		assert.Equal(t, schemaName, txSchema, "Transaction should have correct schema")
 
 		// Execute a simple query in the transaction with schema qualification
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("CREATE TEMPORARY TABLE test_tx (id INT)"))
+		_, err = tx.ExecContext(ctx, "CREATE TEMPORARY TABLE test_tx (id INT)")
 		require.NoError(t, err)
 
 		// Commit the transaction
@@ -455,7 +455,7 @@ func TestSchemaHandling(t *testing.T) {
 		assert.Equal(t, schemaName, txSchema, "Transaction should have correct schema")
 
 		// Execute a query that will be rolled back, using schema qualification
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("CREATE TEMPORARY TABLE test_rollback (id INT)"))
+		_, err = tx.ExecContext(ctx, "CREATE TEMPORARY TABLE test_rollback (id INT)")
 		require.NoError(t, err)
 
 		// Explicitly roll back the transaction
