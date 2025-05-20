@@ -1,6 +1,8 @@
 package testutil
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/stretchr/testify/mock"
@@ -113,8 +115,24 @@ func (m *MockListRepository) GetUserLists(userID uuid.UUID) ([]*models.List, err
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
+func (m *MockListRepository) GetUserListsWithContext(ctx context.Context, userID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
 func (m *MockListRepository) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
 	args := m.Called(tribeID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.List), args.Error(1)
+}
+
+func (m *MockListRepository) GetTribeListsWithContext(ctx context.Context, tribeID uuid.UUID) ([]*models.List, error) {
+	args := m.Called(ctx, tribeID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

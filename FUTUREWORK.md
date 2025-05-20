@@ -207,7 +207,19 @@ Recently implemented a "pending" status for tribe members who have been invited 
 
 ## Backend Development Priorities
 
-1. **Enhance Database Operations**
+1. **Enhance Database Schema Isolation and Test Stability**
+   - Extend the context-aware schema management approach to all repository methods
+   - Improve the transaction manager to better handle concurrent operations
+   - Add cleanup mechanisms to ensure schemas are properly isolated and cleaned up between tests
+   - Fix remaining failing tests related to schema isolation:
+     - `TestDatabaseOperations/concurrent_operations`
+     - `TestSchemaHandling/transaction_schema_handling`
+     - `TestSchemaHandling/transaction_rollback_schema_handling`
+     - `TestTestingInfrastructure/Test_data_generation`
+   - Consider using dependency injection instead of global variables for test configuration
+   - Add better logging and error tracking for database operations to aid debugging
+
+2. **Enhance Database Operations**
    - Add transaction boundaries for multi-step operations
    - Improve error handling and reporting
    - Add database constraints (unique tribe names, etc.)
@@ -217,27 +229,26 @@ Recently implemented a "pending" status for tribe members who have been invited 
    - Improve schema and search path handling in all repository methods
    - Address errors in TestDatabaseOperations tests related to context cancellation
 
-2. **API Enhancements**
+3. **API Enhancements**
    - Implement comprehensive request validation
    - Add consistent error handling patterns
    - Improve API documentation
    - **NEW**: Add endpoints to support the authentication and tribe viewing flow
 
-3. **Authentication Implementation**
+4. **Authentication Implementation**
    - Replace development authentication with proper Firebase authentication
    - Set up Firebase project with appropriate security rules
    - Configure Firebase authentication for both web and mobile clients
    - Implement proper error handling for authentication failures
    - Add user session management and token refresh functionality
 
-4. **Improve Test Coverage**
-   - Fix skipped tests in List Repository
+5. **Improve Test Coverage**
    - Increase service layer test coverage (currently at 78.6%)
    - Add tests for sync-related models (currently 0% coverage)
-   - Address transaction-related test issues that cause some tests to be skipped
+   - Improve the mock repository implementations to increase test coverage
    - Improve the database test utilities to better handle connection lifecycle
 
-5. **Advanced Features**
+6. **Advanced Features**
    - Implement per-tribe display names
    - Enhance list synchronization with external sources (Google Maps)
    - Support for advanced interest indicators and scheduling

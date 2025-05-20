@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -17,6 +18,22 @@ func setupTestWithSchema(t *testing.T) (*testutil.SchemaDB, func()) {
 
 	// Setup test database with schema
 	schemaDB := testutil.SetupTestDB(t)
+	schemaName := schemaDB.GetSchemaName()
+
+	// Get the schema context from registry or create a new one
+	var schemaCtx *testutil.SchemaContext
+	if ctx := testutil.GetSchemaContext(schemaName); ctx != nil {
+		schemaCtx = ctx
+	} else {
+		// Create a new schema context and register it
+		schemaCtx = testutil.NewSchemaContext(schemaName)
+		testutil.SchemaContextMutex.Lock()
+		testutil.SchemaContexts[schemaName] = schemaCtx
+		testutil.SchemaContextMutex.Unlock()
+	}
+
+	// Log for debugging
+	t.Logf("setupTestWithSchema: Using schema %s with context", schemaName)
 
 	// Create a teardown function
 	teardown := func() {
@@ -30,6 +47,16 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 	// Use our custom setup function
 	schemaDB, teardown := setupTestWithSchema(t)
 	defer teardown()
+
+	// Get schema context for testing
+	schemaName := schemaDB.GetSchemaName()
+	schemaCtx := testutil.GetSchemaContext(schemaName)
+	if schemaCtx == nil {
+		t.Fatalf("Schema context not found for schema %s", schemaName)
+	}
+
+	// Use the context with schema information
+	testCtx := schemaCtx.WithContext(context.Background())
 
 	// Get raw DB for repository constructors
 	rawDB := testutil.UnwrapDB(schemaDB)
@@ -338,6 +365,13 @@ func TestListRepository_ShareWithTribe(t *testing.T) {
 		err := listRepo.ShareWithTribe(share)
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, models.ErrInvalidInput)
+	})
+
+	// Verify context usage works
+	t.Run("verify context with schema", func(t *testing.T) {
+		// Perform a simple read operation using the context
+		_, err := listRepo.GetTribeListsWithContext(testCtx, tribe.ID)
+		require.NoError(t, err, "Should be able to call repo methods with schema context")
 	})
 }
 

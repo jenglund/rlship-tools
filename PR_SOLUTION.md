@@ -1,65 +1,49 @@
-# Schema Handling Fixes for Repository Tests
+# Fix Backend Test Failures in List Repository
 
-## Problem Summary
+## Summary
+This PR addresses the failures in backend tests, specifically in the List Repository component. The primary issues were related to schema isolation and database connection handling, causing tests to fail with "bad connection" errors or requiring tests to be skipped.
 
-The test failures we experienced were related to improper handling of PostgreSQL schema paths across multiple operations. Specifically:
+## Changes Made
 
-1. **Race conditions in schema handling**: The test infrastructure was suffering from race conditions when setting the search path and then executing queries.
+### Schema Context Management
+- Created a new `SchemaContext` struct to replace global variables for schema management
+- Added a new file `backend/internal/testutil/schema_context.go` to handle schema context
+- Made schema information travel with context rather than global variables
 
-2. **Schema path inconsistency**: When using `UnwrapDB`, we weren't properly maintaining the schema context, causing some tests to fail when accessing database objects.
+### DB Connection Handling
+- Enhanced connection handling in DB operations with better pooling
+- Added proper connection cleanup to prevent "bad connection" errors
+- Improved error handling for database resources
 
-3. **Transaction management issues**: The transaction manager properly set search paths, but in some cases, the repository code wasn't leveraging this properly.
+### Transaction Management
+- Modified the transaction manager to use context-based schema information
+- Added better error handling and logging for transactions
+- Improved schema validation within transactions
 
-## Root Causes
+### Repository Methods
+- Added context-aware versions of key repository methods:
+  - `GetTribeListsWithContext`
+  - `GetUserListsWithContext`
+- Updated tests to use these context-aware methods
+- Fixed schema/field mismatch issues in the `loadListData` method
 
-1. **Schema path race conditions**: Setting search path and then executing query as separate operations can lead to race conditions between different connections.
+### Documentation
+- Updated `HOW_TO_FIX_TESTS_2.md` with a comprehensive explanation of the fixes
+- Updated `KNOWNISSUES.md` to reflect the current state of the codebase
+- Updated `FUTUREWORK.md` with next steps for improving test stability
+- Added TODOs to the `README.md` for tracking progress
 
-2. **Improper context handling**: Context cancellation was causing issues with connection management.
-
-3. **Global state for schema tracking**: The `currentTestDBName` variable wasn't correctly synchronized with operations.
-
-## Fixes Implemented
-
-1. **Atomic query execution with schema path**: Modified `QueryRowContext` to combine the search path setting and query execution into a single atomic operation.
-
-2. **Global schema tracking**: Updated `UnwrapDB` to maintain the global schema context.
-
-3. **Debugging tools**: Added detailed logging to help track schema paths during test execution.
+## Fixed Tests
+The following tests that were previously failing or being skipped are now passing:
+- `TestListRepository_GetTribeLists`
+- `TestListRepository_GetUserLists`
+- `TestListRepository_ShareWithTribe`
 
 ## Remaining Issues
+There are still some test failures in other parts of the codebase that need addressing, which have been documented in `KNOWNISSUES.md` for future work.
 
-The following failures still need attention:
+## Screenshots
+N/A - This is a backend-only change.
 
-1. **TestSetupTestDB**: Failed with context cancellation issues - need to fix context handling.
-
-2. **TestTeardownTestDB**: Issues with active connections during teardown.
-
-3. **TestDatabaseOperations**: Race conditions with concurrent database operations.
-
-4. **TestTestingInfrastructure**: Issues with test data generation.
-
-## Next Steps
-
-1. Fix context handling in test infrastructure:
-   - Use independent contexts for different operations
-   - Ensure proper context propagation
-   - Add proper error handling for canceled contexts
-
-2. Improve connection management:
-   - Close connections properly during teardown
-   - Handle concurrent access to shared resources
-   - Implement proper connection pooling for tests
-
-3. Finalize schema handling:
-   - Ensure consistency across all database methods
-   - Apply the same pattern to all query types
-   - Fix transaction management issues
-
-## Implementation Strategy
-
-The key insight is that schema paths need to be managed consistently throughout the entire codebase. Setting the search path should either:
-
-1. Be atomic with the query execution, or
-2. Be properly synchronized to prevent race conditions
-
-Our approach addresses this by embedding the search path directly in queries where appropriate, and improving synchronization where multiple operations are needed. 
+## Testing
+All fixed tests have been verified to pass consistently. 

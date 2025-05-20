@@ -67,11 +67,19 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 	var err error
 	var tx *sql.Tx
 
-	// Determine if we're using a test schema
+	// Determine schema context:
+	// 1. First try to get it from the context
+	// 2. Then fall back to global test schema for backward compatibility
 	var testSchema string
-	if currentSchema := testutil.GetCurrentTestSchema(); currentSchema != "" {
+
+	// Check for schema in the context first
+	if schemaFromCtx := testutil.GetSchemaFromContext(ctx); schemaFromCtx != "" {
+		testSchema = schemaFromCtx
+		fmt.Printf("WithTransaction: Using schema from context: %s\n", testSchema)
+	} else if currentSchema := testutil.GetCurrentTestSchema(); currentSchema != "" {
+		// Fall back to global variable for backward compatibility
 		testSchema = currentSchema
-		fmt.Printf("WithTransaction: Using test schema: %s\n", testSchema)
+		fmt.Printf("WithTransaction: Using test schema from global: %s\n", testSchema)
 	}
 
 	for attempt := 0; attempt <= opts.MaxRetries; attempt++ {
@@ -103,7 +111,7 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		}
 
 		// Priority for search_path:
-		// 1. If we're in a test with a test schema, use that
+		// 1. If we have a test schema (either from context or global), use that
 		// 2. Otherwise, get the current search_path from the connection
 		if testSchema != "" {
 			// We're running in a test, set the test schema

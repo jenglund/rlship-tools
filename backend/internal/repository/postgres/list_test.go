@@ -1,9 +1,9 @@
 package postgres
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -963,9 +963,30 @@ func TestListRepository_UnshareWithTribe(t *testing.T) {
 }
 
 func TestListRepository_GetUserLists(t *testing.T) {
-	db := setupTestDB(t)
-	repo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
+	// Use setupTestWithSchema to ensure consistent schema context
+	schemaDB, teardown := setupTestWithSchema(t)
+	defer teardown()
+
+	// Get the schema context for this test
+	schemaName := schemaDB.GetSchemaName()
+	schemaCtx := testutil.GetSchemaContext(schemaName)
+	if schemaCtx == nil {
+		// Create if not found
+		schemaCtx = testutil.NewSchemaContext(schemaName)
+		testutil.SchemaContextMutex.Lock()
+		testutil.SchemaContexts[schemaName] = schemaCtx
+		testutil.SchemaContextMutex.Unlock()
+	}
+
+	// Create a context with schema information
+	testCtx := schemaCtx.WithContext(context.Background())
+
+	// Get raw DB for repository constructors
+	rawDB := testutil.UnwrapDB(schemaDB)
+
+	repo := NewListRepository(rawDB)
+	userRepo := NewUserRepository(rawDB)
+	tribeRepo := NewTribeRepository(rawDB)
 
 	// Create test users
 	user1 := &models.User{
@@ -986,13 +1007,28 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	err = userRepo.Create(user2)
 	require.NoError(t, err)
 
+	// Create test tribes
+	tribe1 := &models.Tribe{
+		Name:        "Test Tribe 1 " + uuid.New().String()[:8],
+		Description: "Test tribe for GetUserLists",
+		Type:        models.TribeTypeCouple,
+		Visibility:  models.VisibilityPrivate,
+		Metadata:    models.JSONMap{},
+	}
+	err = tribeRepo.Create(tribe1)
+	require.NoError(t, err)
+
+	// Add user to tribe
+	err = tribeRepo.AddMember(tribe1.ID, user1.ID, models.MembershipFull, nil, nil)
+	require.NoError(t, err)
+
 	// Create test lists directly with SQL to avoid transaction issues
 	now := time.Now()
 
 	// List 1 - For user1
 	list1ID := uuid.New()
 	list1Name := "User1 List 1"
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1015,7 +1051,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list1
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list1ID, user1.ID, models.OwnerTypeUser, now, now,
@@ -1025,7 +1061,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	// List 2 - For user1
 	list2ID := uuid.New()
 	list2Name := "User1 List 2"
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1048,7 +1084,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list2
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list2ID, user1.ID, models.OwnerTypeUser, now, now,
@@ -1058,7 +1094,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	// List 3 - For user2
 	list3ID := uuid.New()
 	list3Name := "User2 List"
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1081,7 +1117,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list3
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list3ID, user2.ID, models.OwnerTypeUser, now, now,
@@ -1092,7 +1128,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	list4ID := uuid.New()
 	list4Name := "User1 Deleted List"
 	deletedAt := now.Add(time.Hour)
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1115,7 +1151,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list4
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list4ID, user1.ID, models.OwnerTypeUser, now, now,
@@ -1123,7 +1159,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify directly with SQL first
-	t.Run("verify sql query directly", func(t *testing.T) {
+	t.Run("verify_sql_query_directly", func(t *testing.T) {
 		// Execute the core SQL query from GetUserLists manually
 		query := `
 			SELECT DISTINCT l.id, l.name, l.created_at
@@ -1136,7 +1172,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 			ORDER BY l.created_at DESC`
 
 		// Check user1 lists
-		rows, err := db.Query(query, user1.ID)
+		rows, err := rawDB.Query(query, user1.ID)
 		require.NoError(t, err)
 		defer safeClose(rows)
 
@@ -1180,7 +1216,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 		assert.False(t, foundList4, "found deleted list4")
 
 		// Check user2 lists
-		rows, err = db.Query(query, user2.ID)
+		rows, err = rawDB.Query(query, user2.ID)
 		require.NoError(t, err)
 		defer safeClose(rows)
 
@@ -1209,7 +1245,7 @@ func TestListRepository_GetUserLists(t *testing.T) {
 
 		// Check non-existent user (should return empty)
 		randomUserID := uuid.New()
-		rows, err = db.Query(query, randomUserID)
+		rows, err = rawDB.Query(query, randomUserID)
 		require.NoError(t, err)
 		defer safeClose(rows)
 
@@ -1236,14 +1272,9 @@ func TestListRepository_GetUserLists(t *testing.T) {
 	})
 
 	// Test the actual repository method
-	t.Run("test repository method", func(t *testing.T) {
-		// Get lists for user1
-		lists, err := repo.GetUserLists(user1.ID)
-		// If we get an error related to transactions, we'll skip rather than fail
-		if err != nil && (strings.Contains(err.Error(), "unexpected Parse response") ||
-			strings.Contains(err.Error(), "error loading list")) {
-			t.Skip("Skipping due to known transaction issues in the test environment")
-		}
+	t.Run("test_repository_method", func(t *testing.T) {
+		// Get lists for user1 using the context-aware method
+		lists, err := repo.GetUserListsWithContext(testCtx, user1.ID)
 		require.NoError(t, err)
 
 		// User1 should have 2 active lists
@@ -1266,13 +1297,57 @@ func TestListRepository_GetUserLists(t *testing.T) {
 		assert.True(t, foundList2, "didn't find list2")
 		assert.False(t, foundList4, "found deleted list4")
 	})
+
+	t.Run("test_context_method", func(t *testing.T) {
+		// Use the context-aware method with our test context
+		lists, err := repo.GetUserListsWithContext(testCtx, user1.ID)
+		require.NoError(t, err)
+
+		// Verify we get the expected number of lists
+		assert.Len(t, lists, 2, "User1 should have 2 lists (list1 and list2)")
+
+		// Verify the lists are the ones we expect
+		var foundList1, foundList2 bool
+		for _, list := range lists {
+			if list.ID == list1ID {
+				foundList1 = true
+				assert.Equal(t, list1Name, list.Name)
+			} else if list.ID == list2ID {
+				foundList2 = true
+				assert.Equal(t, list2Name, list.Name)
+			}
+		}
+
+		assert.True(t, foundList1, "did not find list1")
+		assert.True(t, foundList2, "did not find list2")
+	})
 }
 
 func TestListRepository_GetTribeLists(t *testing.T) {
-	db := setupTestDB(t)
-	repo := NewListRepository(db)
-	userRepo := NewUserRepository(db)
-	tribeRepo := NewTribeRepository(db)
+	// Use setupTestWithSchema to ensure consistent schema context
+	schemaDB, teardown := setupTestWithSchema(t)
+	defer teardown()
+
+	// Get the schema context for this test
+	schemaName := schemaDB.GetSchemaName()
+	schemaCtx := testutil.GetSchemaContext(schemaName)
+	if schemaCtx == nil {
+		// Create if not found
+		schemaCtx = testutil.NewSchemaContext(schemaName)
+		testutil.SchemaContextMutex.Lock()
+		testutil.SchemaContexts[schemaName] = schemaCtx
+		testutil.SchemaContextMutex.Unlock()
+	}
+
+	// Create a context with schema information for repository methods
+	testCtx := schemaCtx.WithContext(context.Background())
+
+	// Get raw DB for repository constructors
+	rawDB := testutil.UnwrapDB(schemaDB)
+
+	repo := NewListRepository(rawDB)
+	userRepo := NewUserRepository(rawDB)
+	tribeRepo := NewTribeRepository(rawDB)
 
 	// Create test users
 	user1 := &models.User{
@@ -1311,7 +1386,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	// List 1 - Owned by tribe1
 	list1ID := uuid.New()
 	list1Name := "Tribe1 Owned List"
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1334,7 +1409,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list1
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list1ID, tribe1.ID, models.OwnerTypeTribe, now, now,
@@ -1344,7 +1419,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	// List 2 - Shared with tribe1 (owned by user1)
 	list2ID := uuid.New()
 	list2Name := "User1 List Shared with Tribe1"
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1367,7 +1442,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list2
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list2ID, user1.ID, models.OwnerTypeUser, now, now,
@@ -1375,7 +1450,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add share entry for list2 with tribe1
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_sharing (list_id, tribe_id, user_id, created_at, updated_at, version)
 		VALUES ($1, $2, $3, $4, $5, $6)`,
 		list2ID, tribe1.ID, user1.ID, now, now, 1,
@@ -1385,7 +1460,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	// List 3 - Owned by tribe2
 	list3ID := uuid.New()
 	list3Name := "Tribe2 Owned List"
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1408,7 +1483,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list3
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list3ID, tribe2.ID, models.OwnerTypeTribe, now, now,
@@ -1419,7 +1494,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	list4ID := uuid.New()
 	list4Name := "Tribe1 Deleted List"
 	deletedAt := now.Add(time.Hour)
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO lists (
 			id, type, name, description, visibility,
 			sync_status, sync_source, sync_id,
@@ -1442,7 +1517,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Add owner entry for list4
-	_, err = db.Exec(`
+	_, err = rawDB.Exec(`
 		INSERT INTO list_owners (list_id, owner_id, owner_type, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5)`,
 		list4ID, tribe1.ID, models.OwnerTypeTribe, now, now,
@@ -1450,7 +1525,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify directly with SQL first
-	t.Run("verify sql query directly", func(t *testing.T) {
+	t.Run("verify_sql_query_directly", func(t *testing.T) {
 		// Execute the core SQL query from GetTribeLists manually
 		query := `
 			SELECT DISTINCT l.id, l.name, l.created_at
@@ -1463,7 +1538,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 			ORDER BY l.created_at DESC`
 
 		// Check tribe1 lists
-		rows, err := db.Query(query, tribe1.ID)
+		rows, err := rawDB.Query(query, tribe1.ID)
 		require.NoError(t, err)
 		defer safeClose(rows)
 
@@ -1507,7 +1582,7 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 		assert.False(t, foundList4, "found deleted list4")
 
 		// Check tribe2 lists
-		rows, err = db.Query(query, tribe2.ID)
+		rows, err = rawDB.Query(query, tribe2.ID)
 		require.NoError(t, err)
 		defer safeClose(rows)
 
@@ -1536,14 +1611,9 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 	})
 
 	// Now test the actual repository method
-	t.Run("test repository method", func(t *testing.T) {
-		// Get lists for tribe1
-		lists, err := repo.GetTribeLists(tribe1.ID)
-		// If we get an error related to transactions, we'll skip rather than fail
-		if err != nil && (strings.Contains(err.Error(), "unexpected Parse response") ||
-			strings.Contains(err.Error(), "error loading list")) {
-			t.Skip("Skipping due to known transaction issues in the test environment")
-		}
+	t.Run("test_repository_method", func(t *testing.T) {
+		// Get lists for tribe1 using the context-aware method
+		lists, err := repo.GetTribeListsWithContext(testCtx, tribe1.ID)
 		require.NoError(t, err)
 
 		// Should find 2 lists (1 owned, 1 shared)
@@ -1564,6 +1634,13 @@ func TestListRepository_GetTribeLists(t *testing.T) {
 		assert.True(t, foundList1, "didn't find list1")
 		assert.True(t, foundList2, "didn't find list2")
 		assert.False(t, foundList4, "found deleted list4")
+	})
+
+	t.Run("get_lists_owned_by_or_shared_with_tribe", func(t *testing.T) {
+		// Use testCtx for repository call with explicit schema context
+		lists, err := repo.GetTribeListsWithContext(testCtx, tribe1.ID)
+		require.NoError(t, err)
+		assert.Len(t, lists, 2, "Tribe1 should have 2 lists (1 owned, 1 shared)")
 	})
 }
 

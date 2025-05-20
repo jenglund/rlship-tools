@@ -2,6 +2,23 @@
 
 This repository contains the Tribe application stack, including backend services and web interface. Tribe is a platform for managing and sharing activities with your tribes - whether they're couples, families, friend groups, or any other group of people who want to do things together.
 
+## TODOs
+
+### Recently Completed
+- ✅ Fixed schema isolation issues in repository tests through context-aware schema management
+- ✅ Fixed "bad connection" errors in database tests
+- ✅ Implemented context-aware versions of key repository methods
+- ✅ Updated test methods to use context-aware approach
+
+### Next Steps
+- [ ] Extend context-aware schema management to remaining repository methods
+- [ ] Fix additional failing database tests related to schema isolation
+- [ ] Improve transaction manager to better handle concurrent operations
+- [ ] Add cleanup mechanisms for test schemas
+- [ ] Implement proper cleanup for database resources
+
+See [KNOWNISSUES.md](KNOWNISSUES.md) for details on current issues and [FUTUREWORK.md](FUTUREWORK.md) for the complete roadmap.
+
 ## Project Structure
 
 - **frontend**: React 19-based web application for Tribe

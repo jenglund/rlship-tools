@@ -27,10 +27,27 @@ var (
 	testDBsMutex      sync.Mutex // Mutex to protect testDBs
 	currentTestDBName string
 	currentDBMutex    sync.Mutex // Mutex to protect currentTestDBName
+
+	// Registry of active schema contexts for test isolation
+	SchemaContexts     map[string]*SchemaContext // Exported for direct access
+	SchemaContextMutex sync.Mutex                // Exported for direct access
 )
+
+// Initialize the schema contexts map
+func init() {
+	SchemaContexts = make(map[string]*SchemaContext)
+}
 
 // Default timeout for database operations to prevent test hangs
 var defaultQueryTimeout = 10 * time.Second
+
+// DB connection pool settings for tests
+var (
+	// Tests tend to have many short-lived transactions, so we need a decent pool size
+	maxOpenConns = 10              // How many connections can be open at once
+	maxIdleConns = 5               // How many idle connections to maintain in the pool
+	connLifetime = 5 * time.Minute // How long a connection can live before being recycled
+)
 
 // getPostgresConnection returns the connection string for the Postgres database
 func getPostgresConnection(dbName string) string {
@@ -269,51 +286,65 @@ func runMigrations(t *testing.T, dbName, schemaName, migrationsPath string) erro
 	return nil
 }
 
+// NewConnectionFromUrl creates a new database connection from a URL string
+func NewConnectionFromUrl(dbUrl string) (*sql.DB, error) {
+	db, err := sql.Open("postgres", dbUrl)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// Configure connection pool for better stability in tests
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetConnMaxLifetime(connLifetime)
+
+	// Verify connection
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return db, nil
+}
+
 // SetupTestDB creates a test schema and runs migrations
 func SetupTestDB(t *testing.T) *SchemaDB {
 	t.Helper()
 
-	// Create a unique test schema name
-	schemaName := fmt.Sprintf("test_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+	// Create a unique schema name for this test
+	schemaName := fmt.Sprintf("test_%s", strings.Replace(uuid.New().String(), "-", "_", -1))
+	t.Logf("SetupTestDB: Setting current test schema to %s", schemaName)
 
-	// Store current schema name for cleanup - with mutex protection
+	// Connect to the database
+	connString := GetTestDBConnectionString()
+	t.Logf("Connecting to Postgres with DB: %s", getDatabaseNameFromConnString(connString))
+
+	db, err := NewConnectionFromUrl(connString)
+	if err != nil {
+		t.Fatalf("Error connecting to Postgres: %v", err)
+	}
+	t.Logf("Successfully connected to Postgres, creating schema: %s", schemaName)
+
+	// Set schema search path and ensure it's applied
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
+	// Create a schema context for this test
+	schemaCtx := NewSchemaContext(schemaName)
+
+	// Register the schema context - with mutex protection
+	SchemaContextMutex.Lock()
+	SchemaContexts[schemaName] = schemaCtx
+	SchemaContextMutex.Unlock()
+
+	// For backward compatibility, also set the global variable
 	currentDBMutex.Lock()
 	currentTestDBName = schemaName
 	fmt.Printf("SetupTestDB: Setting current test schema to %s\n", schemaName)
 	currentDBMutex.Unlock()
-
-	// Connect to existing database
-	dbName := os.Getenv("POSTGRES_DB")
-	if dbName == "" || dbName == "test" {
-		dbName = "postgres"
-	}
-
-	// Debug logging
-	t.Logf("Connecting to Postgres with DB: %s", dbName)
-
-	db, err := sql.Open("postgres", getPostgresConnection(dbName))
-	if err != nil {
-		panic(fmt.Sprintf("Error connecting to postgres: %v", err))
-	}
-
-	// Set connection limit to avoid exhausting connection pool
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(1 * time.Minute)
-
-	// Create context with timeout for all database operations
-	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
-	defer cancel()
-
-	// Ensure we can connect
-	if err = db.PingContext(ctx); err != nil {
-		safeClose(db)
-		panic(fmt.Sprintf("Error pinging database: %v", err))
-	}
-
-	// Debug logging
-	t.Logf("Successfully connected to Postgres, creating schema: %s", schemaName)
 
 	// Create test schema
 	_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pq.QuoteIdentifier(schemaName)))
@@ -358,7 +389,7 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 	}
 
 	// Run migrations with improved error handling
-	if err := runMigrations(t, dbName, schemaName, migrationsPath); err != nil {
+	if err := runMigrations(t, getDatabaseNameFromConnString(connString), schemaName, migrationsPath); err != nil {
 		safeClose(db)
 		panic(fmt.Sprintf("Error running migrations: %v", err))
 	}
@@ -377,10 +408,11 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 
 	// Create wrapped DB with schema handling
 	wrappedDB := &SchemaDB{
-		DB:         db,
-		schemaName: schemaName,
-		timeout:    defaultQueryTimeout,
-		mu:         sync.Mutex{}, // Initialize mutex
+		DB:            db,
+		schemaName:    schemaName,
+		schemaContext: schemaCtx,
+		timeout:       defaultQueryTimeout,
+		mu:            sync.Mutex{}, // Initialize mutex
 	}
 
 	// Add test schema to list for cleanup - with mutex protection
@@ -394,9 +426,10 @@ func SetupTestDB(t *testing.T) *SchemaDB {
 // SchemaDB wraps a *sql.DB to ensure the search path is set for all operations
 type SchemaDB struct {
 	*sql.DB
-	schemaName string
-	timeout    time.Duration
-	mu         sync.Mutex // Add a mutex for thread safety
+	schemaName    string
+	schemaContext *SchemaContext // Added schema context reference
+	timeout       time.Duration
+	mu            sync.Mutex // Add a mutex for thread safety
 }
 
 // SetSearchPath sets the search path for the current connection
@@ -575,6 +608,87 @@ func (db *SchemaDB) Close() error {
 	return db.DB.Close()
 }
 
+// TeardownTestDB cleans up the test schema
+func TeardownTestDB(t *testing.T, db *SchemaDB) {
+	t.Helper()
+
+	if db == nil {
+		return
+	}
+
+	// Get schema name from the SchemaDB
+	schemaName := db.GetSchemaName()
+
+	if schemaName == "" {
+		return
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
+	defer cancel()
+
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
+	// Clean up schema
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
+	db.mu.Unlock()
+
+	if err != nil {
+		t.Logf("Error dropping test schema: %v", err)
+	}
+
+	// Close the database connection
+	safeClose(db.DB)
+
+	// Remove the schema context from the registry
+	SchemaContextMutex.Lock()
+	delete(SchemaContexts, schemaName)
+	SchemaContextMutex.Unlock()
+
+	// For backward compatibility, clear the global variable
+	currentDBMutex.Lock()
+	if currentTestDBName == schemaName {
+		currentTestDBName = ""
+	}
+	currentDBMutex.Unlock()
+}
+
+// GetCurrentTestSchema returns the name of the current test schema
+// This is an enhanced version that can look up schema contexts from registry
+func GetCurrentTestSchema() string {
+	// First, try to look up from the global variable (for backward compatibility)
+	currentDBMutex.Lock()
+	schema := currentTestDBName
+	currentDBMutex.Unlock()
+
+	if schema != "" {
+		return schema
+	}
+
+	// If not found, see if we can determine schema from active contexts
+	// This is more robust for parallel tests
+	SchemaContextMutex.Lock()
+	defer SchemaContextMutex.Unlock()
+
+	// If there's only one active schema context, use that
+	if len(SchemaContexts) == 1 {
+		for _, ctx := range SchemaContexts {
+			return ctx.GetSchemaName()
+		}
+	}
+
+	// Otherwise return empty - caller will need to provide context explicitly
+	return ""
+}
+
+// GetSchemaContext returns the schema context for the given schema name
+func GetSchemaContext(schemaName string) *SchemaContext {
+	SchemaContextMutex.Lock()
+	defer SchemaContextMutex.Unlock()
+
+	return SchemaContexts[schemaName]
+}
+
 // UnwrapDB sets the search path and returns a raw DB connection
 // This function is for backward compatibility
 func UnwrapDB(db *SchemaDB) *sql.DB {
@@ -588,10 +702,20 @@ func UnwrapDB(db *SchemaDB) *sql.DB {
 
 	// Lock to prevent concurrent schema changes
 	db.mu.Lock()
-	// Store the schema name in the global variable so it can be retrieved when needed
-	// This must be done BEFORE calling db.DB.ExecContext to avoid race conditions
-	currentDBMutex.Lock()
+
+	// Store the schema information
 	schemaName := db.schemaName
+
+	// Update schema registry with this schema
+	SchemaContextMutex.Lock()
+	if db.schemaContext == nil {
+		db.schemaContext = NewSchemaContext(schemaName)
+		SchemaContexts[schemaName] = db.schemaContext
+	}
+	SchemaContextMutex.Unlock()
+
+	// For backward compatibility
+	currentDBMutex.Lock()
 	currentTestDBName = schemaName
 	currentDBMutex.Unlock()
 
@@ -623,66 +747,14 @@ func UnwrapDB(db *SchemaDB) *sql.DB {
 	return db.DB
 }
 
-// UnwrapDB returns the underlying *sql.DB with the search path properly set
-func (db *SchemaDB) UnwrapDB() *sql.DB {
-	return UnwrapDB(db)
-}
-
 // GetSchemaName returns the schema name for this database connection
 func (db *SchemaDB) GetSchemaName() string {
 	return db.schemaName
 }
 
-// TeardownTestDB cleans up the test schema
-func TeardownTestDB(t *testing.T, db *SchemaDB) {
-	t.Helper()
-
-	if db == nil {
-		return
-	}
-
-	// Protect access to schema name
-	currentDBMutex.Lock()
-	schemaName := ""
-	if db != nil {
-		schemaName = db.GetSchemaName()
-	}
-	currentDBMutex.Unlock()
-
-	if schemaName == "" {
-		return
-	}
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), defaultQueryTimeout)
-	defer cancel()
-
-	// Lock to prevent concurrent schema changes
-	db.mu.Lock()
-	// Clean up schema
-	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pq.QuoteIdentifier(schemaName)))
-	db.mu.Unlock()
-
-	if err != nil {
-		t.Logf("Error dropping test schema: %v", err)
-	}
-
-	// Close the database connection
-	safeClose(db.DB)
-
-	// Clear the current test schema name
-	currentDBMutex.Lock()
-	if currentTestDBName == schemaName {
-		currentTestDBName = ""
-	}
-	currentDBMutex.Unlock()
-}
-
-// GetCurrentTestSchema returns the name of the current test schema
-func GetCurrentTestSchema() string {
-	currentDBMutex.Lock()
-	defer currentDBMutex.Unlock()
-	return currentTestDBName
+// UnwrapDB returns the underlying *sql.DB with the search path properly set
+func (db *SchemaDB) UnwrapDB() *sql.DB {
+	return UnwrapDB(db)
 }
 
 // GetDB returns a *sql.DB from any supported DB type (for backward compatibility)
@@ -695,4 +767,24 @@ func GetDB(db interface{}) *sql.DB {
 	default:
 		panic(fmt.Sprintf("Unsupported DB type: %T", db))
 	}
+}
+
+// GetTestDBConnectionString returns the connection string for the test database
+func GetTestDBConnectionString() string {
+	dbName := os.Getenv("POSTGRES_DB")
+	if dbName == "" || dbName == "test" {
+		dbName = "postgres"
+	}
+	return getPostgresConnection(dbName)
+}
+
+// getDatabaseNameFromConnString extracts the database name from a connection string
+func getDatabaseNameFromConnString(connString string) string {
+	parts := strings.Split(connString, "/")
+	if len(parts) < 4 {
+		return "postgres" // Default if we can't parse
+	}
+	dbNameWithParams := parts[3]
+	dbNameParts := strings.Split(dbNameWithParams, "?")
+	return dbNameParts[0]
 }

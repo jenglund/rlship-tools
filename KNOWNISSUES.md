@@ -35,15 +35,15 @@ This document tracks the current known issues in the Tribe project that need to 
 - **`govet shadow` errors**: The linter has identified 46 instances of variable shadowing across the backend codebase.
 - **Resolution Decision**: We've decided to keep the `govet shadow` linter disabled for the time being. This is a low-impact issue that would require significant time and resources to address for minimal reward.
 
-### Test Coverage Gaps
-- Some repository methods have skipped tests due to transaction-related challenges:
-  - `TestListRepository_GetUserLists/test_repository_method`
-  - `TestListRepository_GetTribeLists/test_repository_method`
-  - `TestListRepository_GetSharedLists`
-  - `TestListRepository_ShareWithTribe/update_existing`
-  - `TestListRepository_GetListShares/multiple_versions`
-- **Status**: To be addressed in future test coverage improvements
-- **Priority**: Medium 
+### Database Test Failures
+- **Issue**: Several database-related tests are still failing:
+  - `TestDatabaseOperations/concurrent_operations` - Failing with "relation does not exist" error
+  - `TestSchemaHandling/transaction_schema_handling` - Failing with "bad connection" error
+  - `TestSchemaHandling/transaction_rollback_schema_handling` - Failing with "context canceled" error
+  - `TestTestingInfrastructure/Test_data_generation` - Failing with "context canceled" error
+- **Status**: These failures are likely related to the same schema isolation issues we've been fixing
+- **Resolution Plan**: Extend the context-aware schema management approach to fix these tests
+- **Priority**: Medium
 
 ### Mock Repository Coverage Gaps
 - The mock tribe repository implementation in `internal/testutil/mock_repositories.go` has several methods with 0% coverage:
@@ -68,6 +68,16 @@ This document tracks the current known issues in the Tribe project that need to 
 - **Priority**: Low
 
 ## Recently Fixed Issues
+
+### Schema Context Management in Repository Tests
+- **Issue**: Tests like `TestListRepository_GetUserLists` and `TestListRepository_GetTribeLists` were failing or being skipped due to schema isolation problems.
+- **Resolution**: Implemented a `SchemaContext` struct to replace global variables for schema management, created context-aware repository methods, and improved transaction management to use proper schema context.
+- **Fixed Date**: May 19, 2025
+
+### "Bad Connection" Errors in Repository Tests
+- **Issue**: Several tests were experiencing "driver: bad connection" errors due to connection pooling issues.
+- **Resolution**: Enhanced connection handling in DB operations, improved transaction management, and fixed schema/field mismatch issues in the `loadListData` method.
+- **Fixed Date**: May 19, 2025
 
 ### Database Schema Issues in Test Environment
 - **Issue**: Tests were hanging or failing because the search path was not being correctly set in test database connections, leading to inability to find tables in the correct schema.

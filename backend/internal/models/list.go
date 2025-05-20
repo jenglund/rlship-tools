@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -332,7 +333,9 @@ type ListRepository interface {
 	RemoveOwner(listID, ownerID uuid.UUID) error
 	GetOwners(listID uuid.UUID) ([]*ListOwner, error)
 	GetUserLists(userID uuid.UUID) ([]*List, error)
+	GetUserListsWithContext(ctx context.Context, userID uuid.UUID) ([]*List, error)
 	GetTribeLists(tribeID uuid.UUID) ([]*List, error)
+	GetTribeListsWithContext(ctx context.Context, tribeID uuid.UUID) ([]*List, error)
 	GetListsByOwner(ownerID uuid.UUID, ownerType OwnerType) ([]*List, error)
 
 	// Share management
