@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Button, Spinner, Badge } from 'react-bootstrap';
+import { Container, Row, Col, Button, Spinner, Badge, ButtonGroup, Card, Placeholder, Nav } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useList } from '../contexts/ListContext';
@@ -8,12 +8,79 @@ import CreateListItemModal from './CreateListItemModal';
 import EditListItemModal from './EditListItemModal';
 import ShareListModal from './ShareListModal';
 import ListSharesView from './ListSharesView';
+import LocationMapView from './LocationMapView';
+import GenerateSelectionModal from './GenerateSelectionModal';
+import { FaList, FaMap, FaRandom } from 'react-icons/fa';
+
+// Skeleton loader for list details
+const ListDetailSkeleton = () => {
+  return (
+    <>
+      <Row className="mb-4">
+        <Col xs={12} lg={8} className="mb-3 mb-lg-0">
+          <Placeholder as="h1" animation="glow">
+            <Placeholder xs={6} />
+          </Placeholder>
+          <Placeholder as="p" animation="glow">
+            <Placeholder xs={10} />
+            <Placeholder xs={8} />
+          </Placeholder>
+          <Placeholder.Button variant="info" xs={2} />
+          <Placeholder.Button variant="secondary" xs={2} className="ms-2" />
+        </Col>
+        <Col xs={12} lg={4} className="d-flex justify-content-lg-end align-items-start">
+          <ButtonGroup className="w-100 w-lg-auto">
+            <Placeholder.Button variant="primary" xs={4} />
+            <Placeholder.Button variant="success" xs={4} />
+            <Placeholder.Button variant="danger" xs={4} />
+          </ButtonGroup>
+        </Col>
+      </Row>
+      <Row className="mb-4">
+        <Col xs={12}>
+          <Card className="p-3">
+            <Placeholder as="h5" animation="glow">
+              <Placeholder xs={4} />
+            </Placeholder>
+            <Placeholder as="p" animation="glow">
+              <Placeholder xs={7} />
+            </Placeholder>
+          </Card>
+        </Col>
+      </Row>
+    </>
+  );
+};
+
+// Skeleton loader for list items
+const ListItemSkeleton = () => {
+  return (
+    <Card className="h-100 shadow-sm">
+      <Card.Body className="d-flex flex-column">
+        <Placeholder as={Card.Title} animation="glow">
+          <Placeholder xs={8} />
+        </Placeholder>
+        <Placeholder as={Card.Text} animation="glow" className="flex-grow-1">
+          <Placeholder xs={12} />
+          <Placeholder xs={10} />
+          <Placeholder xs={8} />
+        </Placeholder>
+        <div className="d-flex justify-content-end gap-2 mt-3">
+          <Placeholder.Button variant="outline-primary" xs={3} />
+          <Placeholder.Button variant="outline-danger" xs={3} />
+        </div>
+      </Card.Body>
+    </Card>
+  );
+};
 
 const ListDetailScreen = () => {
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [showEditItemModal, setShowEditItemModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
   
   const { id } = useParams();
   const { currentUser } = useAuth();
@@ -34,6 +101,17 @@ const ListDetailScreen = () => {
       fetchListDetails(id);
     }
   }, [id, fetchListDetails]);
+
+  // Reset view mode when list type changes
+  useEffect(() => {
+    if (currentList && currentList.type === 'location') {
+      // Default to list view unless it's a location list
+      setViewMode('list');
+    } else {
+      // Force list view for non-location lists
+      setViewMode('list');
+    }
+  }, [currentList]);
 
   const handleAddItem = () => {
     setShowAddItemModal(true);
@@ -89,21 +167,51 @@ const ListDetailScreen = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <Container className="mt-4 text-center">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </Spinner>
-      </Container>
-    );
-  }
+  const handleMapItemClick = (item) => {
+    setSelectedItem(item);
+    setShowEditItemModal(true);
+  };
+
+  const handleGenerateSelection = () => {
+    setShowGenerateModal(true);
+  };
+
+  const handleCloseGenerateModal = () => {
+    setShowGenerateModal(false);
+  };
+
+  const renderItemSkeletons = () => {
+    return Array(3).fill().map((_, index) => (
+      <Col key={`item-skeleton-${index}`}>
+        <ListItemSkeleton />
+      </Col>
+    ));
+  };
+
+  // Check if should show map view option
+  const canShowMapView = currentList && currentList.type === 'location';
 
   if (error) {
     return (
       <Container className="mt-4">
         <div className="alert alert-danger" role="alert">
-          {error}
+          <h4 className="alert-heading">Error Loading List</h4>
+          <p>{error}</p>
+          <hr />
+          <div className="d-flex gap-2">
+            <Button 
+              variant="outline-danger" 
+              onClick={() => fetchListDetails(id)}
+            >
+              Retry
+            </Button>
+            <Button 
+              variant="outline-secondary" 
+              onClick={() => navigate('/lists')}
+            >
+              Back to Lists
+            </Button>
+          </div>
         </div>
       </Container>
     );
@@ -111,65 +219,117 @@ const ListDetailScreen = () => {
 
   return (
     <Container className="mt-4">
-      {currentList && (
+      {loading ? (
+        <ListDetailSkeleton />
+      ) : currentList && (
         <>
           <Row className="mb-4">
-            <Col>
+            <Col xs={12} lg={8} className="mb-3 mb-lg-0">
               <h1>{currentList.name}</h1>
               <p className="text-muted">{currentList.description}</p>
-              <Badge bg="info">{currentList.type}</Badge>
-              <Badge bg={currentList.visibility === 'private' ? 'secondary' : 'success'} className="ms-2">
-                {currentList.visibility}
-              </Badge>
+              <div className="mb-2">
+                <Badge bg="info">{currentList.type}</Badge>
+                <Badge bg={currentList.visibility === 'private' ? 'secondary' : 'success'} className="ms-2">
+                  {currentList.visibility}
+                </Badge>
+              </div>
             </Col>
-            <Col className="text-end">
-              <Button variant="primary" className="me-2" onClick={handleEditList}>
-                Edit List
-              </Button>
-              <Button variant="success" className="me-2" onClick={handleShareList}>
-                Share List
-              </Button>
-              <Button variant="danger" onClick={handleDeleteList}>
-                Delete List
-              </Button>
+            <Col xs={12} lg={4} className="d-flex justify-content-lg-end align-items-start">
+              <ButtonGroup className="w-100 w-lg-auto">
+                <Button variant="primary" onClick={handleEditList}>
+                  Edit List
+                </Button>
+                <Button variant="success" onClick={handleShareList}>
+                  Share List
+                </Button>
+                <Button variant="danger" onClick={handleDeleteList}>
+                  Delete List
+                </Button>
+              </ButtonGroup>
             </Col>
           </Row>
 
           {/* Sharing information */}
           <Row className="mb-4">
-            <Col>
+            <Col xs={12}>
               <ListSharesView listId={id} />
             </Col>
           </Row>
 
-          <Row className="mb-4">
-            <Col>
+          <Row className="mb-4 align-items-center">
+            <Col xs={6} sm={3}>
               <h2>Items</h2>
             </Col>
-            <Col className="text-end">
+            
+            {/* View mode toggle for location lists */}
+            {canShowMapView && (
+              <Col xs={6} sm={3} className="text-center">
+                <ButtonGroup className="w-100">
+                  <Button 
+                    variant={viewMode === 'list' ? 'primary' : 'outline-primary'} 
+                    onClick={() => setViewMode('list')}
+                  >
+                    <FaList className="me-1" /> List
+                  </Button>
+                  <Button 
+                    variant={viewMode === 'map' ? 'primary' : 'outline-primary'} 
+                    onClick={() => setViewMode('map')}
+                  >
+                    <FaMap className="me-1" /> Map
+                  </Button>
+                </ButtonGroup>
+              </Col>
+            )}
+            
+            <Col xs={12} sm={6} className="text-sm-end mt-3 mt-sm-0 d-flex justify-content-end gap-2">
+              {currentListItems.length > 0 && (
+                <Button 
+                  variant="outline-primary" 
+                  onClick={handleGenerateSelection}
+                >
+                  <FaRandom className="me-1" /> Generate
+                </Button>
+              )}
               <Button variant="success" onClick={handleAddItem}>
                 Add Item
               </Button>
             </Col>
           </Row>
 
-          <Row>
-            {currentListItems.length === 0 ? (
-              <Col>
-                <p>This list doesn't have any items yet. Add some to get started!</p>
+          {/* Map view for location lists */}
+          {canShowMapView && viewMode === 'map' && (
+            <Row className="mb-4">
+              <Col xs={12}>
+                <LocationMapView 
+                  items={currentListItems} 
+                  onItemClick={handleMapItemClick} 
+                />
               </Col>
-            ) : (
-              currentListItems.map(item => (
-                <Col md={4} key={item.id} className="mb-4">
-                  <ListItemCard
-                    item={{...item, type: currentList.type}}
-                    onEdit={() => handleEditItem(item)}
-                    onDelete={() => handleDeleteItem(item)}
-                  />
+            </Row>
+          )}
+
+          {/* List view */}
+          {viewMode === 'list' && (
+            <Row className="row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+              {loading ? (
+                renderItemSkeletons()
+              ) : currentListItems.length === 0 ? (
+                <Col xs={12}>
+                  <p>This list doesn't have any items yet. Add some to get started!</p>
                 </Col>
-              ))
-            )}
-          </Row>
+              ) : (
+                currentListItems.map(item => (
+                  <Col key={item.id}>
+                    <ListItemCard
+                      item={{...item, type: currentList.type}}
+                      onEdit={() => handleEditItem(item)}
+                      onDelete={() => handleDeleteItem(item)}
+                    />
+                  </Col>
+                ))
+              )}
+            </Row>
+          )}
 
           {currentList && (
             <>
@@ -194,6 +354,13 @@ const ListDetailScreen = () => {
                 show={showShareModal}
                 onHide={handleCloseShareModal}
                 listId={id}
+              />
+
+              <GenerateSelectionModal
+                show={showGenerateModal}
+                onHide={handleCloseGenerateModal}
+                listId={id}
+                listItems={currentListItems}
               />
             </>
           )}

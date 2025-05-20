@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, Form, Alert } from 'react-bootstrap';
+import { Modal, Button, Form, Alert, Spinner } from 'react-bootstrap';
 import { useList } from '../contexts/ListContext';
+import LocationPicker from './LocationPicker';
 
 const CreateListItemModal = ({ show, onHide, listId, listType }) => {
-  const { addListItem } = useList();
+  const { addListItem, operations } = useList();
   
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [metadata, setMetadata] = useState({});
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [validated, setValidated] = useState(false);
+  
+  // Use operations state for loading indicator
+  const isCreating = operations.creating;
 
   // Initialize type-specific metadata fields
   useEffect(() => {
@@ -20,7 +23,10 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
       switch (listType) {
         case 'location':
           initialMetadata = {
+            latitude: '',
+            longitude: '',
             address: '',
+            location: '',
             city: '',
             cuisine: '',
             price: 'medium'
@@ -68,7 +74,10 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
       switch (listType) {
         case 'location':
           initialMetadata = {
+            latitude: '',
+            longitude: '',
             address: '',
+            location: '',
             city: '',
             cuisine: '',
             price: 'medium'
@@ -115,6 +124,22 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
     }));
   };
 
+  const handleLocationChange = (locationData) => {
+    // Update all location fields at once
+    setMetadata(prev => ({
+      ...prev,
+      latitude: locationData.latitude,
+      longitude: locationData.longitude,
+      address: locationData.address,
+      location: locationData.location
+    }));
+    
+    // If we have a location name and the item name is empty, use the location name
+    if (locationData.location && !name) {
+      setName(locationData.location);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const form = e.currentTarget;
@@ -126,7 +151,6 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
     }
 
     try {
-      setLoading(true);
       setError(null);
       
       const itemData = {
@@ -140,8 +164,6 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
     } catch (err) {
       console.error('Error creating list item:', err);
       setError('Failed to add item to list. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -153,23 +175,24 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
       case 'location':
         return (
           <>
-            <Form.Group className="mb-3">
-              <Form.Label>Address</Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="Street address"
-                value={metadata.address || ''}
-                onChange={(e) => handleMetadataChange('address', e.target.value)}
-              />
-            </Form.Group>
+            <LocationPicker 
+              value={{
+                latitude: metadata.latitude,
+                longitude: metadata.longitude,
+                address: metadata.address,
+                location: metadata.location
+              }}
+              onChange={handleLocationChange}
+            />
             
-            <Form.Group className="mb-3">
+            <Form.Group className="mb-3 mt-3">
               <Form.Label>City</Form.Label>
               <Form.Control
                 type="text"
                 placeholder="City"
                 value={metadata.city || ''}
                 onChange={(e) => handleMetadataChange('city', e.target.value)}
+                disabled={isCreating}
               />
             </Form.Group>
             
@@ -180,6 +203,7 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
                 placeholder="Type of cuisine"
                 value={metadata.cuisine || ''}
                 onChange={(e) => handleMetadataChange('cuisine', e.target.value)}
+                disabled={isCreating}
               />
             </Form.Group>
             
@@ -188,6 +212,7 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
               <Form.Select
                 value={metadata.price || 'medium'}
                 onChange={(e) => handleMetadataChange('price', e.target.value)}
+                disabled={isCreating}
               >
                 <option value="low">$ - Budget</option>
                 <option value="medium">$$ - Moderate</option>
@@ -203,32 +228,47 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
           <>
             <Form.Group className="mb-3">
               <Form.Label>Category</Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="Movie, TV Show, Book, etc."
+              <Form.Select
                 value={metadata.category || ''}
                 onChange={(e) => handleMetadataChange('category', e.target.value)}
-              />
+                disabled={isCreating}
+              >
+                <option value="">Select a category</option>
+                <option value="movie">Movie</option>
+                <option value="tv-show">TV Show</option>
+                <option value="book">Book</option>
+                <option value="game">Game</option>
+                <option value="music">Music</option>
+                <option value="other">Other</option>
+              </Form.Select>
             </Form.Group>
             
             <Form.Group className="mb-3">
               <Form.Label>Length</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="Duration or pages"
+                placeholder="Duration or length"
                 value={metadata.length || ''}
                 onChange={(e) => handleMetadataChange('length', e.target.value)}
+                disabled={isCreating}
               />
+              <Form.Text className="text-muted">
+                e.g. "2.5 hours", "30 minutes", "350 pages"
+              </Form.Text>
             </Form.Group>
             
             <Form.Group className="mb-3">
               <Form.Label>Platform</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="Netflix, HBO, Kindle, etc."
+                placeholder="Where to watch/read/listen"
                 value={metadata.platform || ''}
                 onChange={(e) => handleMetadataChange('platform', e.target.value)}
+                disabled={isCreating}
               />
+              <Form.Text className="text-muted">
+                e.g. "Netflix", "Spotify", "Amazon"
+              </Form.Text>
             </Form.Group>
           </>
         );
@@ -237,33 +277,49 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
         return (
           <>
             <Form.Group className="mb-3">
-              <Form.Label>Duration</Form.Label>
-              <Form.Control
-                type="text"
-                placeholder="How long it takes"
-                value={metadata.duration || ''}
-                onChange={(e) => handleMetadataChange('duration', e.target.value)}
-              />
+              <Form.Label>Category</Form.Label>
+              <Form.Select
+                value={metadata.category || ''}
+                onChange={(e) => handleMetadataChange('category', e.target.value)}
+                disabled={isCreating}
+              >
+                <option value="">Select a category</option>
+                <option value="outdoor">Outdoor</option>
+                <option value="indoor">Indoor</option>
+                <option value="sport">Sport</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="education">Educational</option>
+                <option value="social">Social</option>
+                <option value="other">Other</option>
+              </Form.Select>
             </Form.Group>
             
             <Form.Group className="mb-3">
-              <Form.Label>Category</Form.Label>
+              <Form.Label>Duration</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="Indoor, Outdoor, Game, etc."
-                value={metadata.category || ''}
-                onChange={(e) => handleMetadataChange('category', e.target.value)}
+                placeholder="How long does it take?"
+                value={metadata.duration || ''}
+                onChange={(e) => handleMetadataChange('duration', e.target.value)}
+                disabled={isCreating}
               />
+              <Form.Text className="text-muted">
+                e.g. "2 hours", "30 minutes", "All day"
+              </Form.Text>
             </Form.Group>
             
             <Form.Group className="mb-3">
               <Form.Label>Participants</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="Number of people needed"
+                placeholder="How many people?"
                 value={metadata.participants || ''}
                 onChange={(e) => handleMetadataChange('participants', e.target.value)}
+                disabled={isCreating}
               />
+              <Form.Text className="text-muted">
+                e.g. "2-4 people", "Group of 6"
+              </Form.Text>
             </Form.Group>
           </>
         );
@@ -275,9 +331,10 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
               <Form.Label>Cuisine</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="Italian, Mexican, etc."
+                placeholder="Type of cuisine"
                 value={metadata.cuisine || ''}
                 onChange={(e) => handleMetadataChange('cuisine', e.target.value)}
+                disabled={isCreating}
               />
             </Form.Group>
             
@@ -285,10 +342,14 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
               <Form.Label>Preparation Time</Form.Label>
               <Form.Control
                 type="text"
-                placeholder="How long to make"
+                placeholder="How long to prepare"
                 value={metadata.preparationTime || ''}
                 onChange={(e) => handleMetadataChange('preparationTime', e.target.value)}
+                disabled={isCreating}
               />
+              <Form.Text className="text-muted">
+                e.g. "30 minutes", "1 hour", "15 min prep + 45 min cook"
+              </Form.Text>
             </Form.Group>
             
             <Form.Group className="mb-3">
@@ -296,10 +357,11 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
               <Form.Select
                 value={metadata.difficulty || 'medium'}
                 onChange={(e) => handleMetadataChange('difficulty', e.target.value)}
+                disabled={isCreating}
               >
                 <option value="easy">Easy</option>
                 <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
+                <option value="hard">Challenging</option>
               </Form.Select>
             </Form.Group>
           </>
@@ -311,7 +373,7 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
   };
 
   return (
-    <Modal show={show} onHide={handleClose} centered>
+    <Modal show={show} onHide={handleClose} centered size={listType === 'location' ? 'lg' : 'md'}>
       <Modal.Header closeButton>
         <Modal.Title>Add Item to List</Modal.Title>
       </Modal.Header>
@@ -331,6 +393,7 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
               onChange={(e) => setName(e.target.value)}
               required
               maxLength={100}
+              disabled={isCreating}
             />
             <Form.Control.Feedback type="invalid">
               Please provide an item name.
@@ -341,11 +404,12 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
             <Form.Label>Description</Form.Label>
             <Form.Control
               as="textarea"
-              rows={2}
+              rows={3}
               placeholder="Enter item description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={500}
+              disabled={isCreating}
             />
           </Form.Group>
           
@@ -353,11 +417,16 @@ const CreateListItemModal = ({ show, onHide, listId, listType }) => {
         </Modal.Body>
         
         <Modal.Footer>
-          <Button variant="secondary" onClick={handleClose}>
+          <Button variant="secondary" onClick={handleClose} disabled={isCreating}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Adding...' : 'Add Item'}
+          <Button type="submit" variant="primary" disabled={isCreating}>
+            {isCreating ? (
+              <>
+                <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                Adding...
+              </>
+            ) : 'Add Item'}
           </Button>
         </Modal.Footer>
       </Form>

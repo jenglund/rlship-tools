@@ -44,7 +44,7 @@ const ListItemCard = ({ item, onEdit, onDelete }) => {
           return (
             <div key={key} className="text-muted small">
               <strong>{key.charAt(0).toUpperCase() + key.slice(1)}: </strong>
-              {value}
+              <span className="text-break">{value}</span>
             </div>
           );
         })}
@@ -53,23 +53,24 @@ const ListItemCard = ({ item, onEdit, onDelete }) => {
   };
 
   return (
-    <Card className="h-100">
-      <Card.Body>
-        <Card.Title>
+    <Card className="h-100 shadow-sm item-card">
+      <Card.Body className="d-flex flex-column">
+        <Card.Title className="text-break">
           {getTypeIcon(item.type || 'general')} {item.name}
         </Card.Title>
         {item.description && (
-          <Card.Text>{item.description}</Card.Text>
+          <Card.Text className="flex-grow-1 text-break">{item.description}</Card.Text>
         )}
         
-        {renderMetadata()}
+        <div className="flex-grow-1">
+          {renderMetadata()}
+        </div>
         
-        <div className="mt-3 d-flex justify-content-end">
+        <div className="mt-3 d-flex flex-wrap gap-2 justify-content-end">
           {onEdit && (
             <Button 
               variant="outline-primary" 
-              size="sm" 
-              className="me-2"
+              size="sm"
               onClick={handleEdit}
             >
               Edit

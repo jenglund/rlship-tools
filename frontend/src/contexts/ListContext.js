@@ -13,7 +13,28 @@ export const ListProvider = ({ children }) => {
   const [currentListItems, setCurrentListItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [operations, setOperations] = useState({
+    creating: false,
+    updating: false,
+    deleting: false,
+    sharing: false
+  });
   const { currentUser } = useAuth();
+
+  // Helper function to handle errors consistently
+  const handleError = (errorMessage, operation, err) => {
+    console.error(`Error ${operation}:`, err);
+    setError(errorMessage);
+    return err;
+  };
+
+  // Helper function to set operation loading state
+  const setOperationLoading = (operation, isLoading) => {
+    setOperations(prev => ({
+      ...prev,
+      [operation]: isLoading
+    }));
+  };
 
   // Fetch user's lists
   const fetchUserLists = async () => {
@@ -30,8 +51,7 @@ export const ListProvider = ({ children }) => {
       ];
       setUserLists(lists);
     } catch (err) {
-      console.error('Error fetching user lists:', err);
-      setError('Failed to load your lists. Please try again later.');
+      handleError('Failed to load your lists. Please try again later.', 'fetching user lists', err);
     } finally {
       setLoading(false);
     }
@@ -51,8 +71,7 @@ export const ListProvider = ({ children }) => {
       ];
       setSharedLists(sharedLists);
     } catch (err) {
-      console.error('Error fetching shared lists:', err);
-      setError('Failed to load shared lists. Please try again later.');
+      handleError('Failed to load shared lists. Please try again later.', 'fetching shared lists', err);
     } finally {
       setLoading(false);
     }
@@ -85,8 +104,7 @@ export const ListProvider = ({ children }) => {
       ];
       setCurrentListItems(items);
     } catch (err) {
-      console.error('Error fetching list details:', err);
-      setError('Failed to load list details. Please try again later.');
+      handleError('Failed to load list details. Please try again later.', 'fetching list details', err);
     } finally {
       setLoading(false);
     }
@@ -95,7 +113,7 @@ export const ListProvider = ({ children }) => {
   // Create a new list
   const createList = async (listData) => {
     try {
-      setLoading(true);
+      setOperationLoading('creating', true);
       setError(null);
       // Here we would normally call the API, but for now we'll use a mock
       // const newList = await listService.createList(listData);
@@ -109,18 +127,16 @@ export const ListProvider = ({ children }) => {
       setUserLists(prevLists => [...prevLists, newList]);
       return newList;
     } catch (err) {
-      console.error('Error creating list:', err);
-      setError('Failed to create list. Please try again later.');
-      throw err;
+      throw handleError('Failed to create list. Please try again later.', 'creating list', err);
     } finally {
-      setLoading(false);
+      setOperationLoading('creating', false);
     }
   };
 
   // Update a list
   const updateList = async (listId, listData) => {
     try {
-      setLoading(true);
+      setOperationLoading('updating', true);
       setError(null);
       // Here we would normally call the API, but for now we'll use a mock
       // const updatedList = await listService.updateList(listId, listData);
@@ -141,18 +157,16 @@ export const ListProvider = ({ children }) => {
       
       return updatedList;
     } catch (err) {
-      console.error('Error updating list:', err);
-      setError('Failed to update list. Please try again later.');
-      throw err;
+      throw handleError('Failed to update list. Please try again later.', 'updating list', err);
     } finally {
-      setLoading(false);
+      setOperationLoading('updating', false);
     }
   };
 
   // Delete a list
   const deleteList = async (listId) => {
     try {
-      setLoading(true);
+      setOperationLoading('deleting', true);
       setError(null);
       // Here we would normally call the API, but for now we'll use a mock
       // await listService.deleteList(listId);
@@ -169,11 +183,9 @@ export const ListProvider = ({ children }) => {
       
       return true;
     } catch (err) {
-      console.error('Error deleting list:', err);
-      setError('Failed to delete list. Please try again later.');
-      throw err;
+      throw handleError('Failed to delete list. Please try again later.', 'deleting list', err);
     } finally {
-      setLoading(false);
+      setOperationLoading('deleting', false);
     }
   };
 
@@ -214,9 +226,7 @@ export const ListProvider = ({ children }) => {
       
       return newItem;
     } catch (err) {
-      console.error('Error adding list item:', err);
-      setError('Failed to add item to list. Please try again later.');
-      throw err;
+      throw handleError('Failed to add item to list. Please try again later.', 'adding list item', err);
     } finally {
       setLoading(false);
     }
@@ -299,6 +309,7 @@ export const ListProvider = ({ children }) => {
     currentListItems,
     loading,
     error,
+    operations,
     fetchUserLists,
     fetchSharedLists,
     fetchListDetails,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Button, Form, Alert } from 'react-bootstrap';
+import { Modal, Button, Form, Alert, Spinner } from 'react-bootstrap';
 import { useList } from '../contexts/ListContext';
 
 const LIST_TYPES = [
@@ -11,22 +11,26 @@ const LIST_TYPES = [
 ];
 
 const CreateListModal = ({ show, onHide }) => {
-  const { createList } = useList();
+  const { createList, operations, error: contextError } = useList();
   
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState('general');
   const [visibility, setVisibility] = useState('private');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [localError, setLocalError] = useState(null);
   const [validated, setValidated] = useState(false);
+  
+  // Use the creating operation status from context
+  const isCreating = operations.creating;
+  // Combine local and context errors
+  const error = localError || contextError;
 
   const resetForm = () => {
     setName('');
     setDescription('');
     setType('general');
     setVisibility('private');
-    setError(null);
+    setLocalError(null);
     setValidated(false);
   };
 
@@ -46,8 +50,7 @@ const CreateListModal = ({ show, onHide }) => {
     }
 
     try {
-      setLoading(true);
-      setError(null);
+      setLocalError(null);
       
       const listData = {
         name,
@@ -61,9 +64,7 @@ const CreateListModal = ({ show, onHide }) => {
       handleClose();
     } catch (err) {
       console.error('Error creating list:', err);
-      setError('Failed to create list. Please try again.');
-    } finally {
-      setLoading(false);
+      setLocalError('Failed to create list. Please try again.');
     }
   };
 
@@ -88,6 +89,7 @@ const CreateListModal = ({ show, onHide }) => {
               onChange={(e) => setName(e.target.value)}
               required
               maxLength={100}
+              disabled={isCreating}
             />
             <Form.Control.Feedback type="invalid">
               Please provide a list name.
@@ -103,6 +105,7 @@ const CreateListModal = ({ show, onHide }) => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={500}
+              disabled={isCreating}
             />
           </Form.Group>
           
@@ -112,6 +115,7 @@ const CreateListModal = ({ show, onHide }) => {
               value={type}
               onChange={(e) => setType(e.target.value)}
               required
+              disabled={isCreating}
             >
               {LIST_TYPES.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -130,6 +134,7 @@ const CreateListModal = ({ show, onHide }) => {
               value={visibility}
               onChange={(e) => setVisibility(e.target.value)}
               required
+              disabled={isCreating}
             >
               <option value="private">Private</option>
               <option value="public">Public</option>
@@ -141,11 +146,16 @@ const CreateListModal = ({ show, onHide }) => {
         </Modal.Body>
         
         <Modal.Footer>
-          <Button variant="secondary" onClick={handleClose}>
+          <Button variant="secondary" onClick={handleClose} disabled={isCreating}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Creating...' : 'Create List'}
+          <Button type="submit" variant="primary" disabled={isCreating}>
+            {isCreating ? (
+              <>
+                <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                Creating...
+              </>
+            ) : 'Create List'}
           </Button>
         </Modal.Footer>
       </Form>

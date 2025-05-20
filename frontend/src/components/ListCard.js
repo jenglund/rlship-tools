@@ -40,32 +40,33 @@ const ListCard = ({ list, onShare, onDelete }) => {
   };
 
   return (
-    <Card className="mb-3 list-card" style={{ cursor: 'pointer' }} onClick={handleViewList}>
-      <Card.Body>
+    <Card className="mb-3 list-card h-100" style={{ cursor: 'pointer' }} onClick={handleViewList}>
+      <Card.Body className="d-flex flex-column">
         <div className="d-flex justify-content-between align-items-start">
           <div>
-            <Card.Title>
+            <Card.Title className="text-break">
               {getTypeIcon(list.type)} {list.name}
             </Card.Title>
-            {list.shared && (
-              <Badge bg="success" className="me-1">Shared</Badge>
-            )}
-            <Badge bg="info">{list.type}</Badge>
+            <div>
+              {list.shared && (
+                <Badge bg="success" className="me-1">Shared</Badge>
+              )}
+              <Badge bg="info">{list.type}</Badge>
+            </div>
           </div>
         </div>
         
-        <Card.Text className="text-muted small mt-2">{list.description}</Card.Text>
+        <Card.Text className="text-muted small mt-2 flex-grow-1">{list.description}</Card.Text>
         
-        <div className="d-flex justify-content-between align-items-center mt-3">
+        <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center mt-3 gap-2">
           <span className="text-muted small">
             {list.itemCount || 0} items
           </span>
-          <div>
+          <div className="d-flex gap-2 justify-content-end flex-wrap">
             {onShare && (
               <Button 
                 variant="outline-success" 
-                size="sm" 
-                className="me-2"
+                size="sm"
                 onClick={handleShareList}
               >
                 Share
@@ -82,8 +83,7 @@ const ListCard = ({ list, onShare, onDelete }) => {
             )}
             <Button 
               variant="primary" 
-              size="sm" 
-              className="ms-2"
+              size="sm"
               onClick={handleViewList}
             >
               View
