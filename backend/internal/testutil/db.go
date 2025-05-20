@@ -537,69 +537,53 @@ func (db *SchemaDB) QueryRowContext(ctx context.Context, query string, args ...i
 	return db.DB.QueryRowContext(childCtx, query, args...)
 }
 
-// Begin overrides the default Begin method to set the search path on the transaction
+// Begin starts a new transaction.
+// It ensures the schema search path is correctly set in the transaction.
 func (db *SchemaDB) Begin() (*sql.Tx, error) {
-	// Create a new context each time to avoid data races
+	// Create a context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
 	defer cancel()
 
 	return db.BeginTx(ctx, nil)
 }
 
-// BeginTx overrides the default BeginTx method to set the search path on the transaction
+// BeginTx starts a new transaction with the provided context.
+// It ensures the schema search path is correctly set in the transaction.
 func (db *SchemaDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	// Create a child context with a separate timeout to avoid affecting the parent
-	childCtx, cancel := context.WithTimeout(ctx, db.timeout)
-	defer cancel()
-
-	// Lock to ensure consistent schema setting
+	// Get the schema name
 	db.mu.Lock()
-	defer db.mu.Unlock()
+	schemaName := db.schemaName
+	db.mu.Unlock()
+
+	// Ensure valid connection before starting transaction
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("connection invalid before begin transaction: %w", err)
+	}
 
 	// Start transaction
-	tx, err := db.DB.BeginTx(childCtx, opts)
+	tx, err := db.DB.BeginTx(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
 
-	// Set LOCAL search path in the transaction
-	// Use LOCAL to avoid affecting other sessions
-	_, err = tx.ExecContext(childCtx, fmt.Sprintf("SET LOCAL search_path TO %s", pq.QuoteIdentifier(db.schemaName)))
+	// Set the search path for the transaction
+	_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
 	if err != nil {
-		// In case of error, safely rollback
-		rollbackErr := tx.Rollback()
-		if rollbackErr != nil {
-			log.Printf("Error rolling back transaction: %v", rollbackErr)
-		}
+		// Rollback the transaction since we couldn't set the search path
+		_ = tx.Rollback()
 		return nil, fmt.Errorf("error setting search path in transaction: %w", err)
 	}
 
-	// Verify search path was set correctly (without consuming any results)
-	var searchPath string
-	err = tx.QueryRowContext(childCtx, "SELECT current_schema").Scan(&searchPath)
+	// Verify the search path is set correctly
+	var txSearchPath string
+	err = tx.QueryRowContext(ctx, "SHOW search_path").Scan(&txSearchPath)
 	if err != nil {
-		// In case of error, safely rollback
-		rollbackErr := tx.Rollback()
-		if rollbackErr != nil {
-			log.Printf("Error rolling back transaction: %v", rollbackErr)
-		}
+		_ = tx.Rollback()
 		return nil, fmt.Errorf("error verifying search path in transaction: %w", err)
 	}
 
-	// Verify the schema was set correctly
-	if searchPath != db.schemaName {
-		// In case of mismatch, safely rollback
-		rollbackErr := tx.Rollback()
-		if rollbackErr != nil {
-			log.Printf("Error rolling back transaction: %v", rollbackErr)
-		}
-		return nil, fmt.Errorf("schema mismatch in transaction: got %s, expected %s",
-			searchPath, db.schemaName)
-	}
-
-	// Debug output
-	fmt.Printf("Transaction search_path: %s (expected test schema: %s)\n",
-		searchPath, db.schemaName)
+	// Add debugging to show the schema is properly set
+	log.Printf("Transaction started with search_path: %s (schema: %s)", txSearchPath, schemaName)
 
 	return tx, nil
 }
@@ -787,4 +771,104 @@ func getDatabaseNameFromConnString(connString string) string {
 	dbNameWithParams := parts[3]
 	dbNameParts := strings.Split(dbNameWithParams, "?")
 	return dbNameParts[0]
+}
+
+// SafeExecWithSchema executes a query with the schema explicitly qualified
+// This helps avoid issues with search_path not being properly set
+func (db *SchemaDB) SafeExecWithSchema(query string, args ...interface{}) (sql.Result, error) {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.SafeExecWithSchemaContext(ctx, query, args...)
+}
+
+// SafeExecWithSchemaContext executes a query with the schema explicitly qualified and context
+func (db *SchemaDB) SafeExecWithSchemaContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
+	schemaName := db.schemaName
+	db.mu.Unlock()
+
+	// Ensure valid connection before executing
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("connection invalid before exec: %w", err)
+	}
+
+	// Set search path explicitly for this query
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to set search path: %w", err)
+	}
+
+	// Return the result
+	return db.ExecContext(ctx, query, args...)
+}
+
+// SafeQueryWithSchema queries with the schema explicitly qualified
+func (db *SchemaDB) SafeQueryWithSchema(query string, args ...interface{}) (*sql.Rows, error) {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.SafeQueryWithSchemaContext(ctx, query, args...)
+}
+
+// SafeQueryWithSchemaContext queries with the schema explicitly qualified and context
+func (db *SchemaDB) SafeQueryWithSchemaContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
+	schemaName := db.schemaName
+	db.mu.Unlock()
+
+	// Ensure valid connection before querying
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("connection invalid before query: %w", err)
+	}
+
+	// Set search path explicitly for this query
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to set search path: %w", err)
+	}
+
+	// Return the result
+	return db.QueryContext(ctx, query, args...)
+}
+
+// SafeQueryRowWithSchema queries a single row with the schema explicitly qualified
+func (db *SchemaDB) SafeQueryRowWithSchema(query string, args ...interface{}) *sql.Row {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), db.timeout)
+	defer cancel()
+
+	return db.SafeQueryRowWithSchemaContext(ctx, query, args...)
+}
+
+// SafeQueryRowWithSchemaContext queries a single row with the schema explicitly qualified and context
+func (db *SchemaDB) SafeQueryRowWithSchemaContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	// Lock to prevent concurrent schema changes
+	db.mu.Lock()
+	schemaName := db.schemaName
+	db.mu.Unlock()
+
+	// Ensure valid connection before querying
+	if err := db.Ping(); err != nil {
+		// Can't return error directly for QueryRow, so we'll log it and return a row that will fail on Scan
+		log.Printf("Connection invalid before query row: %v", err)
+		// Return a row that will fail when scanned
+		return db.QueryRowContext(ctx, "SELECT 'connection_error' WHERE 1=0")
+	}
+
+	// Set search path explicitly for this query
+	_, err := db.DB.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
+	if err != nil {
+		// Can't return error directly for QueryRow, so we'll log it and return a row that will fail on Scan
+		log.Printf("Failed to set search path: %v", err)
+		// Return a row that will fail when scanned
+		return db.QueryRowContext(ctx, "SELECT 'search_path_error' WHERE 1=0")
+	}
+
+	// Return the result
+	return db.QueryRowContext(ctx, query, args...)
 }

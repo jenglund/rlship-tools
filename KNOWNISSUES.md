@@ -36,20 +36,13 @@ This document tracks the current known issues in the Tribe project that need to 
 - **Resolution Decision**: We've decided to keep the `govet shadow` linter disabled for the time being. This is a low-impact issue that would require significant time and resources to address for minimal reward.
 
 ### Database Test Failures
-- **Issue**: Several database-related tests are still failing:
-  - `TestDatabaseOperations/concurrent_operations` - Failing with "relation 'concurrent_test' does not exist" error
-  - `TestDatabaseOperations/transaction_rollback` - Failing with "driver: bad connection" error
-  - `TestSchemaHandling/transaction_schema_handling` - Failing with "context canceled" error
-  - `TestSchemaHandling/transaction_rollback_schema_handling` - Failing with "driver: bad connection" error
-- **Status**: These failures are related to:
-  - Connection pooling and connection lifecycle management
-  - Transaction handling in concurrent scenarios 
-  - Schema context propagation between transactions
+- **Issue**: Tests in the repository package are failing with null constraint violation errors:
+  - `TestListRepository` - Failing with "null value in column 'metadata' of relation 'tribes' violates not-null constraint" error
+- **Status**: After fixing the schema isolation and transaction handling issues, we now have a data integrity issue where tribe creation is failing due to missing required fields.
 - **Resolution Plan**: 
-  - Fix connection handling in transaction management to prevent "bad connection" errors
-  - Improve context cancellation to ensure proper transaction rollback
-  - Extend the context-aware schema management approach to handle concurrent operations
-- **Priority**: Medium
+  - Update test fixtures to ensure all required fields are populated
+  - Add default values for required fields in test helpers
+  - Check the tribe model to ensure consistency between code and database schema
 
 ### Mock Repository Coverage Gaps
 - The mock tribe repository implementation in `internal/testutil/mock_repositories.go` has several methods with 0% coverage:
@@ -75,15 +68,24 @@ This document tracks the current known issues in the Tribe project that need to 
 
 ## Recently Fixed Issues
 
+### Backend Schema Isolation and Connection Handling
+- **Issue**: Tests were failing with "relation does not exist" and "driver: bad connection" errors due to improper schema isolation and connection handling.
+- **Resolution**: 
+  - Fixed schema isolation by adding schema-qualified query helpers
+  - Improved transaction handling with proper context management
+  - Added better connection pooling and lifecycle management
+  - Fixed temporary table creation in schema handling tests
+- **Fixed Date**: May 19, 2025
+
 ### Mock Repository Implementation Issue
 - **Issue**: Tests in `internal/api/service` were failing to compile because the mock `ListRepository` in `list_test.go` was missing the `GetTribeListsWithContext` and `GetUserListsWithContext` methods that were added to the `models.ListRepository` interface.
 - **Resolution**: Added the missing methods to the mock implementation, ensuring it properly implements the updated interface.
 - **Fixed Date**: May 19, 2025
 
 ### Schema Context Management in Repository Tests
-- **Issue**: Tests like `TestListRepository_GetUserLists` and `TestListRepository_GetTribeLists` were failing or being skipped due to schema isolation problems.
-- **Resolution**: Implemented a `SchemaContext` struct to replace global variables for schema management, created context-aware repository methods, and improved transaction management to use proper schema context.
-- **Fixed Date**: May 19, 2025
+- **Issue**: Tests were failing due to global variables being used to track schema information across tests, leading to schema leakage between tests.
+- **Resolution**: Created a `SchemaContext` struct to replace global variables for schema management. Schema information now travels with the context rather than global variables.
+- **Fixed Date**: May 18, 2025
 
 ### "Bad Connection" Errors in Repository Tests
 - **Issue**: Several tests were experiencing "driver: bad connection" errors due to connection pooling issues.

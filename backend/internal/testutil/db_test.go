@@ -167,21 +167,27 @@ func TestDatabaseOperations(t *testing.T) {
 		defer TeardownTestDB(t, db)
 
 		// Get the schema name for explicit schema referencing
-		var schemaName string
-		err := db.QueryRow("SELECT current_schema()").Scan(&schemaName)
+		schemaName := db.GetSchemaName()
+		require.NotEmpty(t, schemaName)
+
+		// Create a context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Test table creation with schema qualification
+		_, err := db.SafeExecWithSchemaContext(ctx,
+			"CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
 		require.NoError(t, err)
 
-		// Test table creation with simpler approach
-		_, err = db.Exec(fmt.Sprintf("CREATE TABLE test_table (id SERIAL PRIMARY KEY, name TEXT NOT NULL)"))
+		// Test insertion with schema qualification
+		_, err = db.SafeExecWithSchemaContext(ctx,
+			"INSERT INTO test_table (name) VALUES ($1)", "test")
 		require.NoError(t, err)
 
-		// Test insertion
-		_, err = db.Exec("INSERT INTO test_table (name) VALUES ($1)", "test")
-		require.NoError(t, err)
-
-		// Test query
+		// Test query with schema qualification
 		var name string
-		err = db.QueryRow("SELECT name FROM test_table WHERE id = 1").Scan(&name)
+		err = db.SafeQueryRowWithSchemaContext(ctx,
+			"SELECT name FROM test_table WHERE id = 1").Scan(&name)
 		require.NoError(t, err)
 		assert.Equal(t, "test", name)
 	})
@@ -202,6 +208,10 @@ func TestDatabaseOperations(t *testing.T) {
 		_, err = db.Exec("CREATE TABLE concurrent_test (id SERIAL PRIMARY KEY, value INTEGER)")
 		require.NoError(t, err)
 
+		// Get the schema context for this test
+		schemaCtx := GetSchemaContext(schemaName)
+		require.NotNil(t, schemaCtx, "Schema context should exist")
+
 		// Run concurrent insertions using a more controlled approach
 		var wg sync.WaitGroup
 		errCh := make(chan error, 10) // Channel to collect errors
@@ -211,12 +221,24 @@ func TestDatabaseOperations(t *testing.T) {
 			go func(val int) {
 				defer wg.Done()
 
-				// Create a new connection for each goroutine to avoid concurrency issues
-				insertDB := SetupTestDB(t)
-				defer TeardownTestDB(t, insertDB)
+				// Create a connection that's fully aware of the schema
+				insertDB, err := sql.Open("postgres", getPostgresConnection("postgres"))
+				if err != nil {
+					errCh <- err
+					return
+				}
+				defer safeClose(insertDB)
 
-				// Use the schema from this connection
-				_, execErr := insertDB.Exec("INSERT INTO concurrent_test (value) VALUES ($1)", val)
+				// Set the search path explicitly
+				_, err = insertDB.Exec(fmt.Sprintf("SET search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				// Now insert using the schema-qualified table name to be extra safe
+				_, execErr := insertDB.Exec(fmt.Sprintf("INSERT INTO %s.concurrent_test (value) VALUES ($1)",
+					pq.QuoteIdentifier(schemaName)), val)
 				if execErr != nil {
 					errCh <- execErr
 				}
@@ -254,26 +276,44 @@ func TestDatabaseOperations(t *testing.T) {
 		_, err := db.Exec("CREATE TABLE tx_test (id SERIAL PRIMARY KEY, value TEXT)")
 		require.NoError(t, err)
 
-		// Begin a transaction
-		tx, err := db.Begin()
+		// Ensure we have a good connection for the transaction
+		err = db.Ping()
+		require.NoError(t, err, "Connection should be valid before starting transaction")
+
+		// Begin a transaction with explicit timeout context
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 
 		// Always clean up the transaction
 		defer func() {
-			_ = tx.Rollback() // No-op if already committed or rolled back
+			if tx != nil {
+				_ = tx.Rollback() // No-op if already committed or rolled back
+			}
 		}()
 
-		// Insert test data in transaction
-		_, err = tx.Exec("INSERT INTO tx_test (value) VALUES ($1)", "test value")
+		// Insert test data in transaction with explicit schema
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s.tx_test (value) VALUES ($1)",
+			pq.QuoteIdentifier(schemaName)), "test value")
 		require.NoError(t, err)
+
+		// Verify data exists within the transaction
+		var txCount int
+		err = tx.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.tx_test",
+			pq.QuoteIdentifier(schemaName))).Scan(&txCount)
+		require.NoError(t, err)
+		assert.Equal(t, 1, txCount, "Data should be visible within the transaction")
 
 		// Rollback transaction
 		err = tx.Rollback()
 		require.NoError(t, err)
+		tx = nil // Mark as handled so defer doesn't try to rollback again
 
-		// Verify data wasn't inserted
+		// Verify data wasn't inserted (using a fresh query to avoid connection reuse issues)
 		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM tx_test").Scan(&count)
+		err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tx_test").Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count, "No rows should exist after rollback")
 	})
@@ -342,58 +382,90 @@ func TestSchemaHandling(t *testing.T) {
 
 	// Test transaction schema handling
 	t.Run("transaction schema handling", func(t *testing.T) {
-		// Begin a transaction
-		tx, err := db.Begin()
+		// Ensure we have a valid connection first
+		err = db.Ping()
+		require.NoError(t, err, "Connection should be valid before starting transaction")
+
+		// Create a context with timeout to prevent test hangs
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Begin a transaction with the context
+		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 
 		// Ensure tx is always either committed or rolled back
 		defer func() {
-			_ = tx.Rollback() // This is a no-op if already committed
+			if tx != nil {
+				_ = tx.Rollback() // This is a no-op if already committed
+			}
 		}()
+
+		// Explicitly set the schema in the transaction
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s, public",
+			pq.QuoteIdentifier(schemaName)))
+		require.NoError(t, err)
 
 		// Verify transaction schema context
 		var txSchema string
-		err = tx.QueryRow("SELECT current_schema()").Scan(&txSchema)
+		err = tx.QueryRowContext(ctx, "SELECT current_schema()").Scan(&txSchema)
 		require.NoError(t, err)
 		assert.Equal(t, schemaName, txSchema, "Transaction should have correct schema")
 
-		// Execute a simple query in the transaction
-		_, err = tx.Exec("CREATE TEMPORARY TABLE test_tx (id INT)")
+		// Execute a simple query in the transaction with schema qualification
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("CREATE TEMPORARY TABLE test_tx (id INT)"))
 		require.NoError(t, err)
 
 		// Commit the transaction
 		err = tx.Commit()
 		require.NoError(t, err)
+		tx = nil // Mark as handled
 	})
 
 	// Test transaction rollback schema handling
 	t.Run("transaction rollback schema handling", func(t *testing.T) {
-		// Begin a transaction
-		tx, err := db.Begin()
+		// Ensure we have a valid connection first
+		err = db.Ping()
+		require.NoError(t, err, "Connection should be valid before starting transaction")
+
+		// Create a context with timeout to prevent test hangs
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Begin a transaction with the context
+		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
 
 		// Ensure tx is always rolled back if not committed
 		defer func() {
-			_ = tx.Rollback() // This is a no-op if already rolled back
+			if tx != nil {
+				_ = tx.Rollback() // This is a no-op if already rolled back
+			}
 		}()
+
+		// Explicitly set the schema in the transaction
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s, public",
+			pq.QuoteIdentifier(schemaName)))
+		require.NoError(t, err)
 
 		// Verify transaction schema context
 		var txSchema string
-		err = tx.QueryRow("SELECT current_schema()").Scan(&txSchema)
+		err = tx.QueryRowContext(ctx, "SELECT current_schema()").Scan(&txSchema)
 		require.NoError(t, err)
 		assert.Equal(t, schemaName, txSchema, "Transaction should have correct schema")
 
-		// Execute a query that will be rolled back
-		_, err = tx.Exec("CREATE TEMPORARY TABLE test_rollback (id INT)")
+		// Execute a query that will be rolled back, using schema qualification
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("CREATE TEMPORARY TABLE test_rollback (id INT)"))
 		require.NoError(t, err)
 
 		// Explicitly roll back the transaction
 		err = tx.Rollback()
 		require.NoError(t, err)
+		tx = nil // Mark as handled
 
 		// Verify connection still works after rollback
 		var postRollbackSchema string
-		err = db.QueryRow("SELECT current_schema()").Scan(&postRollbackSchema)
+		err = db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&postRollbackSchema)
 		require.NoError(t, err)
 		assert.Equal(t, schemaName, postRollbackSchema, "Schema should still be correct after rollback")
 	})

@@ -208,27 +208,23 @@ Recently implemented a "pending" status for tribe members who have been invited 
 ## Backend Development Priorities
 
 1. **Enhance Database Schema Isolation and Test Stability**
-   - Fix remaining failing tests related to schema isolation and connection handling:
-     - `TestDatabaseOperations/concurrent_operations` - Failing with "relation does not exist" error
-     - `TestDatabaseOperations/transaction_rollback` - Failing with "driver: bad connection" error
-     - `TestSchemaHandling/transaction_schema_handling` - Failing with "context canceled" error
-     - `TestSchemaHandling/transaction_rollback_schema_handling` - Failing with "driver: bad connection" error
-   - Improve connection pooling to prevent "bad connection" errors in tests
-   - Add proper context cancellation handling to ensure transactions are rolled back correctly
-   - Add better connection cleanup to prevent resource leaks
-   - Implement consistent error handling for database connections and transactions
-   - Create more defensive transaction management for concurrent operations
-   - Add better schema isolation for concurrent test executions
+   - Fix remaining issues with null constraint violations:
+     - Update tribe creation in tests to include required metadata field
+     - Add default values for required fields
+     - Ensure consistency between model structs and database schema
+   - Implement comprehensive test data generators that ensure all required fields are populated
+   - Add standard validation of model completeness before database operations
+   - Continue improving connection pooling to prevent connection issues
+   - Add more extensive documentation for testing patterns
 
-2. **Enhance Database Operations**
-   - Add transaction boundaries for multi-step operations
-   - Improve error handling and reporting
-   - Add database constraints (unique tribe names, etc.)
-   - Improve handling of database connections in tests to eliminate warning messages
-   - Add better transaction management to prevent "transaction already committed" warnings
-   - Fix remaining context cancellation issues in the test database setup and teardown
-   - Improve schema and search path handling in all repository methods
-   - Address errors in TestDatabaseOperations tests related to context cancellation
+2. **Improve Backend Test Coverage**
+   - Add tests for edge cases in repository methods
+   - Improve context-based testing approach
+   - Standardize test fixtures and setup/teardown
+   - Add integration tests for common workflows
+   - Create performance benchmarks for database operations
+   - Implement test coverage tracking and reporting
+   - Add race condition detection for concurrent operations
 
 3. **API Enhancements**
    - Implement comprehensive request validation
