@@ -2,13 +2,28 @@ package models
 
 import "errors"
 
-// Common errors
+// Common application-level errors
 var (
-	ErrNotFound     = errors.New("not found")
+	// ErrNotFound is returned when a resource could not be found
+	ErrNotFound = errors.New("resource not found")
+
+	// ErrInvalidInput is returned when input validation fails
 	ErrInvalidInput = errors.New("invalid input")
+
+	// ErrUnauthorized is returned when a user is not authenticated
 	ErrUnauthorized = errors.New("unauthorized")
-	ErrForbidden    = errors.New("forbidden")
-	ErrDuplicate    = errors.New("duplicate")
+
+	// ErrForbidden is returned when a user does not have permission to access a resource
+	ErrForbidden = errors.New("forbidden")
+
+	// ErrConflict is returned when there is a conflict with the current state of a resource
+	ErrConflict = errors.New("conflict with current state")
+
+	// ErrInternal is returned when an unexpected internal error occurs
+	ErrInternal = errors.New("internal server error")
+
+	// ErrDuplicate is returned when a resource with the same identifier already exists
+	ErrDuplicate = errors.New("resource already exists")
 )
 
 // Sync-specific errors

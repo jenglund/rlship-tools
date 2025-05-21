@@ -282,7 +282,7 @@ const ListDetailScreen = () => {
             )}
             
             <Col xs={12} sm={6} className="text-sm-end mt-3 mt-sm-0 d-flex justify-content-end gap-2">
-              {currentListItems.length > 0 && (
+              {currentListItems && currentListItems.length > 0 && (
                 <Button 
                   variant="outline-primary" 
                   onClick={handleGenerateSelection}
@@ -301,7 +301,7 @@ const ListDetailScreen = () => {
             <Row className="mb-4">
               <Col xs={12}>
                 <LocationMapView 
-                  items={currentListItems} 
+                  items={currentListItems || []} 
                   onItemClick={handleMapItemClick} 
                 />
               </Col>
@@ -313,7 +313,7 @@ const ListDetailScreen = () => {
             <Row className="row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
               {loading ? (
                 renderItemSkeletons()
-              ) : currentListItems.length === 0 ? (
+              ) : !currentListItems || currentListItems.length === 0 ? (
                 <Col xs={12}>
                   <p>This list doesn't have any items yet. Add some to get started!</p>
                 </Col>
@@ -360,7 +360,7 @@ const ListDetailScreen = () => {
                 show={showGenerateModal}
                 onHide={handleCloseGenerateModal}
                 listId={id}
-                listItems={currentListItems}
+                listItems={currentListItems || []}
               />
             </>
           )}

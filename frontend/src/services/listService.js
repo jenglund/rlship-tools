@@ -173,9 +173,15 @@ const listService = {
   // Get all shares for a list
   getListShares: async (listID) => {
     try {
+      console.log(`Fetching shares for list: ${listID}`);
+      console.log(`API URL: ${API_URL}/v1/lists/${listID}/shares`);
+      console.log(`Auth headers:`, getAuthHeader());
+      
       const response = await axios.get(`${API_URL}/v1/lists/${listID}/shares`, {
         headers: getAuthHeader()
       });
+      
+      console.log(`Successfully fetched list shares:`, response.data);
       
       // If we have share data and it doesn't already include tribe names
       if (response.data.data && response.data.data.length > 0) {
@@ -209,10 +215,28 @@ const listService = {
         return sharesWithNames;
       }
       
-      return response.data.data;
+      // Handle case where data is returned but might be empty
+      return response.data.data || [];
     } catch (error) {
       console.error(`Error fetching shares for list ${listID}:`, error);
-      throw error;
+      console.error('Request details:', {
+        url: `${API_URL}/v1/lists/${listID}/shares`,
+        headers: getAuthHeader()
+      });
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        // If we get a 403 or 404, throw the error rather than returning an empty array
+        // This will prevent infinite loops of retries
+        if (error.response.status === 403 || error.response.status === 404) {
+          throw error;
+        }
+      }
+      
+      // For other errors, return empty array to avoid breaking the UI
+      return [];
     }
   },
 

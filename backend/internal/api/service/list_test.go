@@ -282,8 +282,17 @@ func TestListService_Sharing(t *testing.T) {
 	expiresAt := time.Now().Add(24 * time.Hour)
 
 	t.Run("Share With Tribe", func(t *testing.T) {
-		mockRepo.On("GetByID", listID).Return(&models.List{ID: listID}, nil).Once()
-		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{{OwnerID: userID, OwnerType: models.OwnerTypeUser}}, nil).Once()
+		list := &models.List{
+			ID: listID,
+			Owners: []*models.ListOwner{
+				{OwnerID: userID, OwnerType: models.OwnerTypeUser},
+			},
+		}
+		ownerType := models.OwnerTypeUser
+		list.OwnerType = &ownerType
+		list.OwnerID = &userID
+
+		mockRepo.On("GetByID", listID).Return(list, nil).Once()
 		mockRepo.On("ShareWithTribe", mock.MatchedBy(func(share *models.ListShare) bool {
 			return share.ListID == listID && share.TribeID == tribeID && share.UserID == userID
 		})).Return(nil).Once()
@@ -293,7 +302,12 @@ func TestListService_Sharing(t *testing.T) {
 
 	t.Run("Unshare With Tribe", func(t *testing.T) {
 		mockRepo.On("GetByID", listID).Return(&models.List{ID: listID}, nil).Once()
-		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{{OwnerID: userID, OwnerType: models.OwnerTypeUser}}, nil).Once()
+		mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+			{OwnerID: userID, OwnerType: models.OwnerTypeUser},
+		}, nil).Once()
+		mockRepo.On("GetListShares", listID).Return([]*models.ListShare{
+			{ListID: listID, TribeID: tribeID, UserID: userID},
+		}, nil).Once()
 		mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil).Once()
 		err := service.UnshareListWithTribe(listID, tribeID, userID)
 		assert.NoError(t, err)
@@ -676,12 +690,18 @@ func (m *MockListRepository) GetTribeListsWithContext(ctx context.Context, tribe
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
-// Helper function to check if an error is a common error type
+func (m *MockListRepository) CleanupExpiredShares(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func isCommonError(err error) bool {
 	return errors.Is(err, models.ErrNotFound) ||
-		errors.Is(err, models.ErrForbidden) ||
 		errors.Is(err, models.ErrInvalidInput) ||
-		errors.Is(err, models.ErrUnauthorized)
+		errors.Is(err, models.ErrUnauthorized) ||
+		errors.Is(err, models.ErrConflict) ||
+		errors.Is(err, models.ErrInternal) ||
+		errors.Is(err, models.ErrDuplicate)
 }
 
 // Using a simple error variable for testing
@@ -694,6 +714,15 @@ func TestListService_UnshareListWithTribe(t *testing.T) {
 	listID := uuid.New()
 	tribeID := uuid.New()
 	userID := uuid.New()
+
+	// Create some test data for list shares
+	listShares := []*models.ListShare{
+		{
+			ListID:  listID,
+			TribeID: tribeID,
+			UserID:  userID,
+		},
+	}
 
 	tests := []struct {
 		name          string
@@ -724,6 +753,9 @@ func TestListService_UnshareListWithTribe(t *testing.T) {
 						OwnerType: "user",
 					},
 				}, nil)
+
+				// Mock GetListShares to return shares
+				mockRepo.On("GetListShares", listID).Return(listShares, nil)
 
 				// Mock UnshareWithTribe to succeed
 				mockRepo.On("UnshareWithTribe", listID, tribeID).Return(nil)
@@ -819,6 +851,60 @@ func TestListService_UnshareListWithTribe(t *testing.T) {
 			expectedError: models.ErrForbidden,
 		},
 		{
+			name:    "share does not exist",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return list with user as owner
+				mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+					{
+						ListID:    listID,
+						OwnerID:   userID,
+						OwnerType: "user",
+					},
+				}, nil)
+
+				// Mock GetListShares to return no shares
+				mockRepo.On("GetListShares", listID).Return([]*models.ListShare{}, nil)
+			},
+			expectedError: models.ErrNotFound,
+		},
+		{
+			name:    "error getting shares",
+			listID:  listID,
+			tribeID: tribeID,
+			userID:  userID,
+			setupMocks: func(mockRepo *MockListRepository) {
+				// Mock GetByID to return a valid list
+				mockRepo.On("GetByID", listID).Return(&models.List{
+					ID:         listID,
+					Name:       "Test List",
+					Visibility: models.VisibilityShared,
+				}, nil)
+
+				// Mock GetOwners to return list with user as owner
+				mockRepo.On("GetOwners", listID).Return([]*models.ListOwner{
+					{
+						ListID:    listID,
+						OwnerID:   userID,
+						OwnerType: "user",
+					},
+				}, nil)
+
+				// Mock GetListShares to return error
+				mockRepo.On("GetListShares", listID).Return(nil, errInternalServer)
+			},
+			expectedError: errInternalServer,
+		},
+		{
 			name:    "error unsharing",
 			listID:  listID,
 			tribeID: tribeID,
@@ -839,6 +925,9 @@ func TestListService_UnshareListWithTribe(t *testing.T) {
 						OwnerType: "user",
 					},
 				}, nil)
+
+				// Mock GetListShares to return shares
+				mockRepo.On("GetListShares", listID).Return(listShares, nil)
 
 				// Mock UnshareWithTribe to fail
 				mockRepo.On("UnshareWithTribe", listID, tribeID).Return(errInternalServer)
@@ -874,4 +963,24 @@ func TestListService_UnshareListWithTribe(t *testing.T) {
 			mockRepo.AssertExpectations(t)
 		})
 	}
+}
+
+// TestListService_CleanupExpiredShares tests the expired shares cleanup functionality
+func TestListService_CleanupExpiredShares(t *testing.T) {
+	mockRepo := new(MockListRepository)
+	service := NewListService(mockRepo)
+	defer mockRepo.AssertExpectations(t)
+
+	// Test successful cleanup
+	mockRepo.On("CleanupExpiredShares", mock.Anything).Return(nil).Once()
+	err := service.CleanupExpiredShares()
+	assert.NoError(t, err)
+
+	// Test cleanup with error
+	expectedErr := fmt.Errorf("database error")
+	mockRepo.On("CleanupExpiredShares", mock.Anything).Return(expectedErr).Once()
+	err = service.CleanupExpiredShares()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error cleaning up expired shares")
+	assert.Contains(t, err.Error(), expectedErr.Error())
 }

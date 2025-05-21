@@ -344,6 +344,7 @@ type ListRepository interface {
 	GetSharedLists(tribeID uuid.UUID) ([]*List, error)
 	GetSharedTribes(listID uuid.UUID) ([]*Tribe, error)
 	GetListShares(listID uuid.UUID) ([]*ListShare, error)
+	CleanupExpiredShares(ctx context.Context) error
 
 	// Sync management
 	UpdateSyncStatus(listID uuid.UUID, status ListSyncStatus) error

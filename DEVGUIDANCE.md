@@ -258,4 +258,64 @@ If schema issues occur in tests, check these potential causes:
 - Use fully qualified table references in critical queries
 - Check that all schemas used in SQL queries are properly escaped
 
+## Local Database Debugging
+
+When debugging list management or other database-related issues during development, you can connect directly to the local PostgreSQL database to examine the data and verify operations. This is particularly useful when manually testing interactions with the development stack.
+
+### Connecting to the Development Database
+
+Use the following command to connect to the local development database:
+
+```bash
+docker exec -it rlship-tools-db-1 psql -U postgres -d rlship
+```
+
+This connects to the PostgreSQL container and opens a psql session with the development database.
+
+### Example Queries for Debugging
+
+Here are some useful queries for debugging list management issues:
+
+#### View all lists for a user
+
+```sql
+SELECT * FROM lists WHERE owner_id = 'user_id_here';
+```
+
+#### Examine list items
+
+```sql
+SELECT * FROM list_items WHERE list_id = 'list_id_here';
+```
+
+#### Check list sharing records
+
+```sql
+SELECT * FROM list_shares WHERE list_id = 'list_id_here';
+```
+
+#### Verify tribe-list relationships
+
+```sql
+SELECT t.name AS tribe_name, l.name AS list_name
+FROM tribes t
+JOIN tribe_lists tl ON t.id = tl.tribe_id
+JOIN lists l ON tl.list_id = l.id
+WHERE t.id = 'tribe_id_here';
+```
+
+#### Check for soft-deleted records
+
+```sql
+SELECT * FROM lists WHERE deleted_at IS NOT NULL;
+```
+
+When debugging list-related issues, always check for:
+1. Properly set foreign keys
+2. Existence of soft-deleted records
+3. Correct timestamps for created_at and updated_at fields
+4. Proper permission settings in sharing records
+
+Remember to replace `user_id_here`, `list_id_here`, and `tribe_id_here` with actual IDs from your test data.
+
 ## Additional Notes 

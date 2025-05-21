@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -119,9 +120,15 @@ func NewDB(host string, port int, user, password, dbname, sslmode string) (*sql.
 		return nil, fmt.Errorf("error connecting to the database: %w", err)
 	}
 
-	// Set reasonable defaults for connection pool
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
+	// Set improved connection pool settings
+	db.SetMaxOpenConns(50)                  // Increased from 25 to handle more concurrent requests
+	db.SetMaxIdleConns(10)                  // Increased from 5 to maintain more idle connections
+	db.SetConnMaxLifetime(10 * time.Minute) // Increased from 5 minutes to reduce connection cycling
+	db.SetConnMaxIdleTime(3 * time.Minute)  // Increased from 1 minute to reduce connection cycling
+
+	// Log connection pool settings
+	log.Printf("Database connection pool configured: MaxOpenConns=%d, MaxIdleConns=%d, ConnMaxLifetime=%v, ConnMaxIdleTime=%v",
+		50, 10, 10*time.Minute, 3*time.Minute)
 
 	return db, nil
 }

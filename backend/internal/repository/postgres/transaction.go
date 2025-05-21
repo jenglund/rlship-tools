@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -47,47 +48,63 @@ type TransactionOptions struct {
 // DefaultTransactionOptions returns default options
 func DefaultTransactionOptions() TransactionOptions {
 	return TransactionOptions{
-		LockTimeout:      time.Second * 3,
+		LockTimeout:      time.Second * 5,
 		IsolationLevel:   sql.LevelReadCommitted,
 		RetryOnDeadlock:  true,
-		MaxRetries:       3,
-		StatementTimeout: defaultOperationTimeout,
+		MaxRetries:       5,
+		StatementTimeout: time.Second * 15,
 	}
 }
 
 // WithTransaction executes a function within a transaction
 func (tm *TransactionManager) WithTransaction(ctx context.Context, opts TransactionOptions, fn func(*sql.Tx) error) error {
-	// Create a timeout context if one wasn't provided
-	var cancel context.CancelFunc
-	if _, ok := ctx.Deadline(); !ok {
-		ctx, cancel = context.WithTimeout(ctx, opts.StatementTimeout)
-		defer cancel()
+	var tx *sql.Tx
+	var err error
+
+	// Get test schema from context or fallback to global value
+	testSchema := ""
+	if ctx != nil {
+		if schemaVal := ctx.Value("test_schema"); schemaVal != nil {
+			if schema, ok := schemaVal.(string); ok && schema != "" {
+				testSchema = schema
+			}
+		}
 	}
 
-	var err error
-	var tx *sql.Tx
-
-	// Determine schema context:
-	// 1. First try to get it from the context
-	// 2. Then fall back to global test schema for backward compatibility
-	var testSchema string
-
-	// Check for schema in the context first
-	if schemaFromCtx := testutil.GetSchemaFromContext(ctx); schemaFromCtx != "" {
-		testSchema = schemaFromCtx
-		fmt.Printf("WithTransaction: Using schema from context: %s\n", testSchema)
-	} else if currentSchema := testutil.GetCurrentTestSchema(); currentSchema != "" {
-		// Fall back to global variable for backward compatibility
-		testSchema = currentSchema
-		fmt.Printf("WithTransaction: Using test schema from global: %s\n", testSchema)
+	if testSchema == "" {
+		testSchema = testutil.GetCurrentTestSchema()
 	}
 
 	for attempt := 0; attempt <= opts.MaxRetries; attempt++ {
+		// Verify DB connection is valid before starting transaction
+		if err := tm.db.PingContext(ctx); err != nil {
+			log.Printf("Database connection error on attempt %d/%d: %v",
+				attempt+1, opts.MaxRetries+1, err)
+
+			if attempt < opts.MaxRetries {
+				retryDelay := time.Millisecond * time.Duration(100*(1<<attempt))
+				log.Printf("Database connection retry in %d ms", retryDelay.Milliseconds())
+				time.Sleep(retryDelay)
+				continue
+			}
+			return fmt.Errorf("database connection failed after %d retries: %w",
+				opts.MaxRetries, err)
+		}
+
 		// Start transaction with specified isolation level
 		tx, err = tm.db.BeginTx(ctx, &sql.TxOptions{
 			Isolation: opts.IsolationLevel,
 		})
 		if err != nil {
+			// Check if it's a connection error
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Failed to start transaction (bad connection) on attempt %d/%d",
+					attempt+1, opts.MaxRetries+1)
+				retryDelay := time.Millisecond * time.Duration(100*(1<<attempt))
+				log.Printf("Transaction retry in %d ms", retryDelay.Milliseconds())
+				time.Sleep(retryDelay)
+				continue
+			}
 			return fmt.Errorf("error starting transaction: %w", err)
 		}
 
@@ -99,6 +116,15 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		if err != nil {
 			configCancel()
 			safeClose(tx)
+			// Check if it's a connection error
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Failed to set lock timeout (bad connection) on attempt %d/%d",
+					attempt+1, opts.MaxRetries+1)
+				retryDelay := time.Millisecond * time.Duration(100*(1<<attempt))
+				log.Printf("Transaction retry in %d ms", retryDelay.Milliseconds())
+				time.Sleep(retryDelay)
+				continue
+			}
 			return fmt.Errorf("error setting lock timeout: %w", err)
 		}
 
@@ -107,6 +133,15 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		if err != nil {
 			configCancel()
 			safeClose(tx)
+			// Check if it's a connection error
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Failed to set statement timeout (bad connection) on attempt %d/%d",
+					attempt+1, opts.MaxRetries+1)
+				retryDelay := time.Millisecond * time.Duration(100*(1<<attempt))
+				log.Printf("Transaction retry in %d ms", retryDelay.Milliseconds())
+				time.Sleep(retryDelay)
+				continue
+			}
 			return fmt.Errorf("error setting statement timeout: %w", err)
 		}
 
@@ -120,6 +155,15 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			if err != nil {
 				configCancel()
 				safeClose(tx)
+				// Check if it's a connection error
+				if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+					log.Printf("Failed to set test schema search_path (bad connection) on attempt %d/%d",
+						attempt+1, opts.MaxRetries+1)
+					retryDelay := time.Millisecond * time.Duration(100*(1<<attempt))
+					log.Printf("Transaction retry in %d ms", retryDelay.Milliseconds())
+					time.Sleep(retryDelay)
+					continue
+				}
 				return fmt.Errorf("error setting test schema search_path: %w", err)
 			}
 		} else {
@@ -129,6 +173,13 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			if err != nil {
 				configCancel()
 				safeClose(tx)
+				// Check if it's a connection error
+				if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+					log.Printf("Failed to get current search_path (bad connection), retrying in %d ms",
+						100*(1<<attempt))
+					time.Sleep(time.Millisecond * time.Duration(100*(1<<attempt)))
+					continue
+				}
 				return fmt.Errorf("error getting current search_path: %w", err)
 			}
 
@@ -137,6 +188,13 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 			if err != nil {
 				configCancel()
 				safeClose(tx)
+				// Check if it's a connection error
+				if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+					log.Printf("Failed to set search_path in transaction (bad connection), retrying in %d ms",
+						100*(1<<attempt))
+					time.Sleep(time.Millisecond * time.Duration(100*(1<<attempt)))
+					continue
+				}
 				return fmt.Errorf("error setting search_path in transaction: %w", err)
 			}
 		}
@@ -147,6 +205,13 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		if err != nil {
 			configCancel()
 			safeClose(tx)
+			// Check if it's a connection error
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Failed to verify search_path in transaction (bad connection), retrying in %d ms",
+					100*(1<<attempt))
+				time.Sleep(time.Millisecond * time.Duration(100*(1<<attempt)))
+				continue
+			}
 			return fmt.Errorf("error verifying search_path in transaction: %w", err)
 		}
 
@@ -169,6 +234,14 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 
 		if err != nil {
 			safeClose(tx)
+
+			// Check for specific error types
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Transaction execution failed (bad connection), retrying in %d ms",
+					100*(1<<attempt))
+				time.Sleep(time.Millisecond * time.Duration(100*(1<<attempt)))
+				continue
+			}
 
 			if pqErr, ok := err.(*pq.Error); ok {
 				switch pqErr.Code {
@@ -194,6 +267,13 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		err = tx.QueryRowContext(commitCtx, "SHOW search_path").Scan(&finalSearchPath)
 		if err != nil {
 			safeClose(tx)
+			// Check if it's a connection error
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Failed to verify search_path before commit (bad connection), retrying in %d ms",
+					100*(1<<attempt))
+				time.Sleep(time.Millisecond * time.Duration(100*(1<<attempt)))
+				continue
+			}
 			return fmt.Errorf("error verifying search_path before commit: %w", err)
 		}
 
@@ -207,6 +287,13 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, opts Transact
 		err = tx.Commit()
 
 		if err != nil {
+			// Check if it's a connection error
+			if err.Error() == "driver: bad connection" && attempt < opts.MaxRetries {
+				log.Printf("Failed to commit transaction (bad connection), retrying in %d ms",
+					100*(1<<attempt))
+				time.Sleep(time.Millisecond * time.Duration(100*(1<<attempt)))
+				continue
+			}
 			return fmt.Errorf("error committing transaction: %w", err)
 		}
 

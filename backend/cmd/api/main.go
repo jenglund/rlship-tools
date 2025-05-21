@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/jenglund/rlship-tools/internal/config"
 	"github.com/jenglund/rlship-tools/internal/middleware"
 	"github.com/jenglund/rlship-tools/internal/repository/postgres"
+	"github.com/jenglund/rlship-tools/internal/worker"
 )
 
 func main() {
@@ -63,6 +65,9 @@ func setupApp(cfg *config.Config) (*gin.Engine, error) {
 	// Initialize repositories
 	repos := postgres.NewRepositories(db)
 
+	// Initialize services
+	listService := service.NewListService(repos.Lists)
+
 	// Check for development mode
 	environment := os.Getenv("ENVIRONMENT")
 	isDevelopment := environment == "development"
@@ -95,13 +100,82 @@ func setupApp(cfg *config.Config) (*gin.Engine, error) {
 	}
 
 	// Initialize and configure Gin router
-	router := setupRouter(repos, authMiddleware)
+	router := setupRouter(repos, authMiddleware, listService)
+
+	// Initialize and start background workers
+	// Share cleanup worker runs every hour
+	cleanupWorker := worker.NewShareCleanupWorker(listService, 1*time.Hour)
+	cleanupWorker.Start()
+	log.Println("Share cleanup worker started")
+
+	// Start a background goroutine to monitor database health
+	go monitorDatabaseHealth(repos.DB())
 
 	return router, nil
 }
 
+// monitorDatabaseHealth periodically checks database health and attempts reconnection if needed
+func monitorDatabaseHealth(db *sql.DB) {
+	log.Println("Starting database health monitoring...")
+	ticker := time.NewTicker(15 * time.Second) // Check more frequently (every 15 seconds)
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+	maxConsecutiveFailures := 3
+
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := db.PingContext(ctx)
+		cancel()
+
+		if err != nil {
+			consecutiveFailures++
+			log.Printf("Database connection unhealthy (%d/%d): %v",
+				consecutiveFailures, maxConsecutiveFailures, err)
+
+			// Get connection pool stats
+			stats := db.Stats()
+			log.Printf("Connection pool stats: open=%d, in-use=%d, idle=%d, max-open=%d",
+				stats.OpenConnections, stats.InUse, stats.Idle,
+				stats.MaxOpenConnections)
+
+			// If we've had multiple consecutive failures, perform more aggressive recovery
+			if consecutiveFailures >= maxConsecutiveFailures {
+				log.Printf("Performing aggressive connection recovery after %d consecutive failures",
+					consecutiveFailures)
+
+				// Force close idle connections
+				db.SetMaxIdleConns(0)
+				time.Sleep(500 * time.Millisecond)
+				db.SetMaxIdleConns(10)
+
+				// Wait a moment and try to reconnect
+				time.Sleep(1 * time.Second)
+
+				// Try to reconnect with a fresh context
+				reconnectCtx, reconnectCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				reconnectErr := db.PingContext(reconnectCtx)
+				reconnectCancel()
+
+				if reconnectErr != nil {
+					log.Printf("Failed to reconnect to database: %v", reconnectErr)
+				} else {
+					log.Println("Successfully reconnected to database after aggressive recovery")
+					consecutiveFailures = 0
+				}
+			}
+		} else {
+			// Reset counter on successful ping
+			if consecutiveFailures > 0 {
+				log.Println("Database connection restored")
+				consecutiveFailures = 0
+			}
+		}
+	}
+}
+
 // setupRouter creates and configures the Gin router with all routes and middlewares
-func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMiddleware) *gin.Engine {
+func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMiddleware, listService service.ListService) *gin.Engine {
 	// Set Gin to release mode in production
 	if os.Getenv("GIN_MODE") != "debug" {
 		gin.SetMode(gin.ReleaseMode)
@@ -112,6 +186,10 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 
 	// Add CORS middleware
 	router.Use(middleware.CORS())
+
+	// Add database health check middleware
+	dbHealthChecker := middleware.NewDatabaseHealthChecker(repos.DB(), 30*time.Second)
+	router.Use(dbHealthChecker.Middleware())
 
 	// Debug endpoint - doesn't require auth
 	debug := router.Group("/api/debug")
@@ -135,6 +213,41 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 				"message": "pong",
 				"status":  "ok",
 				"time":    time.Now().Format(time.RFC3339),
+			})
+		})
+
+		debug.GET("/db-health", func(c *gin.Context) {
+			// Test database connection
+			err := repos.DB().Ping()
+
+			// Check connection pool stats
+			stats := repos.DB().Stats()
+
+			if err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"status":  "error",
+					"message": fmt.Sprintf("Database connection error: %v", err),
+					"time":    time.Now().Format(time.RFC3339),
+					"pool_stats": gin.H{
+						"open_connections":     stats.OpenConnections,
+						"in_use":               stats.InUse,
+						"idle":                 stats.Idle,
+						"max_open_connections": stats.MaxOpenConnections,
+					},
+				})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"message": "Database connection healthy",
+				"time":    time.Now().Format(time.RFC3339),
+				"pool_stats": gin.H{
+					"open_connections":     stats.OpenConnections,
+					"in_use":               stats.InUse,
+					"idle":                 stats.Idle,
+					"max_open_connections": stats.MaxOpenConnections,
+				},
 			})
 		})
 	}
@@ -188,9 +301,6 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 		// Initialize and register v1 group
 		v1 := api.Group("/v1")
 
-		// Initialize list service using the repository
-		listService := service.NewListService(repos.Lists)
-
 		// Initialize the list handler
 		listHandler := handlers.NewListHandler(listService)
 
@@ -222,6 +332,10 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 		// Specific share endpoint (with tribe ID in the URL)
 		lists.POST("/:listID/share/:tribeID", wrapHandler(listHandler.ShareListWithTribe))
 		lists.DELETE("/:listID/share/:tribeID", wrapHandler(listHandler.UnshareListWithTribe))
+
+		// Admin endpoints
+		admin := lists.Group("/admin")
+		admin.POST("/cleanup-expired-shares", wrapHandler(listHandler.CleanupExpiredShares))
 	}
 
 	// Log all registered routes

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,6 +168,12 @@ func (m *MockListService) GetListShares(listID uuid.UUID) ([]*models.ListShare, 
 
 func (m *MockListService) CreateListConflict(conflict *models.SyncConflict) error {
 	args := m.Called(conflict)
+	return args.Error(0)
+}
+
+// CleanupExpiredShares removes expired shares
+func (m *MockListService) CleanupExpiredShares() error {
+	args := m.Called()
 	return args.Error(0)
 }
 
@@ -1812,6 +1820,279 @@ func TestListHandler_GetSharedLists(t *testing.T) {
 				assert.Equal(t, tt.expectedError, response.Error.Message)
 			}
 
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+// TestCleanupExpiredShares tests the admin endpoint for cleaning up expired shares
+func TestCleanupExpiredShares(t *testing.T) {
+	mockService := new(MockListService)
+	handler := NewListHandler(mockService)
+	router := chi.NewRouter()
+	handler.RegisterRoutes(router)
+
+	// Test successful cleanup
+	t.Run("Successful Cleanup", func(t *testing.T) {
+		mockService.On("CleanupExpiredShares").Return(nil).Once()
+
+		req := httptest.NewRequest(http.MethodPost, "/lists/admin/cleanup-expired-shares", nil)
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		mockService.AssertExpectations(t)
+
+		var resp map[string]string
+		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Contains(t, resp["message"], "successfully")
+	})
+
+	// Test error during cleanup
+	t.Run("Cleanup Error", func(t *testing.T) {
+		mockService.On("CleanupExpiredShares").Return(errors.New("database error")).Once()
+
+		req := httptest.NewRequest(http.MethodPost, "/lists/admin/cleanup-expired-shares", nil)
+		rec := httptest.NewRecorder()
+
+		router.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		mockService.AssertExpectations(t)
+		assert.Contains(t, rec.Body.String(), "Failed to clean up expired shares")
+	})
+}
+
+// TestCreateListValidation tests the validation rules for the CreateList handler
+func TestCreateListValidation(t *testing.T) {
+	mockService := new(MockListService)
+	handler := NewListHandler(mockService)
+	router := chi.NewRouter()
+	handler.RegisterRoutes(router)
+
+	userID := uuid.New()
+
+	tests := []struct {
+		name           string
+		requestBody    map[string]interface{}
+		setupMocks     func(*MockListService)
+		setupAuth      func(*http.Request)
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name: "empty_name",
+			requestBody: map[string]interface{}{
+				"name":        "",
+				"description": "Test description",
+				"type":        "general",
+			},
+			setupAuth: func(r *http.Request) {
+				// Set up auth context
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "List name cannot be empty",
+		},
+		{
+			name: "whitespace_only_name",
+			requestBody: map[string]interface{}{
+				"name":        "   ",
+				"description": "Test description",
+				"type":        "general",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "List name cannot be empty",
+		},
+		{
+			name: "name_too_long",
+			requestBody: map[string]interface{}{
+				"name":        strings.Repeat("a", 101), // 101 characters
+				"description": "Test description",
+				"type":        "general",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "List name is too long",
+		},
+		{
+			name: "description_too_long",
+			requestBody: map[string]interface{}{
+				"name":        "Test List",
+				"description": strings.Repeat("a", 1001), // 1001 characters
+				"type":        "general",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "List description is too long",
+		},
+		{
+			name: "create_list_for_another_user",
+			requestBody: map[string]interface{}{
+				"name":        "Test List",
+				"description": "Test description",
+				"type":        "general",
+				"owner_id":    uuid.New().String(),
+				"owner_type":  "user",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			expectedStatus: http.StatusForbidden,
+			expectedError:  "You can only create lists for yourself or tribes you belong to",
+		},
+		{
+			name: "duplicate_list",
+			requestBody: map[string]interface{}{
+				"name":        "Duplicate List",
+				"description": "Test description",
+				"type":        "general",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			setupMocks: func(mockService *MockListService) {
+				// Create the list object that would be passed to the service
+				list := &models.List{
+					Name:        "Duplicate List",
+					Description: "Test description",
+					Type:        "general",
+				}
+				// Mock the service to return a duplicate error
+				mockService.On("CreateList", mock.MatchedBy(func(l *models.List) bool {
+					return l.Name == list.Name
+				})).Return(models.ErrDuplicate).Once()
+
+				// Mock the GetUserLists call that happens after a duplicate error
+				existingLists := []*models.List{
+					{
+						ID:          uuid.New(),
+						Name:        "Duplicate List",
+						Description: "Existing list with the same name",
+						Type:        "general",
+					},
+				}
+				mockService.On("GetUserLists", userID).Return(existingLists, nil).Once()
+			},
+			expectedStatus: http.StatusConflict,
+			expectedError:  "A list with the name 'Duplicate List' already exists",
+		},
+		{
+			name: "trim_whitespace_valid_creation",
+			requestBody: map[string]interface{}{
+				"name":        "  Test List  ",
+				"description": "  Test description  ",
+				"type":        "general",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			setupMocks: func(mockService *MockListService) {
+				// The handler should trim whitespace before passing to service
+				mockService.On("CreateList", mock.MatchedBy(func(l *models.List) bool {
+					return l.Name == "Test List" && l.Description == "Test description"
+				})).Return(nil).Once()
+			},
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name: "success_with_defaults",
+			requestBody: map[string]interface{}{
+				"name": "Valid List",
+			},
+			setupAuth: func(r *http.Request) {
+				ctx := context.WithValue(r.Context(), "user_id", userID)
+				*r = *r.WithContext(ctx)
+			},
+			setupMocks: func(mockService *MockListService) {
+				mockService.On("CreateList", mock.MatchedBy(func(l *models.List) bool {
+					return l.Name == "Valid List" &&
+						l.Type == models.ListTypeGeneral &&
+						l.Visibility == models.VisibilityPrivate &&
+						l.DefaultWeight == 1.0
+				})).Return(nil).Once()
+			},
+			expectedStatus: http.StatusCreated,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset the mock
+			mockService.ExpectedCalls = nil
+			mockService.Calls = nil
+
+			// Setup mocks if provided
+			if tc.setupMocks != nil {
+				tc.setupMocks(mockService)
+			}
+
+			// Create request
+			body, err := json.Marshal(tc.requestBody)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, "/lists", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			// Setup auth if provided
+			if tc.setupAuth != nil {
+				tc.setupAuth(req)
+			}
+
+			rec := httptest.NewRecorder()
+
+			// Call the handler directly
+			handler.CreateList(rec, req)
+
+			// Check status code
+			assert.Equal(t, tc.expectedStatus, rec.Code)
+
+			// Check error message if expected
+			if tc.expectedError != "" {
+				// For duplicate errors, the response format is different
+				if tc.name == "duplicate_list" {
+					var response map[string]interface{}
+					err := json.NewDecoder(rec.Body).Decode(&response)
+					require.NoError(t, err)
+
+					errorMsg, ok := response["error"].(string)
+					if ok {
+						assert.Contains(t, errorMsg, tc.expectedError)
+					} else {
+						t.Logf("Response body: %v", response)
+						assert.Fail(t, "Expected error message not found in duplicate list response")
+					}
+				} else {
+					// Regular error format
+					var response struct {
+						Success bool `json:"success"`
+						Error   struct {
+							Message string `json:"message"`
+						} `json:"error"`
+					}
+					err := json.NewDecoder(rec.Body).Decode(&response)
+					require.NoError(t, err)
+					assert.Contains(t, response.Error.Message, tc.expectedError)
+				}
+			}
+
+			// Verify all mocks were called
 			mockService.AssertExpectations(t)
 		})
 	}

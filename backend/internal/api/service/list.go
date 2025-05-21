@@ -1,8 +1,11 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +50,9 @@ type ListService interface {
 
 	// GetListShares retrieves all shares for a list
 	GetListShares(listID uuid.UUID) ([]*models.ListShare, error)
+
+	// CleanupExpiredShares removes expired shares
+	CleanupExpiredShares() error
 }
 
 // listService implements the ListService interface
@@ -61,12 +67,48 @@ func NewListService(repo models.ListRepository) ListService {
 
 // CreateList creates a new list
 func (s *listService) CreateList(list *models.List) error {
-	// Validate list
+	// Trim whitespace from name and description
+	list.Name = strings.TrimSpace(list.Name)
+	list.Description = strings.TrimSpace(list.Description)
+
+	// Validate the list
 	if err := list.Validate(); err != nil {
 		return err
 	}
 
-	// Create list
+	// Additional validation
+	if list.Name == "" {
+		return fmt.Errorf("%w: list name cannot be empty", models.ErrInvalidInput)
+	}
+
+	// Set creation timestamp
+	now := time.Now()
+	list.CreatedAt = now
+	list.UpdatedAt = now
+
+	// If owner information is provided, add the owner after creating the list
+	hasOwner := list.OwnerID != nil && list.OwnerType != nil
+
+	// Check if a list with the same name already exists for this owner
+	if hasOwner {
+		// Search for lists with the same name for this owner
+		existingLists, err := s.repo.GetListsByOwner(*list.OwnerID, *list.OwnerType)
+		if err != nil {
+			return fmt.Errorf("error checking for existing lists: %w", err)
+		}
+
+		// Normalize the list name for comparison
+		normalizedName := strings.ToLower(strings.TrimSpace(list.Name))
+		for _, existing := range existingLists {
+			existingName := strings.ToLower(strings.TrimSpace(existing.Name))
+			if existingName == normalizedName {
+				return models.ErrDuplicate
+			}
+		}
+	}
+
+	// Create the list - note that the repository's Create method already adds the primary owner
+	// to the list_owners table, so we don't need to add it separately
 	if err := s.repo.Create(list); err != nil {
 		return err
 	}
@@ -369,69 +411,113 @@ func (s *listService) GetTribeLists(tribeID uuid.UUID) ([]*models.List, error) {
 
 // ShareListWithTribe shares a list with a tribe
 func (s *listService) ShareListWithTribe(listID, tribeID, userID uuid.UUID, expiresAt *time.Time) error {
+	// Validate input parameters
+	if listID == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+	if tribeID == uuid.Nil {
+		return fmt.Errorf("%w: tribe ID is required", models.ErrInvalidInput)
+	}
+	if userID == uuid.Nil {
+		return fmt.Errorf("%w: user ID is required", models.ErrInvalidInput)
+	}
+	if expiresAt != nil && expiresAt.Before(time.Now()) {
+		return fmt.Errorf("%w: expiration date must be in the future", models.ErrInvalidInput)
+	}
+
 	// Check if list exists
 	list, err := s.repo.GetByID(listID)
 	if err != nil {
-		if err.Error() == "list not found" {
-			return models.ErrNotFound
+		if errors.Is(err, models.ErrNotFound) {
+			return fmt.Errorf("%w: list with ID %s not found", models.ErrNotFound, listID)
 		}
-		return err
+		return fmt.Errorf("failed to get list: %w", err)
 	}
 
-	// Check if user is an owner of the list
-	owners, err := s.repo.GetOwners(listID)
+	// Check if user can share this list
+	canShare, err := s.canUserShareList(userID, list)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check if user can share list: %w", err)
+	}
+	if !canShare {
+		return fmt.Errorf("%w: user %s is not authorized to share list %s", models.ErrUnauthorized, userID, listID)
 	}
 
-	hasPermission := false
-	for _, owner := range owners {
-		if owner.OwnerID == userID && owner.OwnerType == "user" {
-			hasPermission = true
-			break
-		}
-	}
-
-	if !hasPermission {
-		return models.ErrForbidden
-	}
-
-	// Update visibility if needed
-	if list.Visibility == models.VisibilityPrivate {
-		list.Visibility = models.VisibilityShared
-		if err := s.repo.Update(list); err != nil {
-			return err
-		}
-	}
-
-	// Create a ListShare object
+	// Since we don't have a tribeRepo field, we'll just verify the tribe exists by checking if sharing fails
+	// Create share record
 	share := &models.ListShare{
 		ListID:    listID,
 		TribeID:   tribeID,
 		UserID:    userID,
+		ExpiresAt: expiresAt,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-		ExpiresAt: expiresAt,
+		Version:   1,
 	}
 
-	return s.repo.ShareWithTribe(share)
+	// Share the list with the tribe
+	if err := s.repo.ShareWithTribe(share); err != nil {
+		return fmt.Errorf("failed to share list with tribe: %w", err)
+	}
+
+	return nil
+}
+
+// Helper method to check if a user can share a list
+func (s *listService) canUserShareList(userID uuid.UUID, list *models.List) (bool, error) {
+	// If user is the owner, they can share
+	if list.OwnerType != nil && *list.OwnerType == models.OwnerTypeUser &&
+		list.OwnerID != nil && *list.OwnerID == userID {
+		return true, nil
+	}
+
+	// If list is owned by a tribe, check if user is a member with appropriate permissions
+	if list.OwnerType != nil && *list.OwnerType == models.OwnerTypeTribe && list.OwnerID != nil {
+		// Since we don't have direct access to tribe membership info,
+		// we'll check if the user is in the owners list instead
+		for _, owner := range list.Owners {
+			if owner.OwnerType == models.OwnerTypeUser && owner.OwnerID == userID {
+				return true, nil
+			}
+		}
+	}
+
+	// For other owner types, or if not the owner, check if user is an additional owner
+	for _, owner := range list.Owners {
+		if owner.OwnerType == models.OwnerTypeUser && owner.OwnerID == userID {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // UnshareListWithTribe removes a list share from a tribe
 func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) error {
+	// Validate input parameters
+	if listID == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+	if tribeID == uuid.Nil {
+		return fmt.Errorf("%w: tribe ID is required", models.ErrInvalidInput)
+	}
+	if userID == uuid.Nil {
+		return fmt.Errorf("%w: user ID is required", models.ErrInvalidInput)
+	}
+
 	// Check if list exists
 	_, err := s.repo.GetByID(listID)
 	if err != nil {
-		if err.Error() == "list not found" {
-			return models.ErrNotFound
+		if strings.Contains(err.Error(), "not found") {
+			return fmt.Errorf("%w: list with ID %s not found", models.ErrNotFound, listID)
 		}
-		return err
+		return fmt.Errorf("failed to get list: %w", err)
 	}
 
 	// Check if user is an owner of the list
 	owners, err := s.repo.GetOwners(listID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get list owners: %w", err)
 	}
 
 	hasPermission := false
@@ -443,10 +529,33 @@ func (s *listService) UnshareListWithTribe(listID, tribeID, userID uuid.UUID) er
 	}
 
 	if !hasPermission {
-		return models.ErrForbidden
+		return fmt.Errorf("%w: you do not have permission to unshare this list", models.ErrForbidden)
 	}
 
-	return s.repo.UnshareWithTribe(listID, tribeID)
+	// Check if share exists by getting list shares
+	shares, err := s.repo.GetListShares(listID)
+	if err != nil {
+		return fmt.Errorf("failed to check if list is shared with tribe: %w", err)
+	}
+
+	shareExists := false
+	for _, share := range shares {
+		if share.TribeID == tribeID {
+			shareExists = true
+			break
+		}
+	}
+
+	if !shareExists {
+		return fmt.Errorf("%w: list is not shared with the specified tribe", models.ErrNotFound)
+	}
+
+	// Remove the share
+	if err := s.repo.UnshareWithTribe(listID, tribeID); err != nil {
+		return fmt.Errorf("failed to unshare list from tribe: %w", err)
+	}
+
+	return nil
 }
 
 // GetSharedLists retrieves all lists shared with a tribe
@@ -463,4 +572,13 @@ func (s *listService) GetListShares(listID uuid.UUID) ([]*models.ListShare, erro
 	}
 
 	return s.repo.GetListShares(listID)
+}
+
+// CleanupExpiredShares removes expired shares
+func (s *listService) CleanupExpiredShares() error {
+	ctx := context.Background()
+	if err := s.repo.CleanupExpiredShares(ctx); err != nil {
+		return fmt.Errorf("error cleaning up expired shares: %w", err)
+	}
+	return nil
 }

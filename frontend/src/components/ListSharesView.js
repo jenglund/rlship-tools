@@ -18,25 +18,30 @@ const ListSharesView = ({ listId }) => {
     const fetchListOwnership = async () => {
       if (!currentList) return;
       
-      // Check if the current user is the owner
-      const isCurrentUserOwner = currentList.ownerId === currentUser?.id && 
-                                currentList.ownerType === 'user';
-      setIsOwner(isCurrentUserOwner);
-      
-      // Set owner info for display
-      if (currentList.ownerType === 'user') {
-        setOwnerInfo({
-          type: 'User',
-          id: currentList.ownerId,
-          displayName: currentList.ownerId === currentUser?.id ? 'You' : 'Another User'
-        });
-      } else if (currentList.ownerType === 'tribe') {
-        // In a real app, we would fetch the tribe name
-        setOwnerInfo({
-          type: 'Tribe',
-          id: currentList.ownerId,
-          displayName: 'Tribe'
-        });
+      try {
+        // Check if the current user is the owner
+        const isCurrentUserOwner = currentList.ownerId === currentUser?.id && 
+                                  currentList.ownerType === 'user';
+        setIsOwner(isCurrentUserOwner);
+        
+        // Set owner info for display
+        if (currentList.ownerType === 'user') {
+          setOwnerInfo({
+            type: 'User',
+            id: currentList.ownerId,
+            displayName: currentList.ownerId === currentUser?.id ? 'You' : 'Another User'
+          });
+        } else if (currentList.ownerType === 'tribe') {
+          // In a real app, we would fetch the tribe name
+          setOwnerInfo({
+            type: 'Tribe',
+            id: currentList.ownerId,
+            displayName: 'Tribe'
+          });
+        }
+      } catch (err) {
+        console.error('Error determining list ownership:', err);
+        // Don't set error state for this, just log it
       }
     };
     
@@ -45,20 +50,40 @@ const ListSharesView = ({ listId }) => {
         setLoading(true);
         setError(null);
         
-        // Use the context method for mock data instead of direct service call
-        const data = await getListShares(listId);
-        setShares(data || []);
+        // Only try to get shares if we are the owner
+        if (isOwner) {
+          // Use the context method to get shares
+          const data = await getListShares(listId);
+          
+          // Always ensure we have an array, even if the API returns null/undefined
+          setShares(Array.isArray(data) ? data : []);
+        } else {
+          // Not the owner, so don't try to fetch shares
+          setShares([]);
+        }
       } catch (err) {
         console.error('Error fetching list shares:', err);
-        setError('Failed to load list shares');
+        // Handle common errors
+        if (err?.response?.status === 403) {
+          // Permission denied - just set shares to empty
+          setShares([]);
+        } else if (err?.response?.status !== 404) {
+          // For any error other than 404, show an error message
+          setError('Failed to load list shares');
+        }
+        // Initialize with empty array rather than null
+        setShares([]);
       } finally {
         setLoading(false);
       }
     };
     
     fetchListOwnership();
-    fetchListShares();
-  }, [listId, getListShares, currentList, currentUser]);
+    // Only fetch shares after we've determined ownership
+    if (currentList) {
+      fetchListShares();
+    }
+  }, [listId, getListShares, currentList, currentUser, isOwner]);
   
   const handleUnshare = async (tribeID) => {
     try {
@@ -66,7 +91,7 @@ const ListSharesView = ({ listId }) => {
       await listService.unshareListWithTribe(listId, tribeID);
       
       // Update the local state
-      setShares(prev => prev.filter(tribe => tribe.id !== tribeID));
+      setShares(prev => prev.filter(share => share.tribeId !== tribeID));
     } catch (err) {
       console.error('Error unsharing list:', err);
       setError('Failed to unshare list');
@@ -118,16 +143,16 @@ const ListSharesView = ({ listId }) => {
             </Card.Body>
           ) : (
             <ListGroup variant="flush">
-              {shares.map(tribe => (
-                <ListGroup.Item key={tribe.id} className="d-flex justify-content-between align-items-center">
+              {shares.map(share => (
+                <ListGroup.Item key={share.tribeId} className="d-flex justify-content-between align-items-center">
                   <div>
-                    <strong>{tribe.name || tribe.tribeName || 'Unknown Tribe'}</strong>
-                    {tribe.description && <p className="text-muted mb-0">{tribe.description}</p>}
+                    <strong>{share.name || share.tribeName || 'Unknown Tribe'}</strong>
+                    {share.description && <p className="text-muted mb-0">{share.description}</p>}
                   </div>
                   <Button 
                     variant="outline-danger" 
                     size="sm" 
-                    onClick={() => handleUnshare(tribe.id)}
+                    onClick={() => handleUnshare(share.tribeId)}
                   >
                     Unshare
                   </Button>

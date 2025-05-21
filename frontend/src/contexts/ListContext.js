@@ -99,10 +99,18 @@ export const ListProvider = ({ children }) => {
       setCurrentList(list);
       
       // Get the list items from the API
-      const items = await listService.getListItems(listId);
-      setCurrentListItems(items);
+      try {
+        const items = await listService.getListItems(listId);
+        setCurrentListItems(items || []);
+      } catch (itemErr) {
+        console.error(`Error fetching items for list ${listId}:`, itemErr);
+        setCurrentListItems([]);
+      }
     } catch (err) {
       handleError('Failed to load list details. Please try again later.', 'fetching list details', err);
+      // Reset state to avoid null references
+      setCurrentList(null);
+      setCurrentListItems([]);
     } finally {
       setLoading(false);
     }
@@ -279,7 +287,9 @@ export const ListProvider = ({ children }) => {
       const shares = await listService.getListShares(listId);
       return shares;
     } catch (err) {
-      throw handleError('Failed to get list shares. Please try again later.', 'getting list shares', err);
+      console.error('Error getting list shares:', err);
+      // Don't throw the error, just log it and return empty array
+      return [];
     } finally {
       setLoading(false);
     }

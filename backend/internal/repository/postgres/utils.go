@@ -30,7 +30,10 @@ func safeClose(c interface{}) {
 	}
 
 	if err != nil {
-		// Log the error but don't return it as defer statements can't return values
-		log.Printf("Error closing resource: %v", err)
+		// Don't log "bad connection" errors as they're common when connections are recycled
+		if err.Error() != "driver: bad connection" {
+			// Log the error but don't return it as defer statements can't return values
+			log.Printf("Error closing resource: %v", err)
+		}
 	}
 }

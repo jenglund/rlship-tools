@@ -2,20 +2,6 @@
 
 This repository contains the Tribe application stack, including backend services and web interface. Tribe is a platform for managing and sharing activities with your tribes - whether they're couples, families, friend groups, or any other group of people who want to do things together.
 
-## TODOs
-
-### Recently Completed
-- ✅ Fixed schema isolation issues in repository tests through context-aware schema management
-- ✅ Fixed "bad connection" errors in database tests
-- ✅ Implemented context-aware versions of key repository methods
-- ✅ Updated test methods to use context-aware approach
-
-### Next Steps
-- [ ] Extend context-aware schema management to remaining repository methods
-- [ ] Fix additional failing database tests related to schema isolation
-- [ ] Improve transaction manager to better handle concurrent operations
-- [ ] Add cleanup mechanisms for test schemas
-- [ ] Implement proper cleanup for database resources
 
 See [KNOWNISSUES.md](KNOWNISSUES.md) for details on current issues and [FUTUREWORK.md](FUTUREWORK.md) for the complete roadmap.
 
@@ -27,23 +13,19 @@ See [KNOWNISSUES.md](KNOWNISSUES.md) for details on current issues and [FUTUREWO
 - **infrastructure**: Docker, Kubernetes, and other infrastructure configurations
 - **shared**: Shared code and libraries used across the Tribe platform
 - **tools**: Development and deployment tools
-- **ignore**: Deprecated code that is kept for reference purposes only
 
 ## Development Setup
 
 ### Backend Development
 
 ```bash
-cd backend
-make dev
+make dev-backend
 ```
 
 ### Frontend Development
 
 ```bash
-cd frontend
-npm install
-npm start
+make dev-frontend
 ```
 
 ### Development Authentication
@@ -73,6 +55,13 @@ curl -H "Authorization: Bearer dev:dev_user1@gonetribal.com" http://localhost:80
 make test
 ```
 
+or separately
+
+```bash
+make test-backend
+make test-frontend
+```
+
 ## Documentation
 
 The following documentation files provide additional details about various aspects of the project. These files should be referenced, followed, and updated as strictly as the README itself.
@@ -83,22 +72,6 @@ The following documentation files provide additional details about various aspec
 - [**FUTUREWORK.md**](FUTUREWORK.md): Roadmap for future development and implementation plans
 - [**DEVGUIDANCE.md**](DEVGUIDANCE.md): Comprehensive development guidelines, best practices, and philosophies
 
-## Acknowledgements
-
-This codebase would not have been possible without the significant contributions and assistance from:
-
-- **Cursor**: The AI-powered IDE that dramatically improved coding efficiency
-- **Claude**: For providing intelligent code analysis, suggestions, and debugging assistance
-- **Gemini**: For additional AI-powered support in development
-
-## Project Statistics
-
-- **Total Files**: 140
-- **Total Lines of Code**: 84,538
-- **Total Size**: 2.79 MB
-
-**Development Speed**: This codebase represents work that would typically take a team of 2-3 human developers approximately 3-6 months to build, test, and stabilize. The use of AI-assisted development has enabled us to reach this milestone in a fraction of the time while maintaining high code quality standards.
-
 ## License
 
-See the LICENSE file for details.
+**MIT!** See the [**LICENSE**](LICENSE) file for more details.
