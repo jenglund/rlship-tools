@@ -10,3 +10,9 @@ const (
 	ContextUserEmailKey   ContextKey = "user_email"
 	ContextUserNameKey    ContextKey = "user_name"
 )
+
+// GetContextKey returns the string value of a ContextKey
+// This is useful when using context.WithValue which requires the same exact key type
+func GetContextKey(key ContextKey) string {
+	return string(key)
+}

@@ -72,6 +72,18 @@ const ListsScreen = () => {
     }
   }, [currentUser, fetchUserLists, fetchSharedLists]);
 
+  // Add debug logging
+  useEffect(() => {
+    if (userLists) {
+      console.log("Debug - userLists:", userLists);
+      console.log("Debug - filteredUserLists:", filteredUserLists);
+    }
+    if (sharedLists) {
+      console.log("Debug - sharedLists:", sharedLists);
+      console.log("Debug - filteredSharedLists:", filteredSharedLists);
+    }
+  }, [userLists, sharedLists, filteredUserLists, filteredSharedLists]);
+
   // Filter functions
   const filterBySearch = (list) => {
     if (!searchTerm) return true;
@@ -89,13 +101,13 @@ const ListsScreen = () => {
   };
 
   // Apply filters to get filtered lists
-  const filteredUserLists = userLists.filter(list => 
-    filterBySearch(list) && filterByType(list)
-  );
+  const filteredUserLists = Array.isArray(userLists)
+    ? userLists.filter(list => filterBySearch(list) && filterByType(list))
+    : [];
   
-  const filteredSharedLists = sharedLists.filter(list => 
-    filterBySearch(list) && filterByType(list)
-  );
+  const filteredSharedLists = Array.isArray(sharedLists)
+    ? sharedLists.filter(list => filterBySearch(list) && filterByType(list))
+    : [];
 
   const handleCreateList = () => {
     setShowCreateModal(true);
@@ -141,6 +153,12 @@ const ListsScreen = () => {
         <ListCardSkeleton />
       </Col>
     ));
+  };
+
+  // Debug function to trace Row components
+  const traceRowRender = (component, items) => {
+    console.log(`Debug - Rendering Row with ${items?.length || 0} items:`, items);
+    return component;
   };
 
   // Determine if any filters are active
@@ -289,15 +307,21 @@ const ListsScreen = () => {
               )
             ) : (
               <Row>
-                {filteredUserLists.map(list => (
-                  <Col key={list.id} xs={12} md={6} lg={4} className="mb-3">
-                    <ListCard 
-                      list={list} 
-                      onShare={handleShareList}
-                      onDelete={handleDeleteList}
-                    />
-                  </Col>
-                ))}
+                {filteredUserLists.map(list => {
+                  // Ensure list has an ID for the key prop
+                  const listId = list.id || `user-list-${Math.random()}`;
+                  console.log(`Debug - Rendering user list:`, list);
+                  
+                  return (
+                    <Col key={listId} xs={12} md={6} lg={4} className="mb-3">
+                      <ListCard 
+                        list={list} 
+                        onShare={handleShareList}
+                        onDelete={handleDeleteList}
+                      />
+                    </Col>
+                  );
+                })}
               </Row>
             )}
           </Col>
@@ -331,15 +355,21 @@ const ListsScreen = () => {
               )
             ) : (
               <Row>
-                {filteredSharedLists.map(list => (
-                  <Col key={list.id} xs={12} md={6} lg={4} className="mb-3">
-                    <ListCard 
-                      list={{...list, shared: true}} 
-                      onShare={null}
-                      onDelete={null}
-                    />
-                  </Col>
-                ))}
+                {filteredSharedLists.map(list => {
+                  // Ensure list has an ID for the key prop
+                  const listId = list.id || `shared-list-${Math.random()}`;
+                  console.log(`Debug - Rendering shared list:`, list);
+                  
+                  return (
+                    <Col key={listId} xs={12} md={6} lg={4} className="mb-3">
+                      <ListCard 
+                        list={{...list, shared: true}} 
+                        onShare={null}
+                        onDelete={null}
+                      />
+                    </Col>
+                  );
+                })}
               </Row>
             )}
           </Col>

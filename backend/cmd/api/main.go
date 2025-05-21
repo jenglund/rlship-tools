@@ -261,7 +261,7 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 		// Add middleware to extract Firebase UID and convert to user ID
 		api.Use(func(c *gin.Context) {
 			// Get Firebase UID from context
-			firebaseUID, exists := c.Get("firebase_uid")
+			firebaseUID, exists := c.Get(string(middleware.ContextFirebaseUIDKey))
 			if !exists {
 				log.Printf("Authentication failure: Firebase UID not found in context")
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Firebase UID not found"})
@@ -270,7 +270,7 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 			log.Printf("Found Firebase UID: %v", firebaseUID)
 
 			// For dev users, extract the user ID directly if it's already set
-			if userID, userExists := c.Get("user_id"); userExists {
+			if userID, userExists := c.Get(string(middleware.ContextUserIDKey)); userExists {
 				log.Printf("User ID already set in context: %v", userID)
 				c.Next()
 				return
@@ -287,7 +287,7 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 
 			// Set user ID in context
 			log.Printf("Found user ID %s for Firebase UID %s", user.ID, firebaseUID)
-			c.Set("user_id", user.ID)
+			c.Set(string(middleware.ContextUserIDKey), user.ID.String())
 			c.Next()
 		})
 
@@ -357,11 +357,11 @@ func logRoutes(router *gin.Engine) {
 func wrapHandler(h func(http.ResponseWriter, *http.Request)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get user ID from Gin context
-		userID, exists := c.Get("user_id")
+		userID, exists := c.Get(string(middleware.ContextUserIDKey))
 		if exists {
 			log.Printf("Wrapping handler: Setting user ID %v in request context", userID)
 			// Create new context with user ID
-			ctx := context.WithValue(c.Request.Context(), "user_id", userID)
+			ctx := context.WithValue(c.Request.Context(), middleware.ContextUserIDKey, userID)
 			// Use the new context in the request
 			c.Request = c.Request.WithContext(ctx)
 		} else {

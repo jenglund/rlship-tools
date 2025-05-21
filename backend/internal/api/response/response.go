@@ -20,39 +20,90 @@ type APIError struct {
 	Message string `json:"message"`
 }
 
-// Standard http.ResponseWriter functions
-
-// JSON sends a JSON response using standard http.ResponseWriter
-func JSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		// Log the error, but we can't really recover at this point
-		// since headers have already been sent
-		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+// SuccessResponse returns a standardized success response structure
+func SuccessResponse(data interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"success": true,
+		"data":    data,
 	}
 }
 
-// Error sends a JSON error response using standard http.ResponseWriter
-func Error(w http.ResponseWriter, status int, message string) {
-	JSON(w, status, struct {
-		Success bool `json:"success"`
-		Error   struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}{
-		Success: false,
-		Error: struct {
-			Message string `json:"message"`
-		}{
-			Message: message,
+// ErrorResponse returns a standardized error response structure
+func ErrorResponse(message string) map[string]interface{} {
+	return map[string]interface{}{
+		"success": false,
+		"error": map[string]interface{}{
+			"message": message,
 		},
-	})
+	}
 }
 
-// NoContent sends a 204 No Content response using standard http.ResponseWriter
+// JSON sends a JSON response with the given status code and data
+func JSON(w http.ResponseWriter, statusCode int, data interface{}) {
+	// If data is already a map with success/error fields, use it directly
+	// Otherwise, wrap it in a success response
+	var responseData interface{}
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Check if it's already in our expected format
+		if _, hasSuccess := v["success"]; hasSuccess {
+			responseData = v
+		} else {
+			responseData = SuccessResponse(v)
+		}
+	default:
+		responseData = SuccessResponse(data)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(responseData)
+}
+
+// Error sends a standardized error response with the given status code and message
+func Error(w http.ResponseWriter, statusCode int, message string) {
+	JSON(w, statusCode, ErrorResponse(message))
+}
+
+// NoContent sends a 204 No Content response
 func NoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Created sends a 201 Created response with the given data
+func Created(w http.ResponseWriter, data interface{}) {
+	JSON(w, http.StatusCreated, SuccessResponse(data))
+}
+
+// OK sends a 200 OK response with the given data
+func OK(w http.ResponseWriter, data interface{}) {
+	JSON(w, http.StatusOK, SuccessResponse(data))
+}
+
+// BadRequest sends a 400 Bad Request response with the given message
+func BadRequest(w http.ResponseWriter, message string) {
+	Error(w, http.StatusBadRequest, message)
+}
+
+// Unauthorized sends a 401 Unauthorized response with the given message
+func Unauthorized(w http.ResponseWriter, message string) {
+	Error(w, http.StatusUnauthorized, message)
+}
+
+// Forbidden sends a 403 Forbidden response with the given message
+func Forbidden(w http.ResponseWriter, message string) {
+	Error(w, http.StatusForbidden, message)
+}
+
+// NotFound sends a 404 Not Found response with the given message
+func NotFound(w http.ResponseWriter, message string) {
+	Error(w, http.StatusNotFound, message)
+}
+
+// InternalServerError sends a 500 Internal Server Error response with the given error
+func InternalServerError(w http.ResponseWriter, err error) {
+	Error(w, http.StatusInternalServerError, err.Error())
 }
 
 // Gin-specific functions

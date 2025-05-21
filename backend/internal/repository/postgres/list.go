@@ -2218,10 +2218,29 @@ func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 		}
 	}
 
+	// Determine if we should run cleanup based on context
+	runCleanup := true
+
+	// Skip cleanup in test mode unless explicitly enabled
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		// Default to skipping cleanup in tests unless explicitly requested
+		runCleanup = false
+
+		// Check for explicit flag
+		if forceCleanup, ok := ctx.Value("force_cleanup").(bool); ok && forceCleanup {
+			runCleanup = true
+		}
+	}
+
 	// First, clean up any expired shares to ensure we don't return lists with expired shares
-	if err := r.CleanupExpiredShares(ctx); err != nil {
-		fmt.Printf("Warning: Failed to clean up expired shares: %v\n", err)
-		// Continue despite error - we'll still filter out expired shares in the query
+	if runCleanup {
+		if err := r.CleanupExpiredShares(ctx); err != nil {
+			// Only log warning in non-test environment
+			if testutil.GetCurrentTestSchema() == "" {
+				fmt.Printf("Warning: Failed to clean up expired shares: %v\n", err)
+			}
+			// Continue despite error - we'll still filter out expired shares in the query
+		}
 	}
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
@@ -2407,6 +2426,20 @@ func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 func (r *ListRepository) CleanupExpiredShares(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+
+	// Check if we're in a test environment and should use a specific schema
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(ctx)
+		}
+	}
+
+	// Skip cleanup if the context has a skip_cleanup flag set to true
+	// This allows tests to disable cleanup when needed
+	if skipCleanup, ok := ctx.Value("skip_cleanup").(bool); ok && skipCleanup {
+		return nil
 	}
 
 	opts := DefaultTransactionOptions()

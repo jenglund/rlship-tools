@@ -27,7 +27,10 @@ const UserListsView = ({ userId }) => {
     return <Alert variant="danger">{error}</Alert>;
   }
   
-  if (userLists.length === 0) {
+  // Ensure userLists is an array
+  const lists = Array.isArray(userLists) ? userLists : [];
+  
+  if (lists.length === 0) {
     return (
       <Card className="mt-4">
         <Card.Header as="h5">My Lists</Card.Header>
@@ -48,7 +51,7 @@ const UserListsView = ({ userId }) => {
       <Card.Header as="h5">My Lists</Card.Header>
       <Card.Body>
         <Row>
-          {userLists.map(list => (
+          {lists.map(list => (
             <Col md={4} key={list.id} className="mb-3">
               <ListCard list={list} />
             </Col>

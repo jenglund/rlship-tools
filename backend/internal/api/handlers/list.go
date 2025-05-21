@@ -15,17 +15,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/api/response"
 	"github.com/jenglund/rlship-tools/internal/api/service"
+	"github.com/jenglund/rlship-tools/internal/middleware"
 	"github.com/jenglund/rlship-tools/internal/models"
 )
 
-// Define a custom key type to avoid string key collisions
-type contextKey string
-
-const (
-	// userIDKey is the context key for the user ID
-	userIDKey contextKey = "user_id"
-)
-
+// ListHandler struct for handling list-related requests
 type ListHandler struct {
 	service service.ListService
 }
@@ -231,8 +225,27 @@ func (h *ListHandler) CreateList(w http.ResponseWriter, r *http.Request) {
 
 // getUserIDFromRequest extracts the user ID from the request context
 func getUserIDFromRequest(r *http.Request) (uuid.UUID, error) {
-	// Try to get user ID from context
-	userIDValue := r.Context().Value("user_id")
+	// Try multiple context keys for backward compatibility
+	var userIDValue interface{}
+
+	// First try the standard middleware key (the one we're standardizing on)
+	userIDValue = r.Context().Value(middleware.ContextUserIDKey)
+
+	// If not found, try the string version of the key
+	if userIDValue == nil {
+		userIDValue = r.Context().Value(middleware.GetContextKey(middleware.ContextUserIDKey))
+	}
+
+	// If still not found, try UserIDKey from handlers package (which now points to middleware.ContextUserIDKey)
+	if userIDValue == nil {
+		userIDValue = r.Context().Value(UserIDKey)
+	}
+
+	// Last resort, check for legacy plain string key
+	if userIDValue == nil {
+		userIDValue = r.Context().Value("user_id")
+	}
+
 	if userIDValue == nil {
 		// Try to get from header for development
 		userIDStr := r.Header.Get("X-User-ID")
@@ -873,7 +886,7 @@ func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
 	tribeID, err := extractUUIDParam(r, "tribeID")
 	if err != nil {
 		log.Printf("Error parsing tribeID from URL parameter: %v", err)
-		response.Error(w, http.StatusBadRequest, "Invalid tribe ID: "+err.Error())
+		response.BadRequest(w, "Invalid tribe ID")
 		return
 	}
 
@@ -883,7 +896,7 @@ func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
 	userID, authErr := getUserIDFromRequest(r)
 	if authErr != nil {
 		log.Printf("Error getting authenticated user ID: %v", authErr)
-		response.Error(w, http.StatusUnauthorized, "Authentication required")
+		response.Unauthorized(w, "Authentication required")
 		return
 	}
 
@@ -896,20 +909,14 @@ func (h *ListHandler) GetSharedLists(w http.ResponseWriter, r *http.Request) {
 	lists, err := h.service.GetSharedLists(tribeID)
 	if err != nil {
 		log.Printf("Error fetching lists shared with tribe %s: %v", tribeID, err)
-		response.Error(w, http.StatusInternalServerError, err.Error())
+		response.InternalServerError(w, err)
 		return
 	}
 
 	log.Printf("Successfully retrieved %d lists shared with tribe %s", len(lists), tribeID)
 
-	// Return lists wrapped in a response format that the frontend expects
-	response.JSON(w, http.StatusOK, struct {
-		Success bool           `json:"success"`
-		Data    []*models.List `json:"data"`
-	}{
-		Success: true,
-		Data:    lists,
-	})
+	// Return lists using the standardized response format
+	response.OK(w, lists)
 }
 
 // GetListShares handles retrieving all shares for a list

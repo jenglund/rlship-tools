@@ -49,6 +49,8 @@ const CreateListModal = ({ show, onHide }) => {
   const checkExistingLists = () => {
     if (!name.trim()) return [];
     
+    if (!Array.isArray(userLists)) return [];
+    
     const matchingLists = userLists.filter(list => 
       list.name.toLowerCase() === name.toLowerCase() ||
       list.name.toLowerCase().includes(name.toLowerCase())

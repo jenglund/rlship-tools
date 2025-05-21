@@ -47,7 +47,12 @@ const listService = {
         headers: getAuthHeader()
       });
       console.log(`Successfully fetched user lists:`, response.data);
-      return response.data.data;
+      
+      // Make sure we always return an array
+      if (response.data && response.data.data) {
+        return Array.isArray(response.data.data) ? response.data.data : [];
+      }
+      return [];
     } catch (error) {
       console.error(`Error fetching user lists for user ${userID}:`, error);
       console.error('Request details:', {
@@ -294,7 +299,12 @@ const listService = {
       const response = await axios.get(`${API_URL}/v1/lists/shared/${tribeID}`, {
         headers: getAuthHeader()
       });
-      return response.data.data;
+      
+      // Make sure we always return an array
+      if (response.data && response.data.data) {
+        return Array.isArray(response.data.data) ? response.data.data : [];
+      }
+      return [];
     } catch (error) {
       console.error(`Error fetching shared lists for tribe ${tribeID}:`, error);
       throw error;

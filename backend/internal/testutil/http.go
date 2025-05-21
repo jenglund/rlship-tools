@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jenglund/rlship-tools/internal/middleware"
 )
 
 // TestRequest represents a test HTTP request
@@ -84,8 +85,8 @@ func CheckResponse(t *testing.T, w *httptest.ResponseRecorder, expected TestResp
 // MockAuthMiddleware creates a mock authentication middleware for testing
 func MockAuthMiddleware(userID string, firebaseUID string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set("user_id", userID)
-		c.Set("firebase_uid", firebaseUID)
+		c.Set(string(middleware.ContextUserIDKey), userID)
+		c.Set(string(middleware.ContextFirebaseUIDKey), firebaseUID)
 		c.Next()
 	}
 }

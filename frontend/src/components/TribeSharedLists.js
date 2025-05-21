@@ -18,7 +18,7 @@ const TribeSharedLists = ({ tribeId }) => {
       setLoading(true);
       setError(null);
       const data = await listService.getSharedListsForTribe(tribeId);
-      setSharedLists(data || []);
+      setSharedLists(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error fetching shared lists:', err);
       setError('Failed to load shared lists');

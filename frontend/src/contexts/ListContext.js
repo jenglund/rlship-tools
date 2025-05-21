@@ -45,9 +45,24 @@ export const ListProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       const lists = await listService.getUserLists(currentUser.id);
-      setUserLists(lists);
+      console.log("ListContext - Raw user lists from API:", lists);
+      
+      // Verify list structure and IDs
+      if (Array.isArray(lists)) {
+        lists.forEach((list, index) => {
+          if (!list.id) {
+            console.warn(`List at index ${index} is missing an ID:`, list);
+          }
+        });
+      } else {
+        console.warn("Lists is not an array:", lists);
+      }
+      
+      setUserLists(Array.isArray(lists) ? lists : []);
+      console.log("ListContext - userLists after setting:", Array.isArray(lists) ? lists : []);
     } catch (err) {
       handleError('Failed to load your lists. Please try again later.', 'fetching user lists', err);
+      setUserLists([]);
     } finally {
       setLoading(false);
     }
@@ -63,26 +78,46 @@ export const ListProvider = ({ children }) => {
       
       // First, get the user's tribes using tribeService
       const userTribes = await tribeService.getUserTribes();
+      console.log("ListContext - User tribes:", userTribes);
       
       // Fetch shared lists for each tribe the user belongs to
       const allSharedLists = [];
       
-      // Process each of the user's tribes
-      for (const tribe of userTribes) {
-        try {
-          const tribeLists = await listService.getSharedListsForTribe(tribe.id);
-          if (tribeLists && tribeLists.length > 0) {
-            allSharedLists.push(...tribeLists);
+      if (Array.isArray(userTribes)) {
+        // Process each of the user's tribes
+        for (const tribe of userTribes) {
+          try {
+            const tribeLists = await listService.getSharedListsForTribe(tribe.id);
+            console.log(`ListContext - Shared lists for tribe ${tribe.id}:`, tribeLists);
+            
+            if (tribeLists && Array.isArray(tribeLists) && tribeLists.length > 0) {
+              // Check for duplicate IDs before adding to allSharedLists
+              for (const list of tribeLists) {
+                if (!list.id) {
+                  console.warn(`Shared list is missing an ID:`, list);
+                } else {
+                  // Check if we already have this list (avoid duplicates)
+                  const existingIndex = allSharedLists.findIndex(l => l.id === list.id);
+                  if (existingIndex === -1) {
+                    allSharedLists.push(list);
+                  } else {
+                    console.warn(`Duplicate shared list ID found: ${list.id}`);
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn(`Error fetching shared lists for tribe ${tribe.id}:`, err);
+            // Continue with other tribes even if one fails
           }
-        } catch (err) {
-          console.warn(`Error fetching shared lists for tribe ${tribe.id}:`, err);
-          // Continue with other tribes even if one fails
         }
       }
       
+      console.log("ListContext - All shared lists to be set:", allSharedLists);
       setSharedLists(allSharedLists);
     } catch (err) {
       handleError('Failed to load shared lists. Please try again later.', 'fetching shared lists', err);
+      setSharedLists([]);
     } finally {
       setLoading(false);
     }

@@ -90,15 +90,15 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 				uid := fmt.Sprintf("dev-%s", devEmail)
 				name := fmt.Sprintf("Dev User %s", strings.Split(devEmail, "@")[0][8:])
 
-				c.Set("firebase_uid", uid)
-				c.Set("user_email", devEmail)
-				c.Set("user_name", name)
+				c.Set(string(ContextFirebaseUIDKey), uid)
+				c.Set(string(ContextUserEmailKey), devEmail)
+				c.Set(string(ContextUserNameKey), name)
 
 				// Create or get the dev user if repositories are available
 				if d.repos != nil {
 					user, err := d.CreateOrGetDevUser(c, uid, devEmail, name)
 					if err == nil {
-						c.Set("user_id", user.ID)
+						c.Set(string(ContextUserIDKey), user.ID)
 					}
 				}
 
@@ -124,15 +124,15 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 			uid := fmt.Sprintf("dev-%s", email)
 			name := fmt.Sprintf("Dev User %s", strings.Split(email, "@")[0][8:])
 
-			c.Set("firebase_uid", uid)
-			c.Set("user_email", email)
-			c.Set("user_name", name)
+			c.Set(string(ContextFirebaseUIDKey), uid)
+			c.Set(string(ContextUserEmailKey), email)
+			c.Set(string(ContextUserNameKey), name)
 
 			// Create or get the dev user if repositories are available
 			if d.repos != nil {
 				user, err := d.CreateOrGetDevUser(c, uid, email, name)
 				if err == nil {
-					c.Set("user_id", user.ID)
+					c.Set(string(ContextUserIDKey), user.ID)
 				}
 			}
 

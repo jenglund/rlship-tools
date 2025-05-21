@@ -14,11 +14,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jenglund/rlship-tools/internal/middleware"
+	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/jenglund/rlship-tools/internal/models"
 )
 
 // MockListService provides a mock for the ListService interface
@@ -494,7 +494,7 @@ func TestListHandler(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("listID", listID.String())
 		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-		ctx = context.WithValue(ctx, userIDKey, userID)
+		ctx = context.WithValue(ctx, middleware.ContextUserIDKey, userID)
 		req = req.WithContext(ctx)
 		rec := httptest.NewRecorder()
 
@@ -534,7 +534,7 @@ func TestListHandler(t *testing.T) {
 				name:   "success",
 				listID: validListID.String(),
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), userIDKey, validUserID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, validUserID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func() {
@@ -549,7 +549,7 @@ func TestListHandler(t *testing.T) {
 				name:   "invalid list ID",
 				listID: "invalid-uuid",
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), userIDKey, validUserID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, validUserID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedStatus: http.StatusBadRequest,
@@ -559,7 +559,7 @@ func TestListHandler(t *testing.T) {
 				name:   "unauthorized",
 				listID: validListID.String(),
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), userIDKey, uuid.New())
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, uuid.New())
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func() {
@@ -646,7 +646,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusNoContent,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -660,7 +660,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusBadRequest,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid list ID",
@@ -672,7 +672,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusBadRequest,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid tribe ID",
@@ -691,7 +691,7 @@ func TestListHandler(t *testing.T) {
 				tribeID:        uuid.New().String(),
 				expectedStatus: http.StatusUnauthorized,
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), userIDKey, "not-a-uuid")
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, "not-a-uuid")
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid user authentication",
@@ -703,7 +703,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusNotFound,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -718,7 +718,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusForbidden,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -733,7 +733,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusInternalServerError,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID) {
@@ -769,7 +769,7 @@ func TestListHandler(t *testing.T) {
 					listID, _ := uuid.Parse(tc.listID)
 					tribeID, _ := uuid.Parse(tc.tribeID)
 					userID := uuid.UUID{}
-					if userIDVal := req.Context().Value(userIDKey); userIDVal != nil {
+					if userIDVal := req.Context().Value(middleware.ContextUserIDKey); userIDVal != nil {
 						if id, ok := userIDVal.(uuid.UUID); ok {
 							userID = id
 						}
@@ -847,7 +847,7 @@ func TestListHandler(t *testing.T) {
 				requestBody: `{}`,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
@@ -862,7 +862,7 @@ func TestListHandler(t *testing.T) {
 				requestBody: `{"expires_at": "2030-01-01T00:00:00Z"}`,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
@@ -878,7 +878,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusBadRequest,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid list ID",
@@ -891,7 +891,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusBadRequest,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid tribe ID",
@@ -904,7 +904,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusBadRequest,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid request body",
@@ -925,7 +925,7 @@ func TestListHandler(t *testing.T) {
 				requestBody:    `{}`,
 				expectedStatus: http.StatusUnauthorized,
 				setupAuth: func(r *http.Request) {
-					ctx := context.WithValue(r.Context(), userIDKey, "not-a-uuid")
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, "not-a-uuid")
 					*r = *r.WithContext(ctx)
 				},
 				expectedError: "invalid user authentication",
@@ -938,7 +938,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusNotFound,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
@@ -954,7 +954,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusForbidden,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
@@ -970,7 +970,7 @@ func TestListHandler(t *testing.T) {
 				expectedStatus: http.StatusInternalServerError,
 				setupAuth: func(r *http.Request) {
 					userID := uuid.New()
-					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					ctx := context.WithValue(r.Context(), middleware.ContextUserIDKey, userID)
 					*r = *r.WithContext(ctx)
 				},
 				setupMocks: func(mockService *MockListService, listID, tribeID, userID uuid.UUID, expiresAt *time.Time) {
@@ -1009,7 +1009,7 @@ func TestListHandler(t *testing.T) {
 					userID := uuid.UUID{}
 					var expiresAt *time.Time
 
-					if userIDVal := req.Context().Value(userIDKey); userIDVal != nil {
+					if userIDVal := req.Context().Value(middleware.ContextUserIDKey); userIDVal != nil {
 						if id, ok := userIDVal.(uuid.UUID); ok {
 							userID = id
 						}
@@ -1774,7 +1774,7 @@ func TestListHandler_GetSharedLists(t *testing.T) {
 			setupMocks: func(mockService *MockListService, tribeID uuid.UUID) {
 				mockService.On("GetSharedLists", tribeID).Return([]*models.List(nil), models.ErrNotFound)
 			},
-			expectedError: "not found",
+			expectedError: "resource not found",
 		},
 		{
 			name:           "service error",
@@ -1792,14 +1792,12 @@ func TestListHandler_GetSharedLists(t *testing.T) {
 			mockService := new(MockListService)
 			handler := NewListHandler(mockService)
 
-			rctx := chi.NewRouteContext()
-			rctx.URLParams.Add("tribeID", tt.tribeID)
+			// Use the helper function to create a request with parameters and authentication
+			w, r := setupTestRequestWithParams("GET", "/lists/shared/"+tt.tribeID, map[string]string{
+				"tribeID": tt.tribeID,
+			})
 
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", "/", nil)
-			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-
-			if tt.setupMocks != nil {
+			if tt.setupMocks != nil && tt.tribeID != "invalid-id" {
 				tt.setupMocks(mockService, uuid.MustParse(tt.tribeID))
 			}
 
