@@ -102,7 +102,19 @@ const CreateListModal = ({ show, onHide }) => {
         metadata: {}
       };
 
-      await createList(listData);
+      console.log('Creating new list with data:', listData);
+      const newList = await createList(listData);
+      console.log('Successfully created list:', newList);
+      
+      // Force refresh of user lists to make sure it appears in the gallery
+      try {
+        console.log('Refreshing user lists after creation');
+        await fetchUserLists();
+        console.log('User lists refreshed successfully');
+      } catch (refreshError) {
+        console.error('Error refreshing user lists after creation:', refreshError);
+      }
+      
       handleClose();
     } catch (err) {
       console.error('Error creating list:', err);

@@ -91,7 +91,8 @@ const ListDetailScreen = () => {
     error, 
     fetchListDetails,
     deleteList,
-    deleteListItem
+    deleteListItem,
+    refreshUserLists
   } = useList();
   
   const navigate = useNavigate();
@@ -101,6 +102,14 @@ const ListDetailScreen = () => {
       fetchListDetails(id);
     }
   }, [id, fetchListDetails]);
+
+  // Debug log to check currentListItems
+  useEffect(() => {
+    console.log('ListDetailScreen - currentListItems:', currentListItems);
+    if (currentListItems && !Array.isArray(currentListItems)) {
+      console.error('ListDetailScreen - currentListItems is not an array:', currentListItems);
+    }
+  }, [currentListItems]);
 
   // Reset view mode when list type changes
   useEffect(() => {
@@ -136,11 +145,17 @@ const ListDetailScreen = () => {
     fetchListDetails(id);
   };
 
+  const handleBackToLists = () => {
+    // Make sure user lists will be refreshed when navigating back
+    refreshUserLists();
+    navigate('/lists');
+  };
+
   const handleDeleteList = async () => {
     try {
       if (window.confirm('Are you sure you want to delete this list? This action cannot be undone.')) {
         await deleteList(id);
-        navigate('/lists');
+        handleBackToLists();
       }
     } catch (err) {
       console.error('Error deleting list:', err);
@@ -207,7 +222,7 @@ const ListDetailScreen = () => {
             </Button>
             <Button 
               variant="outline-secondary" 
-              onClick={() => navigate('/lists')}
+              onClick={handleBackToLists}
             >
               Back to Lists
             </Button>
@@ -301,7 +316,7 @@ const ListDetailScreen = () => {
             <Row className="mb-4">
               <Col xs={12}>
                 <LocationMapView 
-                  items={currentListItems || []} 
+                  items={Array.isArray(currentListItems) ? currentListItems : []} 
                   onItemClick={handleMapItemClick} 
                 />
               </Col>
@@ -313,12 +328,12 @@ const ListDetailScreen = () => {
             <Row className="row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
               {loading ? (
                 renderItemSkeletons()
-              ) : !currentListItems || currentListItems.length === 0 ? (
+              ) : !Array.isArray(currentListItems) || currentListItems.length === 0 ? (
                 <Col xs={12}>
                   <p>This list doesn't have any items yet. Add some to get started!</p>
                 </Col>
               ) : (
-                currentListItems.map(item => (
+                Array.isArray(currentListItems) && currentListItems.map(item => (
                   <Col key={item.id}>
                     <ListItemCard
                       item={{...item, type: currentList.type, listId: id}}
@@ -360,7 +375,7 @@ const ListDetailScreen = () => {
                 show={showGenerateModal}
                 onHide={handleCloseGenerateModal}
                 listId={id}
-                listItems={currentListItems || []}
+                listItems={Array.isArray(currentListItems) ? currentListItems : []}
               />
             </>
           )}

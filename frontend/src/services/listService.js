@@ -21,8 +21,28 @@ const listService = {
       const response = await axios.post(`${API_URL}/v1/lists`, listData, {
         headers: getAuthHeader()
       });
-      console.log(`Successfully created list:`, response.data);
-      return response.data.data;
+      console.log(`Successfully created list. Full response:`, response.data);
+      
+      // Ensure we're returning just the data object, not the entire success response
+      if (response.data && response.data.success === true && response.data.data) {
+        console.log(`Extracted list data from API response:`, response.data.data);
+        return response.data.data;
+      } else if (response.data && response.data.id) {
+        // Some APIs return the object directly
+        console.log(`API returned list directly:`, response.data);
+        return response.data;
+      }
+      
+      // If we can't clearly identify a list object, log a warning
+      console.warn(`Unexpected API response format from createList:`, response.data);
+      
+      // If we have a data property, return it as a last resort
+      if (response.data && response.data.data) {
+        return response.data.data;
+      }
+      
+      // Fall back to the response.data in case the API structure changes
+      return response.data;
     } catch (error) {
       console.error('Error creating list:', error);
       console.error('Request details:', {
@@ -39,29 +59,59 @@ const listService = {
   },
 
   // Get lists owned by the current user
-  getUserLists: async (userID) => {
+  getUserLists: async (userID, timestamp = null) => {
     try {
-      console.log(`Fetching lists for user: ${userID}`);
-      console.log(`API URL: ${API_URL}/v1/lists/user/${userID}`);
-      const response = await axios.get(`${API_URL}/v1/lists/user/${userID}`, {
+      console.log(`Fetching lists for user: ${userID}${timestamp ? ' (with cache busting)' : ''}`);
+      
+      // Add timestamp for cache busting if provided
+      const cacheBuster = timestamp ? `?_t=${timestamp}` : '';
+      const url = `${API_URL}/v1/lists/user/${userID}${cacheBuster}`;
+      console.log(`API URL: ${url}`);
+      
+      const response = await axios.get(url, {
         headers: getAuthHeader()
       });
+      
       console.log(`Successfully fetched user lists:`, response.data);
       
-      // Make sure we always return an array
+      // Based on curl output, the API uses the structure:
+      // { data: { success: true, data: [ ...lists ] } }
+      
       if (response.data && response.data.data) {
-        return Array.isArray(response.data.data) ? response.data.data : [];
+        const innerResponse = response.data.data;
+        
+        if (innerResponse && innerResponse.success === true && Array.isArray(innerResponse.data)) {
+          console.log(`Found nested lists array with ${innerResponse.data.length} items`);
+          return innerResponse.data;
+        }
+        
+        if (innerResponse && Array.isArray(innerResponse)) {
+          console.log(`Found array directly in data with ${innerResponse.length} items`);
+          return innerResponse;
+        }
       }
+      
+      // If above doesn't extract lists, try other common patterns
+      if (response.data && response.data.success === true && Array.isArray(response.data.data)) {
+        console.log(`Found lists array in response.data with ${response.data.data.length} items`);
+        return response.data.data;
+      }
+      
+      if (Array.isArray(response.data)) {
+        console.log(`Response is a direct array with ${response.data.length} items`);
+        return response.data;
+      }
+      
+      // Log the full structure for diagnosis
+      console.warn('Could not extract lists array from API response with expected structure');
+      console.log('Response structure:', JSON.stringify(response.data, null, 2));
+      
       return [];
     } catch (error) {
       console.error(`Error fetching user lists for user ${userID}:`, error);
-      console.error('Request details:', {
-        url: `${API_URL}/v1/lists/user/${userID}`,
-        headers: getAuthHeader()
-      });
       if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
+        console.error('Error response status:', error.response.status);
+        console.error('Error response data:', error.response.data);
       }
       throw error;
     }
@@ -111,12 +161,33 @@ const listService = {
   // Get items in a list
   getListItems: async (listID) => {
     try {
+      console.log(`Fetching items for list: ${listID}`);
+      console.log(`API URL: ${API_URL}/v1/lists/${listID}/items`);
+      
       const response = await axios.get(`${API_URL}/v1/lists/${listID}/items`, {
         headers: getAuthHeader()
       });
-      return response.data.data;
+      
+      console.log(`Successfully fetched list items:`, response.data);
+      
+      // Handle both cases where API returns the array directly or as response.data.data
+      if (response.data && response.data.data) {
+        // API returned {data: [...]} structure
+        return Array.isArray(response.data.data) ? response.data.data : [];
+      } else if (Array.isArray(response.data)) {
+        // API returned the array directly
+        return response.data;
+      }
+      
+      // Fallback to empty array
+      console.warn('Unexpected response format from list items API:', response.data);
+      return [];
     } catch (error) {
       console.error(`Error fetching items for list ${listID}:`, error);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      }
       throw error;
     }
   },

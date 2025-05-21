@@ -11,6 +11,12 @@ const ListCard = ({ list, className = '' }) => {
       return;
     }
     
+    // Check for API response structure and extract data if needed
+    if (list.success === true && list.data) {
+      console.warn('ListCard: Received API response object instead of list data', list);
+      list = list.data;
+    }
+    
     if (!list.id) {
       console.error('ListCard: list.id is missing', list);
     }
@@ -26,7 +32,28 @@ const ListCard = ({ list, className = '' }) => {
     return null;
   }
   
-  const { id, name, description, type, itemCount, visibility } = list;
+  // Extract API response data if the wrong format was passed
+  let listData = list;
+  if (list.success === true && list.data) {
+    console.warn('ListCard: Received API response object, extracting data field');
+    listData = list.data;
+  }
+  
+  // Destructure with default values to handle missing properties
+  const { 
+    id = null, 
+    name = 'Unnamed List', 
+    description = '', 
+    type = 'general', 
+    itemCount = 0, 
+    visibility = 'private' 
+  } = listData;
+
+  // Skip rendering if we don't have an ID
+  if (!id) {
+    console.error('ListCard: Cannot render list without ID', listData);
+    return null;
+  }
 
   // Get the type-specific color for styling
   const typeColor = getListTypeColor(type);

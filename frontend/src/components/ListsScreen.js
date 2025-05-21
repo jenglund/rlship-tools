@@ -56,21 +56,41 @@ const ListsScreen = () => {
     error, 
     fetchUserLists, 
     fetchSharedLists,
-    deleteList
+    deleteList,
+    refreshUserLists
   } = useList();
   
   const navigate = useNavigate();
 
+  // Add focus detection to refresh lists when navigating back to this screen
   useEffect(() => {
+    // Initial load
     const loadLists = async () => {
-      await fetchUserLists();
+      console.log("ListsScreen - Initial load of lists");
+      refreshUserLists();
       await fetchSharedLists();
     };
 
     if (currentUser && currentUser.id) {
       loadLists();
     }
-  }, [currentUser, fetchUserLists, fetchSharedLists]);
+
+    // Add event listener for when page becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && currentUser && currentUser.id) {
+        console.log("ListsScreen - Page became visible again, refreshing lists");
+        refreshUserLists();
+        fetchSharedLists();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser, refreshUserLists, fetchSharedLists]);
 
   // Add debug logging
   useEffect(() => {
@@ -294,7 +314,7 @@ const ListsScreen = () => {
                 <Button 
                   variant="outline-danger" 
                   size="sm" 
-                  onClick={() => fetchUserLists()}
+                  onClick={() => refreshUserLists()}
                 >
                   Retry
                 </Button>
@@ -311,6 +331,12 @@ const ListsScreen = () => {
                   // Ensure list has an ID for the key prop
                   const listId = list.id || `user-list-${Math.random()}`;
                   console.log(`Debug - Rendering user list:`, list);
+                  
+                  // Verify the structure of the list object to avoid API response object being passed
+                  if (list.success === true && list.data) {
+                    console.log('Found API response object instead of list data, extracting data property:', list);
+                    list = list.data;
+                  }
                   
                   return (
                     <Col key={listId} xs={12} md={6} lg={4} className="mb-3">
@@ -359,6 +385,12 @@ const ListsScreen = () => {
                   // Ensure list has an ID for the key prop
                   const listId = list.id || `shared-list-${Math.random()}`;
                   console.log(`Debug - Rendering shared list:`, list);
+                  
+                  // Verify the structure of the list object to avoid API response object being passed
+                  if (list.success === true && list.data) {
+                    console.log('Found API response object instead of list data, extracting data property:', list);
+                    list = list.data;
+                  }
                   
                   return (
                     <Col key={listId} xs={12} md={6} lg={4} className="mb-3">

@@ -39,28 +39,50 @@ export const ListProvider = ({ children }) => {
 
   // Fetch user's lists
   const fetchUserLists = useCallback(async () => {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser || !currentUser.id) {
+      console.log("ListContext - fetchUserLists: No current user or user ID, skipping fetch");
+      return;
+    }
 
     try {
       setLoading(true);
       setError(null);
+      console.log("ListContext - fetchUserLists: Fetching lists for user ID:", currentUser.id);
       const lists = await listService.getUserLists(currentUser.id);
       console.log("ListContext - Raw user lists from API:", lists);
       
+      // Process the lists to ensure proper format
+      let processedLists = [];
+      
       // Verify list structure and IDs
       if (Array.isArray(lists)) {
-        lists.forEach((list, index) => {
+        console.log("ListContext - Lists is an array with length:", lists.length);
+        processedLists = lists.map((list, index) => {
+          // Check if item is an API response rather than a list
+          if (list && list.success === true && list.data) {
+            console.warn(`List at index ${index} is an API response object, extracting data:`, list);
+            return list.data;
+          }
+          
+          // Check for missing ID
           if (!list.id) {
             console.warn(`List at index ${index} is missing an ID:`, list);
+          } else {
+            console.log(`List at index ${index} has ID: ${list.id}, name: ${list.name}`);
           }
-        });
+          
+          return list;
+        }).filter(list => list && list.id); // Only keep lists with IDs
+        
+        console.log("ListContext - Processed user lists:", processedLists);
       } else {
         console.warn("Lists is not an array:", lists);
       }
       
-      setUserLists(Array.isArray(lists) ? lists : []);
-      console.log("ListContext - userLists after setting:", Array.isArray(lists) ? lists : []);
+      setUserLists(processedLists);
+      console.log("ListContext - userLists after setting:", processedLists);
     } catch (err) {
+      console.error("ListContext - Error in fetchUserLists:", err);
       handleError('Failed to load your lists. Please try again later.', 'fetching user lists', err);
       setUserLists([]);
     } finally {
@@ -91,18 +113,27 @@ export const ListProvider = ({ children }) => {
             console.log(`ListContext - Shared lists for tribe ${tribe.id}:`, tribeLists);
             
             if (tribeLists && Array.isArray(tribeLists) && tribeLists.length > 0) {
-              // Check for duplicate IDs before adding to allSharedLists
+              // Process each shared list to ensure proper format
               for (const list of tribeLists) {
-                if (!list.id) {
-                  console.warn(`Shared list is missing an ID:`, list);
+                // Extract data from API response if needed
+                let processedList = list;
+                if (list && list.success === true && list.data) {
+                  console.warn('Found API response object in shared lists, extracting data:', list);
+                  processedList = list.data;
+                }
+                
+                if (!processedList.id) {
+                  console.warn(`Shared list is missing an ID:`, processedList);
+                  // Skip lists without IDs
+                  continue;
+                }
+                
+                // Check if we already have this list (avoid duplicates)
+                const existingIndex = allSharedLists.findIndex(l => l.id === processedList.id);
+                if (existingIndex === -1) {
+                  allSharedLists.push(processedList);
                 } else {
-                  // Check if we already have this list (avoid duplicates)
-                  const existingIndex = allSharedLists.findIndex(l => l.id === list.id);
-                  if (existingIndex === -1) {
-                    allSharedLists.push(list);
-                  } else {
-                    console.warn(`Duplicate shared list ID found: ${list.id}`);
-                  }
+                  console.warn(`Duplicate shared list ID found: ${processedList.id}`);
                 }
               }
             }
@@ -136,7 +167,17 @@ export const ListProvider = ({ children }) => {
       // Get the list items from the API
       try {
         const items = await listService.getListItems(listId);
-        setCurrentListItems(items || []);
+        // Ensure items is always an array, even if the API returns a different structure
+        if (Array.isArray(items)) {
+          setCurrentListItems(items);
+        } else if (items && typeof items === 'object' && items.data && Array.isArray(items.data)) {
+          // Handle case where API might return {data: [...]} structure
+          console.log('ListContext: Received API response object for list items, extracting data array', items);
+          setCurrentListItems(items.data);
+        } else {
+          console.warn('ListContext: List items from API is not an array, defaulting to empty array:', items);
+          setCurrentListItems([]);
+        }
       } catch (itemErr) {
         console.error(`Error fetching items for list ${listId}:`, itemErr);
         setCurrentListItems([]);
@@ -158,9 +199,24 @@ export const ListProvider = ({ children }) => {
       setError(null);
       const newList = await listService.createList(listData);
       
+      // Check if the response is in the API response format and extract data if needed
+      let listToAdd = newList;
+      if (newList && newList.success === true && newList.data) {
+        console.log('ListContext: Received API response object from listService, extracting data:', newList);
+        listToAdd = newList.data;
+      }
+      
+      console.log('ListContext: Adding new list to state:', listToAdd);
+      
+      // Verify the list has an ID before adding to state
+      if (!listToAdd || !listToAdd.id) {
+        console.error('ListContext: Cannot add list without ID to state:', listToAdd);
+        throw new Error('Invalid list data returned from API');
+      }
+      
       // Update the local state with the new list
-      setUserLists(prevLists => [...prevLists, newList]);
-      return newList;
+      setUserLists(prevLists => [...prevLists, listToAdd]);
+      return listToAdd;
     } catch (err) {
       throw handleError('Failed to create list. Please try again later.', 'creating list', err);
     } finally {
@@ -330,6 +386,42 @@ export const ListProvider = ({ children }) => {
     }
   }, [handleError]);
 
+  // Load user lists when the component mounts or user changes
+  useEffect(() => {
+    if (currentUser) {
+      console.log('ListContext - useEffect triggered to load user lists');
+      fetchUserLists();
+      fetchSharedLists();
+    }
+  }, [currentUser, fetchUserLists, fetchSharedLists]);
+
+  // Add a function to refresh user lists
+  const refreshUserLists = useCallback(async () => {
+    console.log('ListContext - refreshUserLists called');
+    // Clear lists first to avoid stale data
+    setUserLists([]);
+    // Force fetch from server
+    try {
+      if (currentUser && currentUser.id) {
+        console.log('ListContext - Forcing fresh fetch of user lists');
+        const timestamp = new Date().getTime(); // Add cache busting
+        const lists = await listService.getUserLists(currentUser.id, timestamp);
+        console.log('ListContext - Refreshed user lists:', lists);
+        
+        // Process the lists
+        if (Array.isArray(lists)) {
+          setUserLists(lists.filter(list => list && list.id));
+        } else {
+          console.warn('ListContext - Refreshed lists is not an array:', lists);
+        }
+      } else {
+        console.log('ListContext - No user ID available for refreshUserLists');
+      }
+    } catch (err) {
+      console.error('ListContext - Error refreshing user lists:', err);
+    }
+  }, [currentUser, listService]);
+
   const value = {
     userLists,
     sharedLists,
@@ -347,7 +439,8 @@ export const ListProvider = ({ children }) => {
     addListItem,
     updateListItem,
     deleteListItem,
-    getListShares
+    getListShares,
+    refreshUserLists
   };
 
   return (
