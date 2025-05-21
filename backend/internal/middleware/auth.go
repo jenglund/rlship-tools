@@ -138,6 +138,11 @@ func UserIDMiddleware(repos RepositoryProvider) gin.HandlerFunc {
 			return
 		}
 
+		if repos == nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "user repository not configured"})
+			return
+		}
+
 		userRepo := repos.GetUserRepository()
 		if userRepo == nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "user repository not configured"})

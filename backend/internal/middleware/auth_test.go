@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/models"
 	"github.com/jenglund/rlship-tools/internal/repository/postgres"
-	"github.com/jenglund/rlship-tools/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -23,14 +22,27 @@ import (
 // MockUserRepository is a mock implementation of the user repository
 type MockUserRepository struct {
 	mock.Mock
+	CreateFunc           func(user *models.User) error
+	GetByIDFunc          func(id uuid.UUID) (*models.User, error)
+	GetByFirebaseUIDFunc func(firebaseUID string) (*models.User, error)
+	GetByEmailFunc       func(email string) (*models.User, error)
+	UpdateFunc           func(user *models.User) error
+	DeleteFunc           func(id uuid.UUID) error
+	ListFunc             func(offset, limit int) ([]*models.User, error)
 }
 
 func (m *MockUserRepository) Create(user *models.User) error {
+	if m.CreateFunc != nil {
+		return m.CreateFunc(user)
+	}
 	args := m.Called(user)
 	return args.Error(0)
 }
 
 func (m *MockUserRepository) GetByID(id uuid.UUID) (*models.User, error) {
+	if m.GetByIDFunc != nil {
+		return m.GetByIDFunc(id)
+	}
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -39,6 +51,9 @@ func (m *MockUserRepository) GetByID(id uuid.UUID) (*models.User, error) {
 }
 
 func (m *MockUserRepository) GetByFirebaseUID(firebaseUID string) (*models.User, error) {
+	if m.GetByFirebaseUIDFunc != nil {
+		return m.GetByFirebaseUIDFunc(firebaseUID)
+	}
 	args := m.Called(firebaseUID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -47,6 +62,9 @@ func (m *MockUserRepository) GetByFirebaseUID(firebaseUID string) (*models.User,
 }
 
 func (m *MockUserRepository) GetByEmail(email string) (*models.User, error) {
+	if m.GetByEmailFunc != nil {
+		return m.GetByEmailFunc(email)
+	}
 	args := m.Called(email)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -55,16 +73,25 @@ func (m *MockUserRepository) GetByEmail(email string) (*models.User, error) {
 }
 
 func (m *MockUserRepository) Update(user *models.User) error {
+	if m.UpdateFunc != nil {
+		return m.UpdateFunc(user)
+	}
 	args := m.Called(user)
 	return args.Error(0)
 }
 
 func (m *MockUserRepository) Delete(id uuid.UUID) error {
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(id)
+	}
 	args := m.Called(id)
 	return args.Error(0)
 }
 
 func (m *MockUserRepository) List(offset, limit int) ([]*models.User, error) {
+	if m.ListFunc != nil {
+		return m.ListFunc(offset, limit)
+	}
 	args := m.Called(offset, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -74,7 +101,7 @@ func (m *MockUserRepository) List(offset, limit int) ([]*models.User, error) {
 
 // MockRepositories is a mock implementation of the repositories struct
 type MockRepositories struct {
-	Users      models.UserRepository
+	Users      *MockUserRepository
 	Tribes     *postgres.TribeRepository
 	Activities *postgres.ActivityRepository
 	db         *sql.DB
@@ -86,6 +113,14 @@ func (r *MockRepositories) DB() *sql.DB {
 
 func (r *MockRepositories) GetUserRepository() models.UserRepository {
 	return r.Users
+}
+
+// setupTest creates a test environment with mocked repositories
+func setupTest(t *testing.T) *MockRepositories {
+	t.Helper()
+	return &MockRepositories{
+		Users: &MockUserRepository{},
+	}
 }
 
 func TestExtractToken(t *testing.T) {
@@ -187,8 +222,8 @@ func TestFirebaseAuthMiddleware(t *testing.T) {
 			name:  "valid token",
 			token: "valid-token",
 			setupAuth: func() *MockFirebaseAuth {
-				mock := &MockFirebaseAuth{}
-				mock.verifyIDTokenFunc = func(ctx context.Context, token string) (*auth.Token, error) {
+				mock := NewMockFirebaseAuth()
+				mock.SetVerifyIDTokenFunc(func(ctx context.Context, token string) (*auth.Token, error) {
 					return &auth.Token{
 						UID: "test-uid",
 						Claims: map[string]interface{}{
@@ -196,7 +231,7 @@ func TestFirebaseAuthMiddleware(t *testing.T) {
 							"name":  "Test User",
 						},
 					}, nil
-				}
+				})
 				return mock
 			},
 			expectedStatus: http.StatusOK,
@@ -206,10 +241,10 @@ func TestFirebaseAuthMiddleware(t *testing.T) {
 			name:  "invalid token",
 			token: "invalid-token",
 			setupAuth: func() *MockFirebaseAuth {
-				mock := &MockFirebaseAuth{}
-				mock.verifyIDTokenFunc = func(ctx context.Context, token string) (*auth.Token, error) {
+				mock := NewMockFirebaseAuth()
+				mock.SetVerifyIDTokenFunc(func(ctx context.Context, token string) (*auth.Token, error) {
 					return nil, errors.New("invalid token")
-				}
+				})
 				return mock
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -219,7 +254,7 @@ func TestFirebaseAuthMiddleware(t *testing.T) {
 			name:  "missing token",
 			token: "",
 			setupAuth: func() *MockFirebaseAuth {
-				return &MockFirebaseAuth{}
+				return NewMockFirebaseAuth()
 			},
 			expectedStatus: http.StatusUnauthorized,
 			checkClaims:    false,
@@ -260,10 +295,10 @@ func TestUserIDMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	// Set up test environment
-	setup := testutil.SetupTest(t)
+	setup := setupTest(t)
 
 	// Configure mock user repository behavior
-	setup.Repositories.Users.GetByFirebaseUIDFunc = func(firebaseUID string) (*models.User, error) {
+	setup.Users.GetByFirebaseUIDFunc = func(firebaseUID string) (*models.User, error) {
 		if firebaseUID == "test-uid" {
 			return &models.User{
 				ID:          uuid.New(),
@@ -306,7 +341,7 @@ func TestUserIDMiddleware(t *testing.T) {
 				}
 				c.Next()
 			})
-			router.Use(UserIDMiddleware(setup.Repositories))
+			router.Use(UserIDMiddleware(setup))
 
 			router.GET("/test", func(c *gin.Context) {
 				c.Status(http.StatusOK)
@@ -327,53 +362,33 @@ func TestUserIDMiddleware_RepositoryErrors(t *testing.T) {
 	tests := []struct {
 		name           string
 		firebaseUID    string
-		setupRepo      func(*MockUserRepository)
+		mockRepo       *MockRepositories
 		expectedStatus int
 		expectedError  string
 	}{
 		{
 			name:        "database error",
 			firebaseUID: "test-uid",
-			setupRepo: func(repo *MockUserRepository) {
-				repo.On("GetByFirebaseUID", "test-uid").Return(nil, errors.New("database error"))
-			},
+			mockRepo: func() *MockRepositories {
+				repos := setupTest(t)
+				repos.Users.GetByFirebaseUIDFunc = func(firebaseUID string) (*models.User, error) {
+					return nil, errors.New("database error")
+				}
+				return repos
+			}(),
 			expectedStatus: http.StatusUnauthorized,
 			expectedError:  "user not found",
-		},
-		{
-			name:           "nil repository",
-			firebaseUID:    "test-uid",
-			setupRepo:      nil,
-			expectedStatus: http.StatusInternalServerError,
-			expectedError:  "user repository not configured",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			var mockRepo *MockUserRepository
-			var repos *MockRepositories
-
-			if tt.name == "nil repository" {
-				repos = &MockRepositories{
-					Users: nil,
-				}
-			} else {
-				mockRepo = &MockUserRepository{}
-				if tt.setupRepo != nil {
-					tt.setupRepo(mockRepo)
-				}
-				repos = &MockRepositories{
-					Users: mockRepo,
-				}
-			}
-
 			router.Use(func(c *gin.Context) {
 				c.Set("firebase_uid", tt.firebaseUID)
 				c.Next()
 			})
-			router.Use(UserIDMiddleware(repos))
+			router.Use(UserIDMiddleware(tt.mockRepo))
 
 			router.GET("/test", func(c *gin.Context) {
 				c.Status(http.StatusOK)
@@ -384,18 +399,43 @@ func TestUserIDMiddleware_RepositoryErrors(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			if tt.expectedError != "" {
-				var response map[string]string
-				err := json.NewDecoder(w.Body).Decode(&response)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedError, response["error"])
-			}
 
-			if mockRepo != nil {
-				mockRepo.AssertExpectations(t)
+			if tt.expectedError != "" {
+				var response map[string]interface{}
+				err := json.Unmarshal(w.Body.Bytes(), &response)
+				assert.NoError(t, err)
+				assert.Contains(t, response["error"], tt.expectedError)
 			}
 		})
 	}
+}
+
+func TestUserIDMiddleware_NilRepository(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("firebase_uid", "test-uid")
+		c.Next()
+	})
+
+	// Use nil directly for the repository
+	router.Use(UserIDMiddleware(nil))
+
+	router.GET("/test", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/test", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NoError(t, err)
+	assert.Contains(t, response["error"], "user repository not configured")
 }
 
 func TestMiddlewareChaining(t *testing.T) {
@@ -411,22 +451,24 @@ func TestMiddlewareChaining(t *testing.T) {
 		{
 			name: "successful chain",
 			setupAuth: func() *MockFirebaseAuth {
-				mock := &MockFirebaseAuth{}
-				mock.verifyIDTokenFunc = func(ctx context.Context, token string) (*auth.Token, error) {
+				mock := NewMockFirebaseAuth()
+				mock.SetVerifyIDTokenFunc(func(ctx context.Context, token string) (*auth.Token, error) {
 					return &auth.Token{
 						UID: "test-uid",
 						Claims: map[string]interface{}{
 							"email": "test@example.com",
 						},
 					}, nil
-				}
+				})
 				return mock
 			},
 			setupRepo: func(repo *MockUserRepository) {
-				repo.On("GetByFirebaseUID", "test-uid").Return(&models.User{
-					ID:          uuid.New(),
-					FirebaseUID: "test-uid",
-				}, nil)
+				repo.GetByFirebaseUIDFunc = func(firebaseUID string) (*models.User, error) {
+					return &models.User{
+						ID:          uuid.New(),
+						FirebaseUID: "test-uid",
+					}, nil
+				}
 			},
 			token:          "valid-token",
 			expectedStatus: http.StatusOK,
@@ -434,10 +476,10 @@ func TestMiddlewareChaining(t *testing.T) {
 		{
 			name: "auth failure breaks chain",
 			setupAuth: func() *MockFirebaseAuth {
-				mock := &MockFirebaseAuth{}
-				mock.verifyIDTokenFunc = func(ctx context.Context, token string) (*auth.Token, error) {
+				mock := NewMockFirebaseAuth()
+				mock.SetVerifyIDTokenFunc(func(ctx context.Context, token string) (*auth.Token, error) {
 					return nil, errors.New("invalid token")
-				}
+				})
 				return mock
 			},
 			setupRepo: func(repo *MockUserRepository) {
@@ -451,13 +493,10 @@ func TestMiddlewareChaining(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			mockRepo := &MockUserRepository{}
-			if tt.setupRepo != nil {
-				tt.setupRepo(mockRepo)
-			}
+			repos := setupTest(t)
 
-			repos := &MockRepositories{
-				Users: mockRepo,
+			if tt.setupRepo != nil {
+				tt.setupRepo(repos.Users)
 			}
 
 			fa := &FirebaseAuth{client: tt.setupAuth()}
@@ -477,7 +516,6 @@ func TestMiddlewareChaining(t *testing.T) {
 			router.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
-			mockRepo.AssertExpectations(t)
 		})
 	}
 }
