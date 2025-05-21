@@ -183,9 +183,9 @@ func (m *MockListRepository) GetListShares(listID uuid.UUID) ([]*models.ListShar
 }
 
 // CleanupExpiredShares soft-deletes any shares that have an expiration date in the past
-func (m *MockListRepository) CleanupExpiredShares(ctx context.Context) error {
+func (m *MockListRepository) CleanupExpiredShares(ctx context.Context) (int, error) {
 	args := m.Called(ctx)
-	return args.Error(0)
+	return args.Int(0), args.Error(1)
 }
 
 // Sync management

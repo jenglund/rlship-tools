@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -189,14 +190,16 @@ func TestMockListRepository_Sharing(t *testing.T) {
 	repo := &MockListRepository{}
 	listID := uuid.New()
 	tribeID := uuid.New()
-	testShare := &models.ListShare{
+	userID := uuid.New()
+	share := &models.ListShare{
 		ListID:  listID,
 		TribeID: tribeID,
+		UserID:  userID,
 	}
 
 	t.Run("ShareWithTribe", func(t *testing.T) {
-		repo.On("ShareWithTribe", testShare).Return(nil)
-		err := repo.ShareWithTribe(testShare)
+		repo.On("ShareWithTribe", share).Return(nil)
+		err := repo.ShareWithTribe(share)
 		assert.NoError(t, err)
 		repo.AssertExpectations(t)
 	})
@@ -238,11 +241,31 @@ func TestMockListRepository_Sharing(t *testing.T) {
 	})
 
 	t.Run("GetListShares", func(t *testing.T) {
-		shares := []*models.ListShare{testShare}
+		shares := []*models.ListShare{share}
 		repo.On("GetListShares", listID).Return(shares, nil)
 		result, err := repo.GetListShares(listID)
 		assert.NoError(t, err)
 		assert.Equal(t, shares, result)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("CleanupExpiredShares", func(t *testing.T) {
+		ctx := context.Background()
+		repo.On("CleanupExpiredShares", ctx).Return(5, nil).Once()
+		count, err := repo.CleanupExpiredShares(ctx)
+		assert.NoError(t, err)
+		assert.Equal(t, 5, count)
+		repo.AssertExpectations(t)
+	})
+
+	t.Run("CleanupExpiredShares_error", func(t *testing.T) {
+		ctx := context.Background()
+		expectedErr := fmt.Errorf("database error")
+		repo.On("CleanupExpiredShares", ctx).Return(0, expectedErr).Once()
+		count, err := repo.CleanupExpiredShares(ctx)
+		assert.Error(t, err)
+		assert.Equal(t, 0, count)
+		assert.Equal(t, expectedErr, err)
 		repo.AssertExpectations(t)
 	})
 }

@@ -690,9 +690,9 @@ func (m *MockListRepository) GetTribeListsWithContext(ctx context.Context, tribe
 	return args.Get(0).([]*models.List), args.Error(1)
 }
 
-func (m *MockListRepository) CleanupExpiredShares(ctx context.Context) error {
+func (m *MockListRepository) CleanupExpiredShares(ctx context.Context) (int, error) {
 	args := m.Called(ctx)
-	return args.Error(0)
+	return args.Int(0), args.Error(1)
 }
 
 func isCommonError(err error) bool {
@@ -972,13 +972,13 @@ func TestListService_CleanupExpiredShares(t *testing.T) {
 	defer mockRepo.AssertExpectations(t)
 
 	// Test successful cleanup
-	mockRepo.On("CleanupExpiredShares", mock.Anything).Return(nil).Once()
+	mockRepo.On("CleanupExpiredShares", mock.Anything).Return(5, nil).Once()
 	err := service.CleanupExpiredShares()
 	assert.NoError(t, err)
 
 	// Test cleanup with error
 	expectedErr := fmt.Errorf("database error")
-	mockRepo.On("CleanupExpiredShares", mock.Anything).Return(expectedErr).Once()
+	mockRepo.On("CleanupExpiredShares", mock.Anything).Return(0, expectedErr).Once()
 	err = service.CleanupExpiredShares()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "error cleaning up expired shares")
