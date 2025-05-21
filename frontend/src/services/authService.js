@@ -3,13 +3,26 @@ import config from '../config';
 
 const API_URL = config.API_URL;
 
-// Configure axios to include the dev email header for all requests in development
+// Configure axios to include auth headers for all requests 
 axios.interceptors.request.use(config => {
   const user = localStorage.getItem('user');
   if (user) {
-    const userData = JSON.parse(user);
-    if (userData.email && userData.email.match(/^dev_user\d+@gonetribal\.com$/)) {
-      config.headers['X-Dev-Email'] = userData.email;
+    try {
+      const userData = JSON.parse(user);
+      
+      // Add token for authorization if available
+      if (userData.token) {
+        config.headers['Authorization'] = `Bearer ${userData.token}`;
+        console.debug(`Adding Authorization header: Bearer ${userData.token.substring(0, 10)}...`);
+      }
+      
+      // Add email header for all users in development mode
+      if (userData.email) {
+        config.headers['X-Dev-Email'] = userData.email;
+        console.debug(`Adding X-Dev-Email header: ${userData.email}`);
+      }
+    } catch (error) {
+      console.error('Error parsing user data from localStorage:', error);
     }
   }
   return config;
@@ -43,23 +56,28 @@ const authService = {
   // Login existing user
   login: async (email) => {
     try {
-      // For dev users, just fetch user info with the dev email header
-      if (email.match(/^dev_user\d+@gonetribal\.com$/)) {
-        // Set dev email header for this request
-        const headers = { 'X-Dev-Email': email };
+      console.debug(`Logging in user: ${email}`);
+      
+      // Set email header for this request
+      const headers = { 'X-Dev-Email': email };
+      
+      try {
+        // Try to get user info directly first
         const response = await axios.get(`${API_URL}/users/me`, { headers });
         
-        // Generate a dev token and add it to the user data
+        // Generate a token and add it to the user data
         const userData = {
           ...response.data.data,
-          token: `dev:${email}` // Add a dev token format that backend can recognize
+          token: `dev:${email}` // Add a token format that backend can recognize
         };
         
         // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(userData));
+        console.debug(`Stored user data: ${JSON.stringify(userData, null, 2)}`);
         return userData;
-      } else {
-        // Normal login flow for non-dev users
+      } catch (err) {
+        // If user doesn't exist yet, fall back to login endpoint
+        console.debug(`User not found, using login endpoint: ${err}`);
         const response = await axios.post(`${API_URL}/users/login`, { email });
         localStorage.setItem('user', JSON.stringify(response.data.data));
         return response.data.data;

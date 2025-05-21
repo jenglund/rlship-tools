@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"firebase.google.com/go/v4/auth"
@@ -13,18 +12,20 @@ import (
 )
 
 // DevFirebaseAuth is a development-friendly implementation of Firebase auth
-// that automatically accepts users with email addresses matching dev_user[0-9]+@gonetribal.com
+// that accepts all users in development mode but identifies users with
+// email addresses ending with @gonetribal.com as dev users with admin access
 type DevFirebaseAuth struct {
-	devEmailPattern *regexp.Regexp
-	repos           RepositoryProvider
+	repos RepositoryProvider
 }
 
 // NewDevFirebaseAuth creates a new development Firebase auth client
-// that accepts dev users without actual authentication
 func NewDevFirebaseAuth() *DevFirebaseAuth {
-	return &DevFirebaseAuth{
-		devEmailPattern: regexp.MustCompile(`^dev_user[0-9]+@gonetribal\.com$`),
-	}
+	return &DevFirebaseAuth{}
+}
+
+// IsDevUser checks if the email belongs to a developer (ends with @gonetribal.com)
+func IsDevUser(email string) bool {
+	return strings.HasSuffix(email, "@gonetribal.com")
 }
 
 // SetRepositoryProvider sets the repository provider for user creation
@@ -33,32 +34,35 @@ func (d *DevFirebaseAuth) SetRepositoryProvider(repos RepositoryProvider) {
 }
 
 // VerifyIDToken implements the AuthClient interface
-// For dev users, it generates a fake token with the user's email
+// In development mode, it accepts all tokens and generates a fake token
 func (d *DevFirebaseAuth) VerifyIDToken(ctx context.Context, token string) (*auth.Token, error) {
-	// Check if this is a dev user token
+	// For tokens with "dev:" prefix, extract the email
 	if strings.HasPrefix(token, "dev:") {
 		email := strings.TrimPrefix(token, "dev:")
+		userName := strings.Split(email, "@")[0]
 
-		// Validate that it matches our dev email pattern
-		if !d.devEmailPattern.MatchString(email) {
-			return nil, fmt.Errorf("invalid dev user email format")
-		}
-
-		// Create a fake token for the dev user
+		// Create a fake token for the user
 		return &auth.Token{
 			UID: fmt.Sprintf("dev-%s", email),
 			Claims: map[string]interface{}{
 				"email": email,
-				"name":  fmt.Sprintf("Dev User %s", strings.Split(email, "@")[0][8:]),
+				"name":  userName,
 			},
 		}, nil
 	}
 
-	// For non-dev tokens, reject them in dev mode
-	return nil, fmt.Errorf("only dev users are supported in development mode")
+	// For any other tokens in dev mode, create a generic token
+	// In a real production environment, this would verify with Firebase
+	return &auth.Token{
+		UID: fmt.Sprintf("dev-user-%s", token),
+		Claims: map[string]interface{}{
+			"email": "dev-user@example.com",
+			"name":  "Development User",
+		},
+	}, nil
 }
 
-// CreateOrGetDevUser ensures the dev user exists in the database
+// CreateOrGetDevUser ensures the user exists in the database
 func (d *DevFirebaseAuth) CreateOrGetDevUser(c *gin.Context, firebaseUID, email, name string) (*models.User, error) {
 	if d.repos == nil {
 		return nil, fmt.Errorf("repository provider not set")
@@ -70,7 +74,36 @@ func (d *DevFirebaseAuth) CreateOrGetDevUser(c *gin.Context, firebaseUID, email,
 
 	// If not found, create the user
 	if err != nil {
-		return nil, fmt.Errorf("failed to create dev user: %w", err)
+		fmt.Printf("User not found by Firebase UID %s, will create: %v\n", firebaseUID, err)
+
+		// Check if user exists by email as a fallback
+		user, emailErr := userRepo.GetByEmail(email)
+		if emailErr == nil && user != nil {
+			fmt.Printf("Found user by email instead: %s\n", email)
+			// Update Firebase UID if it doesn't match
+			if user.FirebaseUID != firebaseUID {
+				user.FirebaseUID = firebaseUID
+				if updateErr := userRepo.Update(user); updateErr != nil {
+					fmt.Printf("Error updating user Firebase UID: %v\n", updateErr)
+				}
+			}
+			return user, nil
+		}
+
+		// Create a new user
+		newUser := &models.User{
+			FirebaseUID: firebaseUID,
+			Email:       email,
+			Name:        name,
+			Provider:    models.AuthProviderEmail,
+		}
+
+		if err := userRepo.Create(newUser); err != nil {
+			return nil, fmt.Errorf("failed to create user: %w", err)
+		}
+
+		fmt.Printf("Created new user: %s (%s)\n", email, newUser.ID)
+		return newUser, nil
 	}
 
 	return user, nil
@@ -81,58 +114,84 @@ func (d *DevFirebaseAuth) CreateOrGetDevUser(c *gin.Context, firebaseUID, email,
 func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := extractToken(c.Request)
-		if token == "" {
-			// For development, allow the email to be passed in a header
-			devEmail := c.Request.Header.Get("X-Dev-Email")
+		devEmail := c.Request.Header.Get("X-Dev-Email")
 
-			if devEmail != "" && d.devEmailPattern.MatchString(devEmail) {
-				// Set a fake Firebase UID and user info
-				uid := fmt.Sprintf("dev-%s", devEmail)
-				name := fmt.Sprintf("Dev User %s", strings.Split(devEmail, "@")[0][8:])
+		// Case 1: Using X-Dev-Email header
+		if devEmail != "" {
+			uid := fmt.Sprintf("dev-%s", devEmail)
+			name := strings.Split(devEmail, "@")[0]
 
-				c.Set(string(ContextFirebaseUIDKey), uid)
-				c.Set(string(ContextUserEmailKey), devEmail)
-				c.Set(string(ContextUserNameKey), name)
+			c.Set(string(ContextFirebaseUIDKey), uid)
+			c.Set(string(ContextUserEmailKey), devEmail)
+			c.Set(string(ContextUserNameKey), name)
 
-				// Create or get the dev user if repositories are available
-				if d.repos != nil {
-					user, err := d.CreateOrGetDevUser(c, uid, devEmail, name)
-					if err == nil {
-						c.Set(string(ContextUserIDKey), user.ID)
-					}
+			// Create or get the user if repositories are available
+			if d.repos != nil {
+				user, err := d.CreateOrGetDevUser(c, uid, devEmail, name)
+				if err != nil {
+					fmt.Printf("Warning: Failed to get/create user: %v\n", err)
+				} else if user != nil {
+					// Set user ID in context
+					c.Set(string(ContextUserIDKey), user.ID.String())
 				}
-
-				c.Next()
-				return
 			}
 
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "no token or dev email provided"})
+			// Set flag if this is a dev user (for admin panel access)
+			c.Set("is_dev_user", IsDevUser(devEmail))
+
+			c.Next()
 			return
 		}
 
-		// For tokens, check if it's a dev token
-		if strings.HasPrefix(token, "dev:") {
+		// Case 2: Using dev: token
+		if token != "" && strings.HasPrefix(token, "dev:") {
 			email := strings.TrimPrefix(token, "dev:")
-
-			// Validate that it matches our dev email pattern
-			if !d.devEmailPattern.MatchString(email) {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid dev user email format"})
-				return
-			}
-
-			// Set a fake Firebase UID and user info
 			uid := fmt.Sprintf("dev-%s", email)
-			name := fmt.Sprintf("Dev User %s", strings.Split(email, "@")[0][8:])
+			name := strings.Split(email, "@")[0]
 
 			c.Set(string(ContextFirebaseUIDKey), uid)
 			c.Set(string(ContextUserEmailKey), email)
 			c.Set(string(ContextUserNameKey), name)
 
-			// Create or get the dev user if repositories are available
+			// Create or get the user if repositories are available
 			if d.repos != nil {
 				user, err := d.CreateOrGetDevUser(c, uid, email, name)
-				if err == nil {
-					c.Set(string(ContextUserIDKey), user.ID)
+				if err != nil {
+					fmt.Printf("Warning: Failed to get/create user: %v\n", err)
+				} else if user != nil {
+					// Set user ID in context
+					c.Set(string(ContextUserIDKey), user.ID.String())
+				}
+			}
+
+			// Set flag if this is a dev user (for admin panel access)
+			c.Set("is_dev_user", IsDevUser(email))
+
+			c.Next()
+			return
+		}
+
+		// Case 3: Using any other token in development mode
+		if token != "" {
+			// For any token in development mode, accept it with generic info
+			c.Set(string(ContextFirebaseUIDKey), fmt.Sprintf("dev-user-%s", token))
+			email := "dev-user@example.com"
+			name := "Development User"
+			c.Set(string(ContextUserEmailKey), email)
+			c.Set(string(ContextUserNameKey), name)
+
+			// Regular users aren't dev users
+			c.Set("is_dev_user", false)
+
+			// Create or get a generic dev user if repositories are available
+			if d.repos != nil {
+				uid := fmt.Sprintf("dev-user-%s", token)
+				user, err := d.CreateOrGetDevUser(c, uid, email, name)
+				if err != nil {
+					fmt.Printf("Warning: Failed to get/create generic user: %v\n", err)
+				} else if user != nil {
+					// Set user ID in context
+					c.Set(string(ContextUserIDKey), user.ID.String())
 				}
 			}
 
@@ -140,6 +199,7 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "only dev users are supported in development mode"})
+		// No credentials provided
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 	}
 }

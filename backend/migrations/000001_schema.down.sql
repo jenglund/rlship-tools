@@ -52,4 +52,4 @@ DROP TYPE IF EXISTS owner_type CASCADE;
 DROP TYPE IF EXISTS membership_type CASCADE;
 
 -- Drop test database role
-DROP ROLE IF EXISTS "user" CASCADE; 
+DROP ROLE IF EXISTS "user"; 

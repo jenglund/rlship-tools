@@ -1,0 +1,1 @@
+-- Base migration state, nothing to revert

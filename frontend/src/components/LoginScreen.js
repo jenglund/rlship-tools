@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { Container, Form, Button, Alert } from 'react-bootstrap';
 
 const LoginScreen = () => {
-  const { login, checkEmailExists } = useAuth();
+  const { currentUser, login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('dev_user1@gonetribal.com');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (currentUser) {
+      navigate('/tribes');
+    }
+  }, [currentUser, navigate]);
 
   const handleEmailChange = (e) => {
     setEmail(e.target.value);
@@ -37,37 +45,40 @@ const LoginScreen = () => {
   };
 
   return (
-    <div className="container">
-      <div className="login-container">
-        <h2>Log in to Tribe</h2>
-        <p className="text-muted">Development Mode</p>
-        {error && <div className="alert alert-danger">{error}</div>}
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="email">Email Address</label>
-            <input
+    <Container className="py-5">
+      <div className="login-container mx-auto" style={{ maxWidth: '500px' }}>
+        <h2 className="mb-4 text-center">Log in to Tribe</h2>
+        <p className="text-muted text-center mb-4">Development Mode</p>
+        
+        {error && <Alert variant="danger">{error}</Alert>}
+        
+        <Form onSubmit={handleSubmit}>
+          <Form.Group className="mb-3">
+            <Form.Label htmlFor="email">Email Address</Form.Label>
+            <Form.Control
               type="email"
               id="email"
-              className="form-control"
               value={email}
               onChange={handleEmailChange}
               placeholder="Enter your email"
               required
             />
-            <small className="form-text text-muted">
-              Development users pattern: dev_user[1-9]@gonetribal.com
-            </small>
-          </div>
-          <button 
+            <Form.Text className="text-muted">
+              Enter any email address to log in (development mode)
+            </Form.Text>
+          </Form.Group>
+          
+          <Button 
             type="submit" 
-            className="btn btn-primary btn-block"
+            variant="primary"
+            className="w-100"
             disabled={loading}
           >
             {loading ? 'Processing...' : 'Login'}
-          </button>
-        </form>
+          </Button>
+        </Form>
       </div>
-    </div>
+    </Container>
   );
 };
 

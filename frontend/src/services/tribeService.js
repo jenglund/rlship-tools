@@ -7,7 +7,9 @@ const API_URL = config.API_URL;
 // Helper function to get the authorization header
 const getAuthHeader = () => {
   const user = authService.getCurrentUser();
-  return user ? { Authorization: `Bearer ${user.token}` } : {};
+  const headers = user ? { Authorization: `Bearer ${user.token}` } : {};
+  console.debug('Auth headers for API request:', headers);
+  return headers;
 };
 
 const tribeService = {

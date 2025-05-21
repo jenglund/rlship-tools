@@ -254,12 +254,23 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 
 	// API routes
 	api := router.Group("/api")
+
+	// Create a public API group that doesn't require authentication
+	publicAPI := api.Group("")
 	{
-		// Add Auth middleware to all API routes
-		api.Use(authMiddleware.AuthMiddleware())
+		// Initialize and register user handler for public routes
+		userHandler := handlers.NewUserHandler(repos)
+		userHandler.RegisterRoutes(publicAPI)
+	}
+
+	// Protected API routes
+	protectedAPI := api.Group("")
+	{
+		// Add Auth middleware to protected API routes
+		protectedAPI.Use(authMiddleware.AuthMiddleware())
 
 		// Add middleware to extract Firebase UID and convert to user ID
-		api.Use(func(c *gin.Context) {
+		protectedAPI.Use(func(c *gin.Context) {
 			// Get Firebase UID from context
 			firebaseUID, exists := c.Get(string(middleware.ContextFirebaseUIDKey))
 			if !exists {
@@ -291,15 +302,12 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 			c.Next()
 		})
 
-		// Initialize and register handlers
-		userHandler := handlers.NewUserHandler(repos)
-		userHandler.RegisterRoutes(api)
-
+		// Initialize and register tribe handler
 		tribeHandler := handlers.NewTribeHandler(repos)
-		tribeHandler.RegisterRoutes(api)
+		tribeHandler.RegisterRoutes(protectedAPI)
 
 		// Initialize and register v1 group
-		v1 := api.Group("/v1")
+		v1 := protectedAPI.Group("/v1")
 
 		// Initialize the list handler
 		listHandler := handlers.NewListHandler(listService)

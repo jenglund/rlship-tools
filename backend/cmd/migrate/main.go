@@ -126,14 +126,47 @@ func runMigrations(args []string, factory MigrateFactory, configLoader ConfigLoa
 	if err != nil && err != migrate.ErrNilVersion {
 		return fmt.Errorf("error getting version: %v", err)
 	}
-	log.Printf("Current migration version: %d, Dirty: %v", version, dirty)
+
+	// Handle nil version case (which means no migrations have been applied)
+	if err == migrate.ErrNilVersion {
+		log.Printf("No migrations have been applied yet")
+		version = 0
+		dirty = false
+	} else {
+		log.Printf("Current migration version: %d, Dirty: %v", version, dirty)
+	}
 
 	switch command {
 	case "up":
-		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			return fmt.Errorf("error running migrations: %v", err)
+		err := m.Up()
+		if err != nil {
+			// Check if it's the "no migration found for version 0" error
+			if err.Error() == "no migration found for version 0: read down for version 0 .: file does not exist" {
+				// This is actually not an error - we're at base state
+				log.Printf("Starting with fresh database at version 0")
+				// Try to run the migrations from the beginning
+				err = m.Up()
+				if err != nil && err != migrate.ErrNoChange {
+					return fmt.Errorf("error running migrations from base state: %v", err)
+				}
+				return nil
+			} else if err != migrate.ErrNoChange {
+				return fmt.Errorf("error running migrations: %v", err)
+			}
 		}
 	case "down":
+		// Check if we're already at version 0 before attempting to run down migration
+		version, _, vErr := m.Version()
+		if vErr != nil && vErr != migrate.ErrNilVersion {
+			return fmt.Errorf("error getting version: %v", vErr)
+		}
+
+		// If we're already at base version, just log it and exit successfully
+		if vErr == migrate.ErrNilVersion || version == 0 {
+			log.Printf("Already at base version, nothing to migrate down")
+			return nil
+		}
+
 		if err := m.Down(); err != nil && err != migrate.ErrNoChange {
 			return fmt.Errorf("error running migrations: %v", err)
 		}

@@ -26,7 +26,7 @@ func NewTribeHandler(repos *postgres.Repositories) *TribeHandler {
 
 // RegisterRoutes registers the tribe routes
 func (h *TribeHandler) RegisterRoutes(r *gin.RouterGroup) {
-	tribes := r.Group("/tribes", middleware.RequireAuth())
+	tribes := r.Group("/tribes")
 	{
 		tribes.POST("", h.CreateTribe)
 		tribes.GET("", h.ListTribes)

@@ -34,19 +34,21 @@ During development, the backend supports a simplified authentication flow that d
 
 1. Set the environment variable `ENVIRONMENT=development` or ensure the Firebase credentials file doesn't exist
 2. The server will automatically enable development authentication mode
-3. Use dev user accounts with email addresses matching the pattern `dev_user[0-9]+@gonetribal.com`
+3. Any email address can be used to register and log in during development
 
 You can authenticate in one of two ways:
-- Include a header `X-Dev-Email: dev_user1@gonetribal.com` in your requests
-- Send a token in the format `dev:dev_user1@gonetribal.com` in the Authorization header
+- Include a header `X-Dev-Email: your.email@example.com` in your requests
+- Send a token in the format `dev:your.email@example.com` in the Authorization header
+
+Users with email addresses ending in `@gonetribal.com` are automatically granted admin privileges, which provides access to the admin panel.
 
 Example:
 ```bash
 # Using X-Dev-Email header
-curl -H "X-Dev-Email: dev_user1@gonetribal.com" http://localhost:8080/api/users/me
+curl -H "X-Dev-Email: your.email@example.com" http://localhost:8080/api/users/me
 
 # Using Authorization header
-curl -H "Authorization: Bearer dev:dev_user1@gonetribal.com" http://localhost:8080/api/users/me
+curl -H "Authorization: Bearer dev:your.email@example.com" http://localhost:8080/api/users/me
 ```
 
 ## Testing

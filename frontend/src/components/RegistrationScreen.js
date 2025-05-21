@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { Container, Form, Button, Alert } from 'react-bootstrap';
 
 const RegistrationScreen = () => {
-  const { register } = useAuth();
+  const { currentUser, register } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -15,6 +16,13 @@ const RegistrationScreen = () => {
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (currentUser) {
+      navigate('/tribes');
+    }
+  }, [currentUser, navigate]);
 
   // Get email from location state if available
   useEffect(() => {
@@ -50,8 +58,13 @@ const RegistrationScreen = () => {
       setLoading(true);
       setError('');
       
+      // Add firebase_uid field for all users in development mode
+      const userData = {...formData};
+      userData.firebase_uid = `dev-${userData.email}`;
+      console.debug(`Setting firebase_uid: dev-${userData.email}`);
+      
       // Register the user
-      await register(formData);
+      await register(userData);
       
       // Redirect to tribes page on success
       navigate('/tribes');
@@ -64,55 +77,57 @@ const RegistrationScreen = () => {
   };
 
   return (
-    <div className="container">
-      <div className="registration-container">
-        <h2>Create Your Account</h2>
-        {error && <div className="alert alert-danger">{error}</div>}
+    <Container className="py-5">
+      <div className="registration-container mx-auto" style={{ maxWidth: '500px' }}>
+        <h2 className="mb-4 text-center">Create Your Account</h2>
+        {error && <Alert variant="danger">{error}</Alert>}
         
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="email">Email Address</label>
-            <input
+        <Form onSubmit={handleSubmit}>
+          <Form.Group className="mb-3">
+            <Form.Label htmlFor="email">Email Address</Form.Label>
+            <Form.Control
               type="email"
               id="email"
               name="email"
-              className="form-control"
               value={formData.email}
               onChange={handleChange}
               placeholder="Enter your email"
               required
-              readOnly={!!location.state?.email} // Make read-only if provided from login
+              readOnly={!!location.state?.email}
             />
-          </div>
+            <Form.Text className="text-muted">
+              Enter any email address to register (development mode)
+            </Form.Text>
+          </Form.Group>
           
-          <div className="form-group">
-            <label htmlFor="name">Display Name</label>
-            <input
+          <Form.Group className="mb-3">
+            <Form.Label htmlFor="name">Display Name</Form.Label>
+            <Form.Control
               type="text"
               id="name"
               name="name"
-              className="form-control"
               value={formData.name}
               onChange={handleChange}
               placeholder="Enter your display name"
               required
             />
-          </div>
+          </Form.Group>
           
-          <button 
+          <Button 
             type="submit" 
-            className="btn btn-primary"
+            variant="primary"
+            className="w-100"
             disabled={loading}
           >
             {loading ? 'Creating Account...' : 'Create Account'}
-          </button>
-        </form>
+          </Button>
+        </Form>
         
-        <div className="mt-3">
-          <p>Already have an account? <a href="#" onClick={() => navigate('/login')}>Log in</a></p>
+        <div className="mt-3 text-center">
+          <p>Already have an account? <Link to="/login">Log in</Link></p>
         </div>
       </div>
-    </div>
+    </Container>
   );
 };
 

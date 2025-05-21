@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jenglund/rlship-tools/internal/api/response"
@@ -125,10 +127,11 @@ func (h *UserHandler) CheckEmailExists(c *gin.Context) {
 
 // RegisterRequest represents the user registration request
 type RegisterRequest struct {
-	Email     string `json:"email" binding:"required,email"`
-	Name      string `json:"name" binding:"required"`
-	AvatarURL string `json:"avatar_url"`
-	Provider  string `json:"provider" binding:"required"`
+	Email       string `json:"email" binding:"required,email"`
+	Name        string `json:"name" binding:"required"`
+	AvatarURL   string `json:"avatar_url"`
+	Provider    string `json:"provider" binding:"required"`
+	FirebaseUID string `json:"firebase_uid"`
 }
 
 // RegisterUser handles new user registration
@@ -153,6 +156,14 @@ func (h *UserHandler) RegisterUser(c *gin.Context) {
 		Name:      req.Name,
 		AvatarURL: req.AvatarURL,
 		Provider:  models.AuthProvider(req.Provider),
+	}
+
+	// Use the provided FirebaseUID if available, otherwise generate one
+	if req.FirebaseUID != "" {
+		user.FirebaseUID = req.FirebaseUID
+	} else {
+		// In development mode, generate a Firebase UID based on email
+		user.FirebaseUID = fmt.Sprintf("dev-%s", req.Email)
 	}
 
 	if err := h.repos.GetUserRepository().Create(user); err != nil {

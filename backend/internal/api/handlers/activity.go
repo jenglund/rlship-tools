@@ -24,7 +24,7 @@ func NewActivityHandler(repos *postgres.Repositories) *ActivityHandler {
 
 // RegisterRoutes registers the activity routes
 func (h *ActivityHandler) RegisterRoutes(r *gin.RouterGroup) {
-	activities := r.Group("/activities", middleware.RequireAuth())
+	activities := r.Group("/activities")
 	{
 		activities.POST("", h.CreateActivity)
 		activities.GET("", h.ListActivities)
