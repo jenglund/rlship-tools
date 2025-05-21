@@ -577,7 +577,8 @@ func (s *listService) GetListShares(listID uuid.UUID) ([]*models.ListShare, erro
 // CleanupExpiredShares removes expired shares
 func (s *listService) CleanupExpiredShares() error {
 	ctx := context.Background()
-	if err := s.repo.CleanupExpiredShares(ctx); err != nil {
+	_, err := s.repo.CleanupExpiredShares(ctx)
+	if err != nil {
 		return fmt.Errorf("error cleaning up expired shares: %w", err)
 	}
 	return nil

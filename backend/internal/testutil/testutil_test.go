@@ -8,29 +8,44 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTestingInfrastructure(t *testing.T) {
 	// Set up test database
 	db := SetupTestDB(t)
+	require.NotNil(t, db)
 	defer TeardownTestDB(t, db)
 
 	// Test data generation
 	t.Run("Test_data_generation", func(t *testing.T) {
 		// Get current schema
-		var schemaName string
-		err := db.QueryRow("SELECT current_schema()").Scan(&schemaName)
-		assert.NoError(t, err)
+		schemaName := db.GetSchemaName()
+		require.NotEmpty(t, schemaName)
+
+		// Verify schema exists
+		var schemaExists bool
+		err := db.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.schemata 
+				WHERE schema_name = $1
+			)
+		`, schemaName).Scan(&schemaExists)
+		require.NoError(t, err)
+		assert.True(t, schemaExists, "Schema should exist")
 
 		// Create test users
 		user1 := CreateTestUser(t, db)
 		user2 := CreateTestUser(t, db)
+		require.NotEqual(t, user1.ID, user2.ID, "User IDs should be unique")
 
 		// Create test tribe
 		tribe := CreateTestTribe(t, db, []TestUser{user1, user2})
+		require.NotEmpty(t, tribe.ID, "Tribe ID should not be empty")
 
 		// Create test list
-		_ = CreateTestList(t, db, tribe)
+		list := CreateTestList(t, db, tribe)
+		require.NotEmpty(t, list.ID, "List ID should not be empty")
 
 		// Use fully qualified table names to avoid schema issues
 		usersTable := fmt.Sprintf("%s.users", pq.QuoteIdentifier(schemaName))
@@ -40,24 +55,32 @@ func TestTestingInfrastructure(t *testing.T) {
 		// Verify data was created
 		var count int
 		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", usersTable)).Scan(&count)
-		assert.NoError(t, err)
-		assert.Equal(t, 2, count)
+		require.NoError(t, err)
+		assert.Equal(t, 2, count, "Two users should have been created")
 
 		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tribesTable)).Scan(&count)
-		assert.NoError(t, err)
-		assert.Equal(t, 1, count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count, "One tribe should have been created")
 
 		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", listsTable)).Scan(&count)
-		assert.NoError(t, err)
-		assert.Equal(t, 1, count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count, "One list should have been created")
 
 		// Clean up test data - use a separate function call in a separate transaction
 		CleanupTestData(t, db)
 
 		// Verify cleanup
 		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", usersTable)).Scan(&count)
-		assert.NoError(t, err)
-		assert.Equal(t, 0, count)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count, "All users should have been cleaned up")
+
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tribesTable)).Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count, "All tribes should have been cleaned up")
+
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", listsTable)).Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count, "All lists should have been cleaned up")
 	})
 
 	// Test HTTP helpers

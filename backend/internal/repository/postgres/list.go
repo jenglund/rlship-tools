@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -1096,28 +1097,53 @@ func (r *ListRepository) UpdateSyncStatus(listID uuid.UUID, status models.ListSy
 
 // GetListsBySource retrieves all lists from a specific sync source
 func (r *ListRepository) GetListsBySource(source string) ([]*models.List, error) {
+	// Get test schema context if available
+	var ctx context.Context
+	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
+		fmt.Printf("GetListsBySource: Using schema %s (verification handled by TransactionManager)\n", testSchema)
+		// Use context with schema for better isolation
+		schemaCtx := testutil.GetSchemaContext(testSchema)
+		if schemaCtx != nil {
+			ctx = schemaCtx.WithContext(context.Background())
+		} else {
+			ctx = context.Background()
+		}
+	} else {
+		ctx = context.Background()
+	}
+
 	// Create a context with a longer timeout for this operation
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	opts := DefaultTransactionOptions()
 	// Increase statement timeout to match context timeout
 	opts.StatementTimeout = 25 * time.Second
+	// Use a more permissive isolation level for read-only operations
+	opts.IsolationLevel = sql.LevelReadCommitted
 
 	var lists []*models.List
 
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// First get the lists basic info - transaction manager handles schema
-		query := `
+		// Verify schema is set correctly
+		var schemaName string
+		err := tx.QueryRow("SELECT current_schema()").Scan(&schemaName)
+		if err != nil {
+			return fmt.Errorf("error verifying schema: %w", err)
+		}
+		fmt.Printf("GetListsBySource: Using schema: %s\n", schemaName)
+
+		// First get the lists basic info with schema-qualified table names
+		query := fmt.Sprintf(`
 			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
 				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
 				l.default_weight, l.max_items, l.cooldown_days,
 				l.owner_id, l.owner_type,
 				l.created_at, l.updated_at, l.deleted_at
-			FROM lists l
+			FROM %s.lists l
 			WHERE l.sync_source = $1
 				AND l.deleted_at IS NULL
-			ORDER BY l.created_at DESC`
+			ORDER BY l.created_at DESC`, pq.QuoteIdentifier(schemaName))
 
 		rows, err := tx.Query(query, source)
 		if err != nil {
@@ -1155,97 +1181,21 @@ func (r *ListRepository) GetListsBySource(source string) ([]*models.List, error)
 			return nil
 		}
 
-		// Get items for all lists at once using array parameter
-		itemsQuery := `
-			SELECT id, list_id, name, description,
-				metadata, external_id,
-				weight, last_chosen, chosen_count,
-				latitude, longitude, address,
-				created_at, updated_at, deleted_at
-			FROM list_items
-			WHERE list_id = ANY($1) AND deleted_at IS NULL`
+		fmt.Printf("GetListsBySource: Found %d lists for source '%s'\n", len(lists), source)
 
-		itemRows, err := tx.Query(itemsQuery, pq.Array(listIDs))
-		if err != nil {
-			return fmt.Errorf("error loading list items: %w", err)
-		}
-		defer safeClose(itemRows)
-
-		// Map to store items by list ID
-		itemsByListID := make(map[uuid.UUID][]*models.ListItem)
-
-		for itemRows.Next() {
-			item := &models.ListItem{}
-			var metadata []byte
-			if err := itemRows.Scan(
-				&item.ID, &item.ListID, &item.Name, &item.Description,
-				&metadata, &item.ExternalID,
-				&item.Weight, &item.LastChosen, &item.ChosenCount,
-				&item.Latitude, &item.Longitude, &item.Address,
-				&item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-			); err != nil {
-				return fmt.Errorf("error scanning list item: %w", err)
-			}
-
-			if len(metadata) > 0 {
-				if err := json.Unmarshal(metadata, &item.Metadata); err != nil {
-					return fmt.Errorf("error decoding item metadata: %w", err)
-				}
-			} else {
-				item.Metadata = make(models.JSONMap)
-			}
-
-			itemsByListID[item.ListID] = append(itemsByListID[item.ListID], item)
-		}
-
-		if err = itemRows.Err(); err != nil {
-			return fmt.Errorf("error iterating list items: %w", err)
-		}
-
-		// Get owners for all lists at once
-		ownersQuery := `
-			SELECT list_id, owner_id, owner_type, created_at, updated_at, deleted_at
-			FROM list_owners
-			WHERE list_id = ANY($1) AND deleted_at IS NULL`
-
-		ownerRows, err := tx.Query(ownersQuery, pq.Array(listIDs))
-		if err != nil {
-			return fmt.Errorf("error loading list owners: %w", err)
-		}
-		defer safeClose(ownerRows)
-
-		// Map to store owners by list ID
-		ownersByListID := make(map[uuid.UUID][]*models.ListOwner)
-
-		for ownerRows.Next() {
-			owner := &models.ListOwner{}
-			if err := ownerRows.Scan(
-				&owner.ListID,
-				&owner.OwnerID,
-				&owner.OwnerType,
-				&owner.CreatedAt,
-				&owner.UpdatedAt,
-				&owner.DeletedAt,
-			); err != nil {
-				return fmt.Errorf("error scanning list owner: %w", err)
-			}
-			ownersByListID[owner.ListID] = append(ownersByListID[owner.ListID], owner)
-		}
-
-		if err = ownerRows.Err(); err != nil {
-			return fmt.Errorf("error iterating list owners: %w", err)
-		}
-
-		// Attach items and owners to each list
+		// Load all the related data for each list
 		for _, list := range lists {
-			list.Items = itemsByListID[list.ID]
-			list.Owners = ownersByListID[list.ID]
+			if err := r.loadListData(tx, list); err != nil {
+				// Log the error but continue to load other lists
+				fmt.Printf("GetListsBySource: Error loading data for list %s: %v\n", list.ID, err)
+			}
 		}
 
 		return nil
 	})
 
 	if err != nil {
+		fmt.Printf("GetListsBySource: Error retrieving lists: %v\n", err)
 		return nil, err
 	}
 
@@ -1903,115 +1853,233 @@ func (r *ListRepository) ShareWithTribe(share *models.ListShare) error {
 		ctx = context.Background()
 	}
 
+	// Validate the share input
+	if share == nil {
+		return fmt.Errorf("%w: share cannot be nil", models.ErrInvalidInput)
+	}
+
+	if share.ListID == uuid.Nil {
+		return fmt.Errorf("%w: list ID is required", models.ErrInvalidInput)
+	}
+
+	if share.TribeID == uuid.Nil {
+		return fmt.Errorf("%w: tribe ID is required", models.ErrInvalidInput)
+	}
+
+	if share.UserID == uuid.Nil {
+		return fmt.Errorf("%w: user ID is required", models.ErrInvalidInput)
+	}
+
+	// Ensure expiry date is in the future if it's set
+	if share.ExpiresAt != nil && share.ExpiresAt.Before(time.Now()) {
+		return fmt.Errorf("%w: expiration date must be in the future", models.ErrInvalidInput)
+	}
+
+	// Set timestamp fields if not already set
+	now := time.Now()
+	if share.CreatedAt.IsZero() {
+		share.CreatedAt = now
+	}
+	if share.UpdatedAt.IsZero() {
+		share.UpdatedAt = now
+	}
+
+	// Default the version to 1 for new shares
+	if share.Version <= 0 {
+		share.Version = 1
+	}
+
 	opts := DefaultTransactionOptions()
+	// Use a higher isolation level for safety
+	opts.IsolationLevel = sql.LevelReadCommitted
+	// Set a reasonable statement timeout, but not too short
+	opts.StatementTimeout = 30 * time.Second
 
-	return r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// Validate share
-		if err := share.Validate(); err != nil {
-			fmt.Printf("ShareWithTribe: Validation failed: %v\n", err)
-			return err
+	startTime := time.Now()
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// First, check that the list exists
+		var listExists bool
+		err := tx.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1 FROM lists 
+				WHERE id = $1 AND deleted_at IS NULL
+			)`,
+			share.ListID,
+		).Scan(&listExists)
+		if err != nil {
+			return fmt.Errorf("error checking if list exists: %w", err)
 		}
-
-		// Check if list exists and is not deleted
-		query := `
-			SELECT 1
-			FROM lists
-			WHERE id = $1 AND deleted_at IS NULL`
-
-		var exists bool
-		err := tx.QueryRow(query, share.ListID).Scan(&exists)
-		if err == sql.ErrNoRows {
+		if !listExists {
 			fmt.Printf("ShareWithTribe: List not found: %s\n", share.ListID)
-			return models.ErrNotFound
+			return fmt.Errorf("%w: list not found", models.ErrNotFound)
 		}
+
+		// Check that the tribe exists
+		var tribeExists bool
+		err = tx.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1 FROM tribes
+				WHERE id = $1 AND deleted_at IS NULL
+			)`,
+			share.TribeID,
+		).Scan(&tribeExists)
 		if err != nil {
-			fmt.Printf("ShareWithTribe: Error checking list existence: %v\n", err)
-			return fmt.Errorf("error checking list existence: %w", err)
+			return fmt.Errorf("error checking if tribe exists: %w", err)
 		}
-
-		// Check if tribe exists and is not deleted
-		query = `
-			SELECT 1
-			FROM tribes
-			WHERE id = $1 AND deleted_at IS NULL`
-
-		err = tx.QueryRow(query, share.TribeID).Scan(&exists)
-		if err == sql.ErrNoRows {
+		if !tribeExists {
 			fmt.Printf("ShareWithTribe: Tribe not found: %s\n", share.TribeID)
-			return models.ErrNotFound
+			return fmt.Errorf("%w: tribe not found", models.ErrNotFound)
 		}
+
+		// Check that the user exists
+		var userExists bool
+		err = tx.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1 FROM users
+				WHERE id = $1 AND deleted_at IS NULL
+			)`,
+			share.UserID,
+		).Scan(&userExists)
 		if err != nil {
-			fmt.Printf("ShareWithTribe: Error checking tribe existence: %v\n", err)
-			return fmt.Errorf("error checking tribe existence: %w", err)
+			return fmt.Errorf("error checking if user exists: %w", err)
 		}
-
-		// Check if user exists and is not deleted
-		query = `
-			SELECT 1
-			FROM users
-			WHERE id = $1`
-
-		err = tx.QueryRow(query, share.UserID).Scan(&exists)
-		if err == sql.ErrNoRows {
+		if !userExists {
 			fmt.Printf("ShareWithTribe: User not found: %s\n", share.UserID)
-			return models.ErrNotFound
-		}
-		if err != nil {
-			fmt.Printf("ShareWithTribe: Error checking user existence: %v\n", err)
-			return fmt.Errorf("error checking user existence: %w", err)
+			return fmt.Errorf("%w: user not found", models.ErrNotFound)
 		}
 
-		// Check if there's an existing share (including soft-deleted ones)
-		var existingShare bool
-		var isDeleted bool
+		// Check if share already exists and is active
 		var currentVersion int
 		err = tx.QueryRow(`
-			SELECT 
-				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2),
-				EXISTS(SELECT 1 FROM list_sharing WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NOT NULL),
-				COALESCE((SELECT version FROM list_sharing WHERE list_id = $1 AND tribe_id = $2), 0)
-			`,
-			share.ListID, share.TribeID,
-		).Scan(&existingShare, &isDeleted, &currentVersion)
-		if err != nil {
+			SELECT version FROM list_sharing
+			WHERE list_id = $1 AND tribe_id = $2 AND deleted_at IS NULL
+		`, share.ListID, share.TribeID).Scan(&currentVersion)
+
+		if err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("error checking existing share: %w", err)
 		}
 
-		if existingShare {
-			// Update existing share - reactivate if soft-deleted
-			_, err = tx.Exec(`
-				UPDATE list_sharing
-				SET user_id = $1,
-					expires_at = $2,
-					updated_at = NOW(),
-					deleted_at = NULL,
-					version = version + 1
-				WHERE list_id = $3 AND tribe_id = $4`,
-				share.UserID, share.ExpiresAt, share.ListID, share.TribeID,
-			)
+		if err == sql.ErrNoRows {
+			// No active share exists, create a new one
+			// Use CTE to ensure we get the created row back
+			query := `
+				WITH new_share AS (
+					INSERT INTO list_sharing (
+						list_id, tribe_id, user_id, 
+						created_at, updated_at, expires_at,
+						version
+					) VALUES (
+						$1, $2, $3, 
+						$4, $5, $6, 
+						$7
+					)
+					RETURNING version
+				)
+				SELECT version FROM new_share;
+			`
+			var version int
+			err = tx.QueryRow(query,
+				share.ListID, share.TribeID, share.UserID,
+				share.CreatedAt, share.UpdatedAt, share.ExpiresAt,
+				share.Version,
+			).Scan(&version)
+
+			if err != nil {
+				if pqErr, ok := err.(*pq.Error); ok {
+					if pqErr.Code == "23505" { // Unique violation
+						return fmt.Errorf("%w: share already exists", models.ErrDuplicate)
+					}
+				}
+				return fmt.Errorf("error creating share: %w", err)
+			}
+
+			share.Version = version
+			fmt.Printf("ShareWithTribe: Created new share for list %s with tribe %s (version %d)\n",
+				share.ListID, share.TribeID, share.Version)
+
+			// Now add the tribe as an owner of the list (if not already)
+			var isOwner bool
+			err = tx.QueryRow(`
+				SELECT EXISTS(
+					SELECT 1 FROM list_owners
+					WHERE list_id = $1 AND owner_id = $2 AND owner_type = $3 AND deleted_at IS NULL
+				)`,
+				share.ListID, share.TribeID, models.OwnerTypeTribe,
+			).Scan(&isOwner)
+			if err != nil {
+				return fmt.Errorf("error checking if tribe is owner: %w", err)
+			}
+
+			if !isOwner {
+				// Add tribe as owner
+				_, err = tx.Exec(`
+					INSERT INTO list_owners (
+						list_id, owner_id, owner_type,
+						created_at, updated_at
+					) VALUES ($1, $2, $3, $4, $5)`,
+					share.ListID, share.TribeID, models.OwnerTypeTribe,
+					now, now,
+				)
+				if err != nil {
+					return fmt.Errorf("error adding tribe as list owner: %w", err)
+				}
+			}
+		} else {
+			// Share already exists, update it
+			// Use CTE to get the updated row back
+			query := `
+				WITH updated_share AS (
+					UPDATE list_sharing
+					SET 
+						user_id = $1,
+						expires_at = $2,
+						updated_at = $3,
+						version = version + 1
+					WHERE list_id = $4 AND tribe_id = $5 AND deleted_at IS NULL
+					RETURNING version
+				)
+				SELECT version FROM updated_share;
+			`
+			var newVersion int
+			err = tx.QueryRow(query,
+				share.UserID, share.ExpiresAt, now,
+				share.ListID, share.TribeID,
+			).Scan(&newVersion)
+
 			if err != nil {
 				return fmt.Errorf("error updating share: %w", err)
 			}
-		} else {
-			// Insert a new share if no existing one
-			_, err = tx.Exec(`
-				INSERT INTO list_sharing (
-					list_id, tribe_id, user_id,
-					created_at, updated_at, expires_at,
-					version
-				) VALUES ($1, $2, $3, NOW(), NOW(), $4, 1)`,
-				share.ListID,
-				share.TribeID,
-				share.UserID,
-				share.ExpiresAt,
-			)
-			if err != nil {
-				return fmt.Errorf("error sharing list: %w", err)
-			}
+
+			fmt.Printf("ShareWithTribe: Updated existing share for list %s to tribe %s (version %d -> %d)\n",
+				share.ListID, share.TribeID, currentVersion, newVersion)
+			share.Version = newVersion
 		}
 
 		return nil
 	})
+
+	elapsedTime := time.Since(startTime).Milliseconds()
+	if err != nil {
+		fmt.Printf("ShareWithTribe: Failed to share list: %v (took %dms)\n", err, elapsedTime)
+
+		// Check for validation errors
+		if errors.Is(err, models.ErrInvalidInput) {
+			fmt.Printf("ShareWithTribe: Validation failed: %v\n", err)
+			return err
+		}
+
+		// Check for not found errors
+		if errors.Is(err, models.ErrNotFound) {
+			return err
+		}
+
+		return fmt.Errorf("error sharing list: %w", err)
+	}
+
+	fmt.Printf("ShareWithTribe: Successfully shared list %s with tribe %s (took %dms)\n",
+		share.ListID, share.TribeID, elapsedTime)
+	return nil
 }
 
 // UnshareWithTribe removes a tribe's access to a list
@@ -2234,7 +2302,8 @@ func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 
 	// First, clean up any expired shares to ensure we don't return lists with expired shares
 	if runCleanup {
-		if err := r.CleanupExpiredShares(ctx); err != nil {
+		_, err := r.CleanupExpiredShares(ctx)
+		if err != nil {
 			// Only log warning in non-test environment
 			if testutil.GetCurrentTestSchema() == "" {
 				fmt.Printf("Warning: Failed to clean up expired shares: %v\n", err)
@@ -2422,24 +2491,31 @@ func (r *ListRepository) GetSharedLists(tribeID uuid.UUID) ([]*models.List, erro
 	return lists, nil
 }
 
-// CleanupExpiredShares soft-deletes any shares that have an expiration date in the past
-func (r *ListRepository) CleanupExpiredShares(ctx context.Context) error {
+// CleanupExpiredShares removes sharing records that have passed their expiration date
+// Returns the number of shares that were cleaned up, or an error if the operation failed
+func (r *ListRepository) CleanupExpiredShares(ctx context.Context) (int, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+
+	// Add a reasonable timeout to the context
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	// Check if we're in a test environment and should use a specific schema
 	if testSchema := testutil.GetCurrentTestSchema(); testSchema != "" {
 		schemaCtx := testutil.GetSchemaContext(testSchema)
 		if schemaCtx != nil {
 			ctx = schemaCtx.WithContext(ctx)
+			fmt.Printf("[CleanupExpiredShares] Using schema context for %s\n", testSchema)
 		}
 	}
 
 	// Skip cleanup if the context has a skip_cleanup flag set to true
 	// This allows tests to disable cleanup when needed
 	if skipCleanup, ok := ctx.Value("skip_cleanup").(bool); ok && skipCleanup {
-		return nil
+		return 0, nil
 	}
 
 	opts := DefaultTransactionOptions()
@@ -2449,16 +2525,56 @@ func (r *ListRepository) CleanupExpiredShares(ctx context.Context) error {
 	startTime := time.Now()
 	fmt.Printf("[CleanupExpiredShares] Starting cleanup of expired list shares\n")
 
+	// First, let's check if there are any expired shares to clean up
+	var expiredCount int
 	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// Soft delete all shares that have expired
-		query := `
-			UPDATE list_sharing
-			SET deleted_at = NOW(),
-				updated_at = NOW(),
-				version = version + 1
+		err := tx.QueryRow(`
+			SELECT COUNT(*) FROM list_sharing
 			WHERE expires_at < NOW() 
 			AND deleted_at IS NULL
-			RETURNING list_id, tribe_id`
+		`).Scan(&expiredCount)
+
+		if err != nil {
+			return fmt.Errorf("error counting expired shares: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, fmt.Errorf("error checking for expired shares: %w", err)
+	}
+
+	if expiredCount == 0 {
+		fmt.Printf("[CleanupExpiredShares] No expired shares found, skipping cleanup\n")
+		return 0, nil
+	}
+
+	fmt.Printf("[CleanupExpiredShares] Found %d expired shares to clean up\n", expiredCount)
+
+	// Now perform the cleanup in a separate transaction
+	var cleanedCount int
+	err = r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Use a CTE to get all the details of what's being updated for better logging
+		query := `
+			WITH expired_shares AS (
+				SELECT list_id, tribe_id, expires_at
+				FROM list_sharing
+				WHERE expires_at < NOW() 
+				AND deleted_at IS NULL
+			),
+			updated AS (
+				UPDATE list_sharing ls
+				SET deleted_at = NOW(),
+					updated_at = NOW(),
+					version = version + 1
+				FROM expired_shares es
+				WHERE ls.list_id = es.list_id 
+				AND ls.tribe_id = es.tribe_id
+				AND ls.deleted_at IS NULL
+				RETURNING ls.list_id, ls.tribe_id, ls.version, ls.expires_at
+			)
+			SELECT list_id, tribe_id, version, expires_at FROM updated`
 
 		rows, err := tx.Query(query)
 		if err != nil {
@@ -2469,18 +2585,27 @@ func (r *ListRepository) CleanupExpiredShares(ctx context.Context) error {
 		count := 0
 		for rows.Next() {
 			var listID, tribeID uuid.UUID
-			if err := rows.Scan(&listID, &tribeID); err != nil {
+			var version int
+			var expiresAt time.Time
+			if err := rows.Scan(&listID, &tribeID, &version, &expiresAt); err != nil {
 				return fmt.Errorf("error scanning expired share row: %w", err)
 			}
 			count++
-			fmt.Printf("[CleanupExpiredShares] Cleaned up expired share: list_id=%s, tribe_id=%s\n",
-				listID, tribeID)
+			fmt.Printf("[CleanupExpiredShares] Cleaned up expired share: list_id=%s, tribe_id=%s, version=%d, expired_at=%s\n",
+				listID, tribeID, version, expiresAt.Format(time.RFC3339))
 		}
 
 		if err := rows.Err(); err != nil {
 			return fmt.Errorf("error iterating expired shares: %w", err)
 		}
 
+		// Double-check if we cleaned up everything we expected
+		if count != expiredCount {
+			fmt.Printf("[CleanupExpiredShares] Warning: Expected to clean up %d shares but only cleaned up %d\n",
+				expiredCount, count)
+		}
+
+		cleanedCount = count
 		elapsedTime := time.Since(startTime).Milliseconds()
 		fmt.Printf("[CleanupExpiredShares] Completed cleanup of %d expired list shares (took %dms)\n",
 			count, elapsedTime)
@@ -2491,10 +2616,196 @@ func (r *ListRepository) CleanupExpiredShares(ctx context.Context) error {
 		elapsedTime := time.Since(startTime).Milliseconds()
 		fmt.Printf("[CleanupExpiredShares] Failed to clean up expired shares (took %dms): %v\n",
 			elapsedTime, err)
-		return err
+		return 0, err
 	}
 
-	return nil
+	return cleanedCount, nil
+}
+
+// MarkItemChosen marks an item as chosen and updates its stats
+func (r *ListRepository) MarkItemChosen(itemID uuid.UUID) error {
+	return r.UpdateItemStats(itemID, true)
+}
+
+// GetTribeListsWithContext gets all lists owned by or shared with a tribe, with explicit context for schema information
+func (r *ListRepository) GetTribeListsWithContext(ctx context.Context, tribeID uuid.UUID) ([]*models.List, error) {
+	// Create a timeout context if one wasn't provided
+	var cancel context.CancelFunc
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+
+	// Use stricter transaction options for better stability
+	opts := DefaultTransactionOptions()
+	opts.IsolationLevel = sql.LevelReadCommitted // Less strict isolation level for better performance
+
+	var lists []*models.List
+
+	// Get schema from context if available
+	if schemaName := testutil.GetSchemaFromContext(ctx); schemaName != "" {
+		fmt.Printf("GetTribeListsWithContext: Using schema from context: %s\n", schemaName)
+	}
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Verify the search path is set correctly within this transaction
+		var searchPath string
+		err := tx.QueryRow("SHOW search_path").Scan(&searchPath)
+		if err != nil {
+			return fmt.Errorf("error checking search_path: %w", err)
+		}
+
+		// Fix the parentheses in the query to properly group conditions
+		query := `
+			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
+				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
+				l.default_weight, l.max_items, l.cooldown_days,
+				l.created_at, l.updated_at, l.deleted_at
+			FROM lists l
+			LEFT JOIN list_owners lo ON l.id = lo.list_id
+			LEFT JOIN list_sharing ls ON l.id = ls.list_id
+			WHERE ((lo.owner_id = $1 AND lo.owner_type = 'tribe' AND lo.deleted_at IS NULL)
+				OR (ls.tribe_id = $1 AND ls.deleted_at IS NULL))
+				AND l.deleted_at IS NULL
+			ORDER BY l.created_at DESC`
+
+		rows, err := tx.Query(query, tribeID)
+		if err != nil {
+			return fmt.Errorf("error getting tribe lists: %w", err)
+		}
+
+		// IMPORTANT: Get all the list IDs and basic info first before attempting to load related data
+		var loadLists []*models.List
+		for rows.Next() {
+			list := &models.List{}
+			err := rows.Scan(
+				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
+				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
+				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
+				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
+			)
+			if err != nil {
+				safeClose(rows)
+				return fmt.Errorf("error scanning list: %w", err)
+			}
+			loadLists = append(loadLists, list)
+		}
+
+		safeClose(rows)
+
+		// Now load related data for each list in a separate transaction
+		for _, list := range loadLists {
+			// Load all related data
+			if err := r.loadListData(tx, list); err != nil {
+				return err
+			}
+			lists = append(lists, list)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lists, nil
+}
+
+// GetUserListsWithContext gets all lists owned by or shared with a user, with explicit context for schema information
+func (r *ListRepository) GetUserListsWithContext(ctx context.Context, userID uuid.UUID) ([]*models.List, error) {
+	// Create a timeout context if one wasn't provided
+	var cancel context.CancelFunc
+	if _, ok := ctx.Deadline(); !ok {
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+
+	// Use stricter transaction options for better stability
+	opts := DefaultTransactionOptions()
+	opts.IsolationLevel = sql.LevelReadCommitted // Less strict isolation level for better performance
+
+	var lists []*models.List
+
+	// Get schema from context if available
+	if schemaName := testutil.GetSchemaFromContext(ctx); schemaName != "" {
+		fmt.Printf("GetUserListsWithContext: Using schema from context: %s\n", schemaName)
+	}
+
+	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
+		// Verify the search path is set correctly within this transaction
+		var searchPath string
+		err := tx.QueryRow("SHOW search_path").Scan(&searchPath)
+		if err != nil {
+			return fmt.Errorf("error checking search_path: %w", err)
+		}
+
+		// Get lists the user owns directly or via tribe membership
+		query := `
+			WITH user_tribes AS (
+				SELECT tribe_id 
+				FROM tribe_members 
+				WHERE user_id = $1 AND deleted_at IS NULL
+			)
+			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
+				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
+				l.default_weight, l.max_items, l.cooldown_days,
+				l.created_at, l.updated_at, l.deleted_at
+			FROM lists l
+			LEFT JOIN list_owners lo ON l.id = lo.list_id
+			LEFT JOIN list_sharing ls ON l.id = ls.list_id
+			WHERE (
+				-- User owns the list directly
+				(lo.owner_id = $1 AND lo.owner_type = 'user' AND lo.deleted_at IS NULL)
+				-- List is owned by a tribe the user is a member of
+				OR (lo.owner_type = 'tribe' AND lo.owner_id IN (SELECT tribe_id FROM user_tribes) AND lo.deleted_at IS NULL)
+				-- List is shared with a tribe the user is a member of
+				OR (ls.tribe_id IN (SELECT tribe_id FROM user_tribes) AND ls.deleted_at IS NULL)
+			)
+			AND l.deleted_at IS NULL
+			ORDER BY l.created_at DESC`
+
+		rows, err := tx.Query(query, userID)
+		if err != nil {
+			return fmt.Errorf("error getting user lists: %w", err)
+		}
+
+		// IMPORTANT: Get all the list IDs and basic info first before attempting to load related data
+		var loadLists []*models.List
+		for rows.Next() {
+			list := &models.List{}
+			err := rows.Scan(
+				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
+				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
+				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
+				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
+			)
+			if err != nil {
+				safeClose(rows)
+				return fmt.Errorf("error scanning list: %w", err)
+			}
+			loadLists = append(loadLists, list)
+		}
+
+		safeClose(rows)
+
+		// Now load related data for each list in a separate transaction
+		for _, list := range loadLists {
+			// Load all related data
+			if err := r.loadListData(tx, list); err != nil {
+				return err
+			}
+			lists = append(lists, list)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return lists, nil
 }
 
 // GetListsByOwner retrieves all lists owned by a specific owner
@@ -2754,190 +3065,4 @@ func (r *ListRepository) GetSharedTribes(listID uuid.UUID) ([]*models.Tribe, err
 	}
 
 	return tribes, nil
-}
-
-// MarkItemChosen marks an item as chosen and updates its stats
-func (r *ListRepository) MarkItemChosen(itemID uuid.UUID) error {
-	return r.UpdateItemStats(itemID, true)
-}
-
-// GetTribeListsWithContext gets all lists owned by or shared with a tribe, with explicit context for schema information
-func (r *ListRepository) GetTribeListsWithContext(ctx context.Context, tribeID uuid.UUID) ([]*models.List, error) {
-	// Create a timeout context if one wasn't provided
-	var cancel context.CancelFunc
-	if _, ok := ctx.Deadline(); !ok {
-		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-	}
-
-	// Use stricter transaction options for better stability
-	opts := DefaultTransactionOptions()
-	opts.IsolationLevel = sql.LevelReadCommitted // Less strict isolation level for better performance
-
-	var lists []*models.List
-
-	// Get schema from context if available
-	if schemaName := testutil.GetSchemaFromContext(ctx); schemaName != "" {
-		fmt.Printf("GetTribeListsWithContext: Using schema from context: %s\n", schemaName)
-	}
-
-	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// Verify the search path is set correctly within this transaction
-		var searchPath string
-		err := tx.QueryRow("SHOW search_path").Scan(&searchPath)
-		if err != nil {
-			return fmt.Errorf("error checking search_path: %w", err)
-		}
-
-		// Fix the parentheses in the query to properly group conditions
-		query := `
-			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
-				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
-				l.default_weight, l.max_items, l.cooldown_days,
-				l.created_at, l.updated_at, l.deleted_at
-			FROM lists l
-			LEFT JOIN list_owners lo ON l.id = lo.list_id
-			LEFT JOIN list_sharing ls ON l.id = ls.list_id
-			WHERE ((lo.owner_id = $1 AND lo.owner_type = 'tribe' AND lo.deleted_at IS NULL)
-				OR (ls.tribe_id = $1 AND ls.deleted_at IS NULL))
-				AND l.deleted_at IS NULL
-			ORDER BY l.created_at DESC`
-
-		rows, err := tx.Query(query, tribeID)
-		if err != nil {
-			return fmt.Errorf("error getting tribe lists: %w", err)
-		}
-
-		// IMPORTANT: Get all the list IDs and basic info first before attempting to load related data
-		var loadLists []*models.List
-		for rows.Next() {
-			list := &models.List{}
-			err := rows.Scan(
-				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
-				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
-				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
-				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
-			)
-			if err != nil {
-				safeClose(rows)
-				return fmt.Errorf("error scanning list: %w", err)
-			}
-			loadLists = append(loadLists, list)
-		}
-
-		safeClose(rows)
-
-		// Now load related data for each list in a separate transaction
-		for _, list := range loadLists {
-			// Load all related data
-			if err := r.loadListData(tx, list); err != nil {
-				return err
-			}
-			lists = append(lists, list)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return lists, nil
-}
-
-// GetUserListsWithContext gets all lists owned by or shared with a user, with explicit context for schema information
-func (r *ListRepository) GetUserListsWithContext(ctx context.Context, userID uuid.UUID) ([]*models.List, error) {
-	// Create a timeout context if one wasn't provided
-	var cancel context.CancelFunc
-	if _, ok := ctx.Deadline(); !ok {
-		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-	}
-
-	// Use stricter transaction options for better stability
-	opts := DefaultTransactionOptions()
-	opts.IsolationLevel = sql.LevelReadCommitted // Less strict isolation level for better performance
-
-	var lists []*models.List
-
-	// Get schema from context if available
-	if schemaName := testutil.GetSchemaFromContext(ctx); schemaName != "" {
-		fmt.Printf("GetUserListsWithContext: Using schema from context: %s\n", schemaName)
-	}
-
-	err := r.tm.WithTransaction(ctx, opts, func(tx *sql.Tx) error {
-		// Verify the search path is set correctly within this transaction
-		var searchPath string
-		err := tx.QueryRow("SHOW search_path").Scan(&searchPath)
-		if err != nil {
-			return fmt.Errorf("error checking search_path: %w", err)
-		}
-
-		// Get lists the user owns directly or via tribe membership
-		query := `
-			WITH user_tribes AS (
-				SELECT tribe_id 
-				FROM tribe_members 
-				WHERE user_id = $1 AND deleted_at IS NULL
-			)
-			SELECT DISTINCT l.id, l.type, l.name, l.description, l.visibility,
-				l.sync_status, l.sync_source, l.sync_id, l.last_sync_at,
-				l.default_weight, l.max_items, l.cooldown_days,
-				l.created_at, l.updated_at, l.deleted_at
-			FROM lists l
-			LEFT JOIN list_owners lo ON l.id = lo.list_id
-			LEFT JOIN list_sharing ls ON l.id = ls.list_id
-			WHERE (
-				-- User owns the list directly
-				(lo.owner_id = $1 AND lo.owner_type = 'user' AND lo.deleted_at IS NULL)
-				-- List is owned by a tribe the user is a member of
-				OR (lo.owner_type = 'tribe' AND lo.owner_id IN (SELECT tribe_id FROM user_tribes) AND lo.deleted_at IS NULL)
-				-- List is shared with a tribe the user is a member of
-				OR (ls.tribe_id IN (SELECT tribe_id FROM user_tribes) AND ls.deleted_at IS NULL)
-			)
-			AND l.deleted_at IS NULL
-			ORDER BY l.created_at DESC`
-
-		rows, err := tx.Query(query, userID)
-		if err != nil {
-			return fmt.Errorf("error getting user lists: %w", err)
-		}
-
-		// IMPORTANT: Get all the list IDs and basic info first before attempting to load related data
-		var loadLists []*models.List
-		for rows.Next() {
-			list := &models.List{}
-			err := rows.Scan(
-				&list.ID, &list.Type, &list.Name, &list.Description, &list.Visibility,
-				&list.SyncStatus, &list.SyncSource, &list.SyncID, &list.LastSyncAt,
-				&list.DefaultWeight, &list.MaxItems, &list.CooldownDays,
-				&list.CreatedAt, &list.UpdatedAt, &list.DeletedAt,
-			)
-			if err != nil {
-				safeClose(rows)
-				return fmt.Errorf("error scanning list: %w", err)
-			}
-			loadLists = append(loadLists, list)
-		}
-
-		safeClose(rows)
-
-		// Now load related data for each list in a separate transaction
-		for _, list := range loadLists {
-			// Load all related data
-			if err := r.loadListData(tx, list); err != nil {
-				return err
-			}
-			lists = append(lists, list)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return lists, nil
 }

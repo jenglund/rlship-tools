@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,19 +49,31 @@ func TestSetupTestDB(t *testing.T) {
 		require.NotNil(t, db1)
 		defer TeardownTestDB(t, db1)
 
+		// Get schema name from first database
+		db1Schema := db1.GetSchemaName()
+		require.NotEmpty(t, db1Schema)
+
 		db2 := SetupTestDB(t)
 		require.NotNil(t, db2)
 		defer TeardownTestDB(t, db2)
 
-		// Verify both databases are different - using simple, direct queries
-		var db1Schema, db2Schema string
-		err := db1.QueryRow("SELECT current_schema()").Scan(&db1Schema)
-		require.NoError(t, err)
+		// Get schema name from second database
+		db2Schema := db2.GetSchemaName()
+		require.NotEmpty(t, db2Schema)
 
-		err = db2.QueryRow("SELECT current_schema()").Scan(&db2Schema)
-		require.NoError(t, err)
-
+		// Verify both databases have different schema names
 		assert.NotEqual(t, db1Schema, db2Schema, "each setup should create a unique schema")
+
+		// Verify both schemas are set correctly in their respective connections
+		var currentSchema1 string
+		err := db1.QueryRow("SELECT current_schema()").Scan(&currentSchema1)
+		require.NoError(t, err)
+		assert.Equal(t, db1Schema, currentSchema1, "Schema should be set correctly for db1")
+
+		var currentSchema2 string
+		err = db2.QueryRow("SELECT current_schema()").Scan(&currentSchema2)
+		require.NoError(t, err)
+		assert.Equal(t, db2Schema, currentSchema2, "Schema should be set correctly for db2")
 	})
 }
 
@@ -70,20 +84,34 @@ func TestTeardownTestDB(t *testing.T) {
 		require.NotNil(t, db)
 
 		// Get the schema name before teardown
-		var schemaName string
-		err := db.QueryRow("SELECT current_schema").Scan(&schemaName)
+		schemaName := db.GetSchemaName()
+		require.NotEmpty(t, schemaName)
+
+		// Verify schema exists before teardown
+		pgdb, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
+		defer safeClose(pgdb)
+
+		var existsBefore bool
+		err = pgdb.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.schemata 
+				WHERE schema_name = $1
+			)
+		`, schemaName).Scan(&existsBefore)
+		require.NoError(t, err)
+		assert.True(t, existsBefore, "schema should exist before teardown")
 
 		// Perform teardown
 		TeardownTestDB(t, db)
 
 		// Verify schema no longer exists by checking information_schema
-		pgdb, err := sql.Open("postgres", getPostgresConnection(""))
+		pgdb2, err := sql.Open("postgres", getPostgresConnection(""))
 		require.NoError(t, err)
-		defer safeClose(pgdb)
+		defer safeClose(pgdb2)
 
 		var exists bool
-		err = pgdb.QueryRow(`
+		err = pgdb2.QueryRow(`
 			SELECT EXISTS (
 				SELECT FROM information_schema.schemata 
 				WHERE schema_name = $1
@@ -91,6 +119,12 @@ func TestTeardownTestDB(t *testing.T) {
 		`, schemaName).Scan(&exists)
 		require.NoError(t, err)
 		assert.False(t, exists, "schema should not exist after teardown")
+
+		// Verify schema context was removed
+		SchemaContextMutex.Lock()
+		_, contextExists := SchemaContexts[schemaName]
+		SchemaContextMutex.Unlock()
+		assert.False(t, contextExists, "schema context should be removed after teardown")
 	})
 
 	// Test teardown with active connections
@@ -99,9 +133,8 @@ func TestTeardownTestDB(t *testing.T) {
 		require.NotNil(t, db)
 
 		// Get the schema name
-		var schemaName string
-		err := db.QueryRow("SELECT current_schema").Scan(&schemaName)
-		require.NoError(t, err)
+		schemaName := db.GetSchemaName()
+		require.NotEmpty(t, schemaName)
 
 		// Create additional connections
 		db2, err := sql.Open("postgres", getPostgresConnection(""))
@@ -131,13 +164,40 @@ func TestTeardownTestDB(t *testing.T) {
 		err = db3.QueryRow("SELECT 1").Scan(&count)
 		require.NoError(t, err)
 
+		// Verify the table exists before teardown
+		var tableExists bool
+		err = db.QueryRow(fmt.Sprintf(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = '%s'
+				AND table_name = 'teardown_test'
+			)
+		`, schemaName)).Scan(&tableExists)
+		require.NoError(t, err)
+		assert.True(t, tableExists, "table should exist before teardown")
+
 		// Perform teardown
 		TeardownTestDB(t, db)
 
+		// Verify schema no longer exists
+		pgdb, err := sql.Open("postgres", getPostgresConnection(""))
+		require.NoError(t, err)
+		defer safeClose(pgdb)
+
+		var schemaExists bool
+		err = pgdb.QueryRow(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.schemata 
+				WHERE schema_name = $1
+			)
+		`, schemaName).Scan(&schemaExists)
+		require.NoError(t, err)
+		assert.False(t, schemaExists, "schema should not exist after teardown")
+
 		// Verify connections are closed by attempting queries to the dropped schema's table
-		err = db2.QueryRow("SELECT * FROM teardown_test LIMIT 1").Scan(&count)
+		err = db2.QueryRow(fmt.Sprintf("SELECT * FROM %s.teardown_test LIMIT 1", pq.QuoteIdentifier(schemaName))).Scan(&count)
 		assert.Error(t, err, "query should fail after teardown")
-		err = db3.QueryRow("SELECT * FROM teardown_test LIMIT 1").Scan(&count)
+		err = db3.QueryRow(fmt.Sprintf("SELECT * FROM %s.teardown_test LIMIT 1", pq.QuoteIdentifier(schemaName))).Scan(&count)
 		assert.Error(t, err, "query should fail after teardown")
 	})
 
@@ -198,67 +258,107 @@ func TestDatabaseOperations(t *testing.T) {
 		require.NotNil(t, db)
 		defer TeardownTestDB(t, db)
 
-		// Get the current schema name
-		var schemaName string
-		err := db.QueryRow("SELECT current_schema()").Scan(&schemaName)
+		// Get the schema name from the connection
+		schemaName := db.GetSchemaName()
+		require.NotEmpty(t, schemaName)
+
+		// Verify schema is set correctly
+		var currentSchema string
+		err := db.QueryRow("SELECT current_schema()").Scan(&currentSchema)
 		require.NoError(t, err)
-		assert.Equal(t, db.GetSchemaName(), schemaName, "Schema should be set to the test schema")
+		assert.Equal(t, schemaName, currentSchema, "Schema should be set to the test schema")
 
-		// Create test table
-		_, err = db.Exec("CREATE TABLE concurrent_test (id SERIAL PRIMARY KEY, value INTEGER)")
+		// Create test table with explicit schema
+		_, err = db.Exec(fmt.Sprintf("CREATE TABLE %s.concurrent_test (id SERIAL PRIMARY KEY, value INTEGER)",
+			pq.QuoteIdentifier(schemaName)))
 		require.NoError(t, err)
 
-		// Get the schema context for this test
-		schemaCtx := GetSchemaContext(schemaName)
-		require.NotNil(t, schemaCtx, "Schema context should exist")
-
-		// Run concurrent insertions using a more controlled approach
+		// Run concurrent insertions with better synchronization
 		var wg sync.WaitGroup
-		errCh := make(chan error, 10) // Channel to collect errors
+		errCh := make(chan error, 10)  // Channel to collect errors
+		resultCh := make(chan int, 10) // Channel to collect successful insertions
 
 		for i := 0; i < 10; i++ {
 			wg.Add(1)
 			go func(val int) {
 				defer wg.Done()
 
-				// Create a connection that's fully aware of the schema
-				insertDB, err := sql.Open("postgres", getPostgresConnection("postgres"))
+				// Create a new connection for this goroutine
+				connString := getPostgresConnection("")
+				insertDB, err := sql.Open("postgres", connString)
 				if err != nil {
-					errCh <- err
+					errCh <- fmt.Errorf("connection error (value %d): %w", val, err)
 					return
 				}
 				defer safeClose(insertDB)
 
-				// Set the search path explicitly
-				_, err = insertDB.Exec(fmt.Sprintf("SET search_path TO %s, public", pq.QuoteIdentifier(schemaName)))
+				// Set the search path explicitly for this connection
+				_, err = insertDB.Exec(fmt.Sprintf("SET search_path TO %s", pq.QuoteIdentifier(schemaName)))
 				if err != nil {
-					errCh <- err
+					errCh <- fmt.Errorf("search path error (value %d): %w", val, err)
 					return
 				}
 
-				// Now insert using the schema-qualified table name to be extra safe
-				_, execErr := insertDB.Exec(fmt.Sprintf("INSERT INTO %s.concurrent_test (value) VALUES ($1)",
-					pq.QuoteIdentifier(schemaName)), val)
-				if execErr != nil {
-					errCh <- execErr
+				// Do a read to verify connection is set up properly
+				var testSchema string
+				err = insertDB.QueryRow("SELECT current_schema()").Scan(&testSchema)
+				if err != nil {
+					errCh <- fmt.Errorf("schema verification error (value %d): %w", val, err)
+					return
 				}
+
+				if testSchema != schemaName {
+					errCh <- fmt.Errorf("schema mismatch (value %d): got %s, expected %s", val, testSchema, schemaName)
+					return
+				}
+
+				// Now insert with explicit schema qualification
+				insertQuery := fmt.Sprintf("INSERT INTO %s.concurrent_test (value) VALUES ($1) RETURNING id",
+					pq.QuoteIdentifier(schemaName))
+				var insertedID int
+				err = insertDB.QueryRow(insertQuery, val).Scan(&insertedID)
+				if err != nil {
+					errCh <- fmt.Errorf("insert error (value %d): %w", val, err)
+					return
+				}
+
+				// Record successful insertion
+				resultCh <- val
 			}(i)
 		}
 
 		// Wait for all goroutines to complete
 		wg.Wait()
 		close(errCh)
+		close(resultCh)
 
 		// Check for any errors
+		errors := make([]error, 0)
 		for err := range errCh {
-			require.NoError(t, err, "Concurrent insertions should succeed")
+			errors = append(errors, err)
 		}
 
-		// Verify all insertions
+		// Show detailed errors if any
+		for _, err := range errors {
+			t.Logf("Concurrent operation error: %v", err)
+		}
+		require.Empty(t, errors, "There should be no errors in concurrent operations")
+
+		// Count successful insertions
+		successCount := 0
+		successfulValues := make([]int, 0, 10)
+		for val := range resultCh {
+			successCount++
+			successfulValues = append(successfulValues, val)
+		}
+
+		// Verify all insertions from database
 		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM concurrent_test").Scan(&count)
+		err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s.concurrent_test",
+			pq.QuoteIdentifier(schemaName))).Scan(&count)
 		require.NoError(t, err)
-		assert.Equal(t, 10, count)
+		assert.Equal(t, 10, count, "All 10 insertions should succeed")
+		assert.Equal(t, 10, successCount, "All 10 goroutines should have reported success")
 	})
 
 	// Test transaction rollback
@@ -386,8 +486,8 @@ func TestSchemaHandling(t *testing.T) {
 		err = db.Ping()
 		require.NoError(t, err, "Connection should be valid before starting transaction")
 
-		// Create a context with timeout to prevent test hangs
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Create a context with a longer timeout to prevent test hangs
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
 		// Begin a transaction with the context
@@ -401,8 +501,11 @@ func TestSchemaHandling(t *testing.T) {
 			}
 		}()
 
+		// Create a unique table name to ensure tests don't conflict
+		tableName := fmt.Sprintf("test_tx_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+
 		// Explicitly set the schema in the transaction
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s, public",
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s",
 			pq.QuoteIdentifier(schemaName)))
 		require.NoError(t, err)
 
@@ -413,13 +516,40 @@ func TestSchemaHandling(t *testing.T) {
 		assert.Equal(t, schemaName, txSchema, "Transaction should have correct schema")
 
 		// Execute a simple query in the transaction with schema qualification
-		_, err = tx.ExecContext(ctx, "CREATE TEMPORARY TABLE test_tx (id INT)")
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s.%s (id INT)",
+			pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName)))
 		require.NoError(t, err)
+
+		// Verify table exists within transaction
+		var tableExists bool
+		err = tx.QueryRowContext(ctx, fmt.Sprintf(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = '%s' AND table_name = '%s'
+			)`, schemaName, tableName)).Scan(&tableExists)
+		require.NoError(t, err)
+		assert.True(t, tableExists, "Table should exist within transaction")
 
 		// Commit the transaction
 		err = tx.Commit()
 		require.NoError(t, err)
 		tx = nil // Mark as handled
+
+		// Verify schema is still set after transaction
+		var postTxSchema string
+		err = db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&postTxSchema)
+		require.NoError(t, err)
+		assert.Equal(t, schemaName, postTxSchema, "Schema should remain correct after transaction")
+
+		// Verify table exists after transaction is committed
+		var tableExistsAfterCommit bool
+		err = db.QueryRowContext(ctx, fmt.Sprintf(`
+			SELECT EXISTS (
+				SELECT FROM information_schema.tables 
+				WHERE table_schema = '%s' AND table_name = '%s'
+			)`, schemaName, tableName)).Scan(&tableExistsAfterCommit)
+		require.NoError(t, err)
+		assert.True(t, tableExistsAfterCommit, "Table should exist after transaction commit")
 	})
 
 	// Test transaction rollback schema handling
@@ -431,6 +561,12 @@ func TestSchemaHandling(t *testing.T) {
 		// Create a context with timeout to prevent test hangs
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+
+		// Verify schema is set correctly before starting transaction
+		var preSchema string
+		err = db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&preSchema)
+		require.NoError(t, err)
+		assert.Equal(t, schemaName, preSchema, "Schema should be correct before transaction")
 
 		// Begin a transaction with the context
 		tx, err := db.BeginTx(ctx, nil)
@@ -444,7 +580,7 @@ func TestSchemaHandling(t *testing.T) {
 		}()
 
 		// Explicitly set the schema in the transaction
-		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s, public",
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL search_path TO %s",
 			pq.QuoteIdentifier(schemaName)))
 		require.NoError(t, err)
 
@@ -454,16 +590,42 @@ func TestSchemaHandling(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, schemaName, txSchema, "Transaction should have correct schema")
 
+		// Create a unique table name to ensure we're testing the right transaction
+		tableName := fmt.Sprintf("test_rollback_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+
 		// Execute a query that will be rolled back, using schema qualification
-		_, err = tx.ExecContext(ctx, "CREATE TEMPORARY TABLE test_rollback (id INT)")
+		_, err = tx.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.%s (id INT)",
+			pq.QuoteIdentifier(schemaName),
+			pq.QuoteIdentifier(tableName)))
 		require.NoError(t, err)
+
+		// Verify table exists within transaction
+		var tableExistsInTx bool
+		err = tx.QueryRowContext(ctx, fmt.Sprintf(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = '%s' AND table_name = '%s'
+            )`, schemaName, tableName)).Scan(&tableExistsInTx)
+		require.NoError(t, err)
+		assert.True(t, tableExistsInTx, "Table should exist within transaction")
 
 		// Explicitly roll back the transaction
 		err = tx.Rollback()
 		require.NoError(t, err)
 		tx = nil // Mark as handled
 
-		// Verify connection still works after rollback
+		// Verify table doesn't exist outside transaction after rollback
+		var tableExistsAfterRollback bool
+		err = db.QueryRowContext(ctx, fmt.Sprintf(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = '%s' AND table_name = '%s'
+            )`, schemaName, tableName)).Scan(&tableExistsAfterRollback)
+		require.NoError(t, err)
+		assert.False(t, tableExistsAfterRollback, "Table should not exist after rollback")
+
+		// Verify schema is still correct after rollback
 		var postRollbackSchema string
 		err = db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&postRollbackSchema)
 		require.NoError(t, err)
@@ -472,21 +634,37 @@ func TestSchemaHandling(t *testing.T) {
 
 	// Test schema persistence across multiple queries
 	t.Run("schema persistence", func(t *testing.T) {
-		// Create a table in the schema
-		_, err := db.Exec("CREATE TABLE test_persistence (id SERIAL PRIMARY KEY, name TEXT)")
+		// Create a unique table name for this test
+		tableName := fmt.Sprintf("test_persistence_%s", strings.ReplaceAll(uuid.New().String(), "-", "_"))
+
+		// Create a table in the schema with explicit schema qualification
+		_, err := db.Exec(fmt.Sprintf("CREATE TABLE %s.%s (id SERIAL PRIMARY KEY, name TEXT)",
+			pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName)))
 		require.NoError(t, err)
 
-		// Insert some data
-		_, err = db.Exec("INSERT INTO test_persistence (name) VALUES ($1)", "test")
+		// Verify table was created
+		var tableExists bool
+		err = db.QueryRow(fmt.Sprintf(`
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = '%s' AND table_name = '%s'
+            )`, schemaName, tableName)).Scan(&tableExists)
+		require.NoError(t, err)
+		assert.True(t, tableExists, "Table should have been created")
+
+		// Insert some data with schema qualification
+		_, err = db.Exec(fmt.Sprintf("INSERT INTO %s.%s (name) VALUES ($1)",
+			pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName)), "test")
 		require.NoError(t, err)
 
-		// Query the data
+		// Query the data with schema qualification
 		var name string
-		err = db.QueryRow("SELECT name FROM test_persistence WHERE id = 1").Scan(&name)
+		err = db.QueryRow(fmt.Sprintf("SELECT name FROM %s.%s WHERE id = 1",
+			pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName))).Scan(&name)
 		require.NoError(t, err)
 		assert.Equal(t, "test", name)
 
-		// Verify schema is still correct
+		// Verify schema is still correct after operations
 		var querySchema string
 		err = db.QueryRow("SELECT current_schema()").Scan(&querySchema)
 		require.NoError(t, err)

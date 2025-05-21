@@ -138,8 +138,9 @@ func TestTransactionManager_MonitorDeadlocks(t *testing.T) {
 func TestDefaultTransactionOptions(t *testing.T) {
 	opts := DefaultTransactionOptions()
 
-	assert.Equal(t, time.Second*3, opts.LockTimeout)
+	assert.Equal(t, time.Second*5, opts.LockTimeout)
 	assert.Equal(t, sql.LevelReadCommitted, opts.IsolationLevel)
 	assert.True(t, opts.RetryOnDeadlock)
-	assert.Equal(t, 3, opts.MaxRetries)
+	assert.Equal(t, 5, opts.MaxRetries)
+	assert.Equal(t, time.Second*15, opts.StatementTimeout)
 }

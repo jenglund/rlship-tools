@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -439,19 +438,21 @@ func TestListRepository_ResolveConflict(t *testing.T) {
 }
 
 func TestListRepository_GetListsBySyncSource(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	defer testutil.TeardownTestDB(t, db)
+	// Use our custom setup function with proper schema handling
+	schemaDB, teardown := setupTestWithSchema(t)
+	defer teardown()
 
-	// Use the repository for testing GetListsBySource
-	listRepo := NewListRepository(testutil.UnwrapDB(db))
+	// Get schema context for testing
+	schemaName := schemaDB.GetSchemaName()
+	schemaCtx := testutil.GetSchemaContext(schemaName)
+	if schemaCtx == nil {
+		t.Fatalf("Schema context not found for schema %s", schemaName)
+	}
 
-	// Get the schema name directly from the database
-	var schemaName string
-	err := db.QueryRow("SELECT current_schema()").Scan(&schemaName)
-	require.NoError(t, err)
-	t.Logf("Current schema: %s", schemaName)
+	// Use the repository for testing GetListsBySource with the DB unwrapped properly
+	listRepo := NewListRepository(testutil.UnwrapDB(schemaDB))
 
-	// Create a test user directly with SQL
+	// Create a test user
 	userID := uuid.New()
 	firebaseUID := "test-firebase-" + uuid.New().String()[:8]
 	email := "test-" + uuid.New().String()[:8] + "@example.com"
@@ -459,26 +460,26 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 	now := time.Now()
 
 	// Use fully qualified table names
-	_, err = db.Exec(fmt.Sprintf(`
-		INSERT INTO %s.users (
+	_, err := schemaDB.Exec(`
+		INSERT INTO users (
 			id, firebase_uid, provider, email, name, 
 			created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, 
 			$6, $7
-		)`, schemaName),
+		)`,
 		userID, firebaseUID, "google", email, name,
 		now, now,
 	)
 	require.NoError(t, err)
 
-	// Create lists with different sync sources using direct SQL with schema
+	// Create lists with different sync sources using direct SQL
 	insertTestList := func(name, syncSource, syncID string, syncStatus models.ListSyncStatus) uuid.UUID {
 		listID := uuid.New()
 		now := time.Now()
 
-		_, err := db.Exec(fmt.Sprintf(`
-			INSERT INTO %s.lists (
+		_, err := schemaDB.Exec(`
+			INSERT INTO lists (
 				id, type, name, description, visibility,
 				sync_status, sync_source, sync_id,
 				default_weight, owner_id, owner_type,
@@ -488,7 +489,7 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 				$6, $7, $8,
 				$9, $10, $11,
 				$12, $13
-			)`, schemaName),
+			)`,
 			listID, models.ListTypeActivity,
 			name+" "+uuid.New().String()[:8],
 			"Description for "+name,
@@ -500,11 +501,11 @@ func TestListRepository_GetListsBySyncSource(t *testing.T) {
 		require.NoError(t, err)
 
 		// Add owner
-		_, err = db.Exec(fmt.Sprintf(`
-			INSERT INTO %s.list_owners (
+		_, err = schemaDB.Exec(`
+			INSERT INTO list_owners (
 				list_id, owner_id, owner_type,
 				created_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5)`, schemaName),
+			) VALUES ($1, $2, $3, $4, $5)`,
 			listID, userID, models.OwnerTypeUser,
 			now, now,
 		)

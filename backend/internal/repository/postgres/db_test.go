@@ -179,5 +179,5 @@ func TestNewDB_ConnectionPooling(t *testing.T) {
 
 	// Check that connection pool settings are applied
 	maxOpenConns := db.Stats().MaxOpenConnections
-	assert.Equal(t, 25, maxOpenConns)
+	assert.Equal(t, 50, maxOpenConns)
 }

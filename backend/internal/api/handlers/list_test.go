@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -224,11 +225,15 @@ func TestListHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var response models.List
+		var response struct {
+			Success bool        `json:"success"`
+			Data    models.List `json:"data"`
+		}
 		err := json.NewDecoder(rec.Body).Decode(&response)
 		require.NoError(t, err)
-		assert.Equal(t, list.ID, response.ID)
-		assert.Equal(t, list.Name, response.Name)
+		assert.True(t, response.Success)
+		assert.Equal(t, list.ID, response.Data.ID)
+		assert.Equal(t, list.Name, response.Data.Name)
 
 		mockService.AssertExpectations(t)
 	})
@@ -254,10 +259,14 @@ func TestListHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var response []*models.List
+		var response struct {
+			Success bool           `json:"success"`
+			Data    []*models.List `json:"data"`
+		}
 		err := json.NewDecoder(rec.Body).Decode(&response)
 		require.NoError(t, err)
-		assert.Len(t, response, 2)
+		assert.True(t, response.Success)
+		assert.Len(t, response.Data, 2)
 
 		mockService.AssertExpectations(t)
 	})
@@ -305,12 +314,16 @@ func TestListHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var response []*models.List
+		var response struct {
+			Success bool           `json:"success"`
+			Data    []*models.List `json:"data"`
+		}
 		err = json.NewDecoder(rec.Body).Decode(&response)
 		require.NoError(t, err)
-		assert.Len(t, response, 2)
-		assert.Equal(t, lists[0].ID, response[0].ID)
-		assert.Equal(t, lists[1].ID, response[1].ID)
+		assert.True(t, response.Success)
+		assert.Len(t, response.Data, 2)
+		assert.Equal(t, lists[0].ID, response.Data[0].ID)
+		assert.Equal(t, lists[1].ID, response.Data[1].ID)
 
 		mockService.AssertExpectations(t)
 	})
@@ -352,10 +365,14 @@ func TestListHandler(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, rec.Code)
 
-		var response []*models.SyncConflict
+		var response struct {
+			Success bool                   `json:"success"`
+			Data    []*models.SyncConflict `json:"data"`
+		}
 		err := json.NewDecoder(rec.Body).Decode(&response)
 		require.NoError(t, err)
-		assert.Len(t, response, 1)
+		assert.True(t, response.Success)
+		assert.Len(t, response.Data, 1)
 
 		mockService.AssertExpectations(t)
 	})
@@ -1402,18 +1419,33 @@ func TestListHandler_GetListItems(t *testing.T) {
 				assert.False(t, response.Success)
 				assert.Contains(t, response.Error.Message, tt.expectedError)
 			} else if tt.expectedItems != nil {
-				var items []*models.ListItem
-				err := json.NewDecoder(w.Body).Decode(&items)
+				// Debug log the response
+				respBody, _ := io.ReadAll(w.Body)
+				t.Logf("Response body: %s", string(respBody))
+				// Reset the response body for decoding
+				w.Body = httptest.NewRecorder().Body
+				w.Body.Write(respBody)
+
+				var response struct {
+					Success bool `json:"success"`
+					Data    struct {
+						Success bool               `json:"success"`
+						Data    []*models.ListItem `json:"data"`
+					} `json:"data"`
+				}
+				err := json.NewDecoder(w.Body).Decode(&response)
 				require.NoError(t, err)
-				assert.Len(t, items, len(tt.expectedItems))
+				assert.True(t, response.Success)
+				assert.True(t, response.Data.Success)
+				assert.Len(t, response.Data.Data, len(tt.expectedItems))
 
 				// We only check the name, description, weight, and available fields
 				// as the IDs will be different in the response
 				for i, expectedItem := range tt.expectedItems {
-					assert.Equal(t, expectedItem.Name, items[i].Name)
-					assert.Equal(t, expectedItem.Description, items[i].Description)
-					assert.Equal(t, expectedItem.Weight, items[i].Weight)
-					assert.Equal(t, expectedItem.Available, items[i].Available)
+					assert.Equal(t, expectedItem.Name, response.Data.Data[i].Name)
+					assert.Equal(t, expectedItem.Description, response.Data.Data[i].Description)
+					assert.Equal(t, expectedItem.Weight, response.Data.Data[i].Weight)
+					assert.Equal(t, expectedItem.Available, response.Data.Data[i].Available)
 				}
 			}
 
@@ -1842,10 +1874,23 @@ func TestCleanupExpiredShares(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 		mockService.AssertExpectations(t)
 
-		var resp map[string]string
-		err := json.Unmarshal(rec.Body.Bytes(), &resp)
+		// Debug log the response
+		respBody, _ := io.ReadAll(rec.Body)
+		t.Logf("Response body: %s", string(respBody))
+		// Reset the response body for decoding
+		rec.Body = httptest.NewRecorder().Body
+		rec.Body.Write(respBody)
+
+		var response struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Message string `json:"message"`
+			} `json:"data"`
+		}
+		err := json.NewDecoder(rec.Body).Decode(&response)
 		require.NoError(t, err)
-		assert.Contains(t, resp["message"], "successfully")
+		assert.True(t, response.Success)
+		assert.Contains(t, response.Data.Message, "successfully")
 	})
 
 	// Test error during cleanup

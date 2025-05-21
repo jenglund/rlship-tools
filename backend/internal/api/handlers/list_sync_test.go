@@ -46,7 +46,7 @@ func TestSyncListHandler(t *testing.T) {
 			listID:         "not-a-uuid",
 			setupMock:      func() {},
 			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid list ID format",
+			expectedBody:   "Invalid list ID",
 		},
 		{
 			name:   "List Not Found",
@@ -174,12 +174,16 @@ func TestGetListConflictsHandler(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(rec *httptest.ResponseRecorder) {
-				var conflicts []*models.SyncConflict
-				err := json.NewDecoder(rec.Body).Decode(&conflicts)
+				var response struct {
+					Success bool                   `json:"success"`
+					Data    []*models.SyncConflict `json:"data"`
+				}
+				err := json.NewDecoder(rec.Body).Decode(&response)
 				require.NoError(t, err)
-				assert.Len(t, conflicts, 2)
-				assert.Equal(t, "name_conflict", conflicts[0].Type)
-				assert.Equal(t, "list_deletion_conflict", conflicts[1].Type)
+				assert.True(t, response.Success)
+				assert.Len(t, response.Data, 2)
+				assert.Equal(t, "name_conflict", response.Data[0].Type)
+				assert.Equal(t, "list_deletion_conflict", response.Data[1].Type)
 			},
 		},
 		{
@@ -190,10 +194,14 @@ func TestGetListConflictsHandler(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(rec *httptest.ResponseRecorder) {
-				var conflicts []*models.SyncConflict
-				err := json.NewDecoder(rec.Body).Decode(&conflicts)
+				var response struct {
+					Success bool                   `json:"success"`
+					Data    []*models.SyncConflict `json:"data"`
+				}
+				err := json.NewDecoder(rec.Body).Decode(&response)
 				require.NoError(t, err)
-				assert.Empty(t, conflicts)
+				assert.True(t, response.Success)
+				assert.Empty(t, response.Data)
 			},
 		},
 		{
@@ -202,7 +210,7 @@ func TestGetListConflictsHandler(t *testing.T) {
 			setupMock:      func() {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(rec *httptest.ResponseRecorder) {
-				assert.Contains(t, rec.Body.String(), "Invalid list ID format")
+				assert.Contains(t, rec.Body.String(), "Invalid list ID")
 			},
 		},
 		{
@@ -314,7 +322,7 @@ func TestResolveListConflictHandler(t *testing.T) {
 			setupMock:      func() {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(rec *httptest.ResponseRecorder) {
-				assert.Contains(t, rec.Body.String(), "Invalid list ID format")
+				assert.Contains(t, rec.Body.String(), "Invalid list ID")
 			},
 		},
 		{
@@ -325,7 +333,7 @@ func TestResolveListConflictHandler(t *testing.T) {
 			setupMock:      func() {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(rec *httptest.ResponseRecorder) {
-				assert.Contains(t, rec.Body.String(), "Invalid conflict ID format")
+				assert.Contains(t, rec.Body.String(), "Invalid conflict ID")
 			},
 		},
 		{

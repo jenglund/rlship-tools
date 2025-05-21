@@ -1,0 +1,114 @@
+make test-backend | grep FAIL
+--- FAIL: TestSyncListHandler (0.00s)
+    --- FAIL: TestSyncListHandler/Invalid_List_ID (0.00s)
+--- FAIL: TestGetListConflictsHandler (0.00s)
+    --- FAIL: TestGetListConflictsHandler/Happy_Path_-_Multiple_Conflicts (0.00s)
+--- FAIL: TestResolveListConflictHandler (0.02s)
+    list_test.go:205: FAIL:	CreateList(mock.anythingOfTypeArgument)
+    list_test.go:205: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:233: FAIL:	CreateList(mock.anythingOfTypeArgument)
+    list_test.go:233: FAIL: 1 out of 2 expectation(s) were met.
+    list_test.go:328: FAIL:	CreateList(mock.anythingOfTypeArgument)
+    list_test.go:328: FAIL: 4 out of 5 expectation(s) were met.
+    list_test.go:383: FAIL:	CreateList(mock.anythingOfTypeArgument)
+    list_test.go:383: FAIL: 6 out of 7 expectation(s) were met.
+    list_test.go:411: FAIL:	CreateList(mock.anythingOfTypeArgument)
+    list_test.go:411: FAIL: 7 out of 8 expectation(s) were met.
+    list_test.go:622: FAIL:	GetListOwners(uuid.UUID)
+    list_test.go:622: FAIL:	GetListShares(uuid.UUID)
+    list_test.go:622: FAIL: 0 out of 2 expectation(s) were met.
+    list_test.go:622: FAIL:	GetListOwners(uuid.UUID)
+    list_test.go:622: FAIL:	GetListShares(uuid.UUID)
+    list_test.go:622: FAIL:	GetListOwners(uuid.UUID)
+    list_test.go:622: FAIL: 0 out of 3 expectation(s) were met.
+    list_test.go:800: FAIL:	UnshareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID)
+    list_test.go:800: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:800: FAIL:	UnshareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID)
+    list_test.go:800: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:800: FAIL:	UnshareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID)
+    list_test.go:800: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:800: FAIL:	UnshareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID)
+    list_test.go:800: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:826: FAIL:	CreateList(mock.anythingOfTypeArgument)
+    list_test.go:826: FAIL: 9 out of 10 expectation(s) were met.
+    list_test.go:1050: FAIL:	ShareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID,*time.Time)
+    list_test.go:1050: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:1050: FAIL:	ShareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID,*time.Time)
+    list_test.go:1050: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:1050: FAIL:	ShareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID,*time.Time)
+    list_test.go:1050: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:1050: FAIL:	ShareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID,*time.Time)
+    list_test.go:1050: FAIL: 0 out of 1 expectation(s) were met.
+    list_test.go:1050: FAIL:	ShareListWithTribe(uuid.UUID,uuid.UUID,uuid.UUID,*time.Time)
+    list_test.go:1050: FAIL: 0 out of 1 expectation(s) were met.
+--- FAIL: TestListHandler (0.02s)
+    --- FAIL: TestListHandler/CreateList (0.00s)
+    --- FAIL: TestListHandler/GetList (0.00s)
+    --- FAIL: TestListHandler/ListLists (0.00s)
+    --- FAIL: TestListHandler/GenerateMenu (0.00s)
+    --- FAIL: TestListHandler/SyncList (0.00s)
+    --- FAIL: TestListHandler/GetListConflicts (0.00s)
+    --- FAIL: TestListHandler/ResolveListConflict (0.00s)
+    --- FAIL: TestListHandler/List_Ownership (0.00s)
+    --- FAIL: TestListHandler/GetListShares (0.00s)
+        --- FAIL: TestListHandler/GetListShares/success (0.00s)
+        --- FAIL: TestListHandler/GetListShares/invalid_list_ID (0.00s)
+        --- FAIL: TestListHandler/GetListShares/unauthorized (0.00s)
+    --- FAIL: TestListHandler/UnshareListWithTribe (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/success (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/invalid_list_ID (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/invalid_tribe_ID (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/missing_user_ID_in_context (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/invalid_user_ID_type_in_context (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/service_returns_not_found_error (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/service_returns_forbidden_error (0.00s)
+        --- FAIL: TestListHandler/UnshareListWithTribe/service_returns_internal_server_error (0.00s)
+    --- FAIL: TestListHandler/UpdateList (0.00s)
+    --- FAIL: TestListHandler/ShareListWithTribe (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/success_with_no_expiration (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/success_with_expiration (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/invalid_list_ID (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/invalid_tribe_ID (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/invalid_request_body (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/missing_user_ID_in_context (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/invalid_user_ID_type_in_context (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/service_returns_not_found_error (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/service_returns_forbidden_error (0.00s)
+        --- FAIL: TestListHandler/ShareListWithTribe/service_returns_internal_server_error (0.00s)
+--- FAIL: TestListHandler_GetListItems (0.00s)
+    --- FAIL: TestListHandler_GetListItems/success (0.00s)
+    --- FAIL: TestListHandler_GetListItems/empty_list (0.00s)
+--- FAIL: TestCleanupExpiredShares (0.00s)
+    --- FAIL: TestCleanupExpiredShares/Successful_Cleanup (0.00s)
+--- FAIL: TestCreateListValidation (0.00s)
+    --- FAIL: TestCreateListValidation/duplicate_list (0.00s)
+FAIL
+FAIL	github.com/jenglund/rlship-tools/internal/api/handlers	9.150s
+--- FAIL: TestNewDB_ConnectionPooling (0.02s)
+--- FAIL: TestListRepository_ShareWithTribe (0.30s)
+    --- FAIL: TestListRepository_ShareWithTribe/with_expiry (0.01s)
+    --- FAIL: TestListRepository_ShareWithTribe/update_existing (0.04s)
+    --- FAIL: TestListRepository_ShareWithTribe/null_expiry_date (0.04s)
+--- FAIL: TestListRepository_CleanupExpiredShares (0.21s)
+    --- FAIL: TestListRepository_CleanupExpiredShares/cleanup_and_verify_lists (0.00s)
+--- FAIL: TestListRepository_GetListsBySyncSource (0.19s)
+--- FAIL: TestListRepository (0.13s)
+--- FAIL: TestDefaultTransactionOptions (0.00s)
+FAIL
+FAIL	github.com/jenglund/rlship-tools/internal/repository/postgres	11.975s
+--- FAIL: TestSetupTestDB (0.47s)
+    --- FAIL: TestSetupTestDB/multiple_setups (0.31s)
+--- FAIL: TestTeardownTestDB (0.33s)
+    --- FAIL: TestTeardownTestDB/successful_teardown (0.10s)
+    --- FAIL: TestTeardownTestDB/teardown_with_active_connections (0.12s)
+--- FAIL: TestDatabaseOperations (0.63s)
+    --- FAIL: TestDatabaseOperations/concurrent_operations (0.21s)
+--- FAIL: TestSchemaHandling (0.22s)
+    --- FAIL: TestSchemaHandling/transaction_rollback_schema_handling (0.01s)
+    --- FAIL: TestSchemaHandling/schema_persistence (0.03s)
+--- FAIL: TestTestingInfrastructure (0.28s)
+    --- FAIL: TestTestingInfrastructure/Test_data_generation (0.11s)
+FAIL
+FAIL	github.com/jenglund/rlship-tools/internal/testutil	6.048s
+FAIL
+make: *** [test-backend] Error 1
