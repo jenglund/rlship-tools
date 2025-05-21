@@ -132,13 +132,11 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 					fmt.Printf("Warning: Failed to get/create user: %v\n", err)
 				} else if user != nil {
 					// Set user ID in context
-					c.Set(string(ContextUserIDKey), user.ID.String())
+					c.Set(string(ContextUserIDKey), user.ID)
 				}
 			}
 
-			// Set flag if this is a dev user (for admin panel access)
-			c.Set("is_dev_user", IsDevUser(devEmail))
-
+			// All authenticated users are allowed to proceed in development mode
 			c.Next()
 			return
 		}
@@ -160,13 +158,11 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 					fmt.Printf("Warning: Failed to get/create user: %v\n", err)
 				} else if user != nil {
 					// Set user ID in context
-					c.Set(string(ContextUserIDKey), user.ID.String())
+					c.Set(string(ContextUserIDKey), user.ID)
 				}
 			}
 
-			// Set flag if this is a dev user (for admin panel access)
-			c.Set("is_dev_user", IsDevUser(email))
-
+			// All authenticated users are allowed to proceed in development mode
 			c.Next()
 			return
 		}
@@ -180,9 +176,6 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 			c.Set(string(ContextUserEmailKey), email)
 			c.Set(string(ContextUserNameKey), name)
 
-			// Regular users aren't dev users
-			c.Set("is_dev_user", false)
-
 			// Create or get a generic dev user if repositories are available
 			if d.repos != nil {
 				uid := fmt.Sprintf("dev-user-%s", token)
@@ -191,10 +184,11 @@ func (d *DevFirebaseAuth) AuthMiddleware() gin.HandlerFunc {
 					fmt.Printf("Warning: Failed to get/create generic user: %v\n", err)
 				} else if user != nil {
 					// Set user ID in context
-					c.Set(string(ContextUserIDKey), user.ID.String())
+					c.Set(string(ContextUserIDKey), user.ID)
 				}
 			}
 
+			// All authenticated users are allowed to proceed in development mode
 			c.Next()
 			return
 		}

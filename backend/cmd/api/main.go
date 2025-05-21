@@ -298,7 +298,7 @@ func setupRouter(repos *postgres.Repositories, authMiddleware middleware.AuthMid
 
 			// Set user ID in context
 			log.Printf("Found user ID %s for Firebase UID %s", user.ID, firebaseUID)
-			c.Set(string(middleware.ContextUserIDKey), user.ID.String())
+			c.Set(string(middleware.ContextUserIDKey), user.ID)
 			c.Next()
 		})
 

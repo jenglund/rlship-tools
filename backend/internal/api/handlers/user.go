@@ -36,6 +36,7 @@ func (h *UserHandler) RegisterRoutes(r *gin.RouterGroup) {
 		users.POST("/check-email", h.CheckEmailExists)
 		users.POST("/register", h.RegisterUser)
 		users.POST("/login", h.LoginUser)
+		users.POST("/search", h.SearchUsers)
 
 		// Protected routes
 		auth := users.Use(middleware.RequireAuth())
@@ -43,7 +44,6 @@ func (h *UserHandler) RegisterRoutes(r *gin.RouterGroup) {
 			auth.GET("/me", h.GetCurrentUser)
 			auth.PUT("/me", h.UpdateCurrentUser)
 			auth.GET("/:id", h.GetUser)
-			auth.POST("/search", h.SearchUsers)
 		}
 	}
 }

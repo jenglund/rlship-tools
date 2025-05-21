@@ -155,7 +155,7 @@ func UserIDMiddleware(repos RepositoryProvider) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(string(ContextUserIDKey), user.ID.String())
+		c.Set(string(ContextUserIDKey), user.ID)
 		c.Next()
 	}
 }
