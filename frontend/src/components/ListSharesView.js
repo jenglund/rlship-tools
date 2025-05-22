@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, ListGroup, Button, Spinner, Alert, Badge } from 'react-bootstrap';
 import { useList } from '../contexts/ListContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,15 +10,22 @@ const ListSharesView = ({ listId }) => {
   const [error, setError] = useState(null);
   const [isOwner, setIsOwner] = useState(false);
   const [ownerInfo, setOwnerInfo] = useState(null);
+  const fetchedRef = useRef(false);
   
   const { getListShares, currentList } = useList();
   const { currentUser } = useAuth();
   
   useEffect(() => {
+    // Skip if we've already fetched data or don't have a list ID
+    if (fetchedRef.current || !listId || !currentList) {
+      return;
+    }
+    
     const fetchListOwnership = async () => {
       if (!currentList) return;
       
       try {
+        console.log('ListSharesView: Checking list ownership');
         // Check if the current user is the owner
         const isCurrentUserOwner = currentList.ownerId === currentUser?.id && 
                                   currentList.ownerType === 'user';
@@ -39,6 +46,8 @@ const ListSharesView = ({ listId }) => {
             displayName: 'Tribe'
           });
         }
+        
+        console.log('ListSharesView: Owner status determined', { isOwner: isCurrentUserOwner });
       } catch (err) {
         console.error('Error determining list ownership:', err);
         // Don't set error state for this, just log it
@@ -52,15 +61,21 @@ const ListSharesView = ({ listId }) => {
         
         // Only try to get shares if we are the owner
         if (isOwner) {
+          console.log('ListSharesView: Fetching list shares');
           // Use the context method to get shares
           const data = await getListShares(listId);
           
           // Always ensure we have an array, even if the API returns null/undefined
           setShares(Array.isArray(data) ? data : []);
+          console.log(`ListSharesView: Loaded ${data?.length || 0} shares`);
         } else {
           // Not the owner, so don't try to fetch shares
+          console.log('ListSharesView: Not the owner, skipping share fetch');
           setShares([]);
         }
+        
+        // Mark as fetched to prevent duplicate API calls
+        fetchedRef.current = true;
       } catch (err) {
         console.error('Error fetching list shares:', err);
         // Handle common errors
@@ -85,13 +100,21 @@ const ListSharesView = ({ listId }) => {
     }
   }, [listId, getListShares, currentList, currentUser, isOwner]);
   
+  // Reset the fetch flag if the list ID changes
+  useEffect(() => {
+    fetchedRef.current = false;
+  }, [listId]);
+  
   const handleUnshare = async (tribeID) => {
     try {
       setError(null);
+      
+      console.log(`ListSharesView: Unsharing list ${listId} from tribe ${tribeID}`);
       await listService.unshareListWithTribe(listId, tribeID);
       
       // Update the local state
       setShares(prev => prev.filter(share => share.tribeId !== tribeID));
+      console.log('ListSharesView: List unshared successfully');
     } catch (err) {
       console.error('Error unsharing list:', err);
       setError('Failed to unshare list');

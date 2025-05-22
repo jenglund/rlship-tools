@@ -246,14 +246,19 @@ const listService = {
 
   // List sharing methods
   
-  // Get all shares for a list
+  // Get list shares
   getListShares: async (listID) => {
+    if (!listID) {
+      console.error('getListShares: No list ID provided');
+      return [];
+    }
+    
     try {
       console.log(`Fetching shares for list: ${listID}`);
-      console.log(`API URL: ${API_URL}/v1/lists/${listID}/shares`);
-      console.log(`Auth headers:`, getAuthHeader());
       
-      const response = await axios.get(`${API_URL}/v1/lists/${listID}/shares`, {
+      // Add a cache buster to prevent caching issues
+      const cacheBuster = new Date().getTime();
+      const response = await axios.get(`${API_URL}/v1/lists/${listID}/shares?t=${cacheBuster}`, {
         headers: getAuthHeader()
       });
       
@@ -261,12 +266,19 @@ const listService = {
       
       // If we have share data and it doesn't already include tribe names
       if (response.data.data && response.data.data.length > 0) {
+        // Track tribe fetch attempts to prevent infinite loops
+        const fetchedTribes = new Set();
+        
         // Fetch tribe details for each share to get the tribe names
         const sharesWithNames = await Promise.all(
           response.data.data.map(async (share) => {
             try {
               // Only fetch tribe details if we don't already have the name
-              if (!share.name && !share.tribeName && share.tribeId) {
+              // and haven't tried to fetch this tribe before
+              if (!share.name && !share.tribeName && share.tribeId && !fetchedTribes.has(share.tribeId)) {
+                fetchedTribes.add(share.tribeId);
+                
+                console.log(`Fetching details for tribe: ${share.tribeId}`);
                 const tribeResponse = await axios.get(`${API_URL}/tribes/${share.tribeId}`, {
                   headers: getAuthHeader()
                 });
@@ -295,10 +307,6 @@ const listService = {
       return response.data.data || [];
     } catch (error) {
       console.error(`Error fetching shares for list ${listID}:`, error);
-      console.error('Request details:', {
-        url: `${API_URL}/v1/lists/${listID}/shares`,
-        headers: getAuthHeader()
-      });
       
       if (error.response) {
         console.error('Response status:', error.response.status);
@@ -318,48 +326,79 @@ const listService = {
 
   // Share a list with a tribe
   shareListWithTribe: async (listID, tribeID) => {
+    if (!listID || !tribeID) {
+      console.error('shareListWithTribe: Missing required parameters', { listID, tribeID });
+      throw new Error('Invalid parameters: Both list ID and tribe ID are required');
+    }
+    
     try {
       console.log(`Sharing list ${listID} with tribe ${tribeID}`);
-      console.log(`API URL: ${API_URL}/v1/lists/${listID}/share/${tribeID}`);
-      const response = await axios.post(`${API_URL}/v1/lists/${listID}/share/${tribeID}`, {}, {
+      
+      // Use the path parameter endpoint instead of body parameter
+      const url = `${API_URL}/v1/lists/${listID}/share/${tribeID}`;
+      console.log(`API URL: ${url}`);
+      
+      const response = await axios.post(url, {}, {
         headers: getAuthHeader()
       });
+      
       console.log(`Successfully shared list:`, response.data);
-      return response.data.data;
+      return response.data.data || true;
     } catch (error) {
       console.error(`Error sharing list ${listID} with tribe ${tribeID}:`, error);
-      console.error('Request details:', {
-        url: `${API_URL}/v1/lists/${listID}/share/${tribeID}`,
-        headers: getAuthHeader()
-      });
+      
       if (error.response) {
         console.error('Response status:', error.response.status);
         console.error('Response data:', error.response.data);
+        
+        // Create more descriptive error messages based on status code
+        if (error.response.status === 403) {
+          throw new Error('You do not have permission to share this list');
+        } else if (error.response.status === 404) {
+          throw new Error('List or tribe not found');
+        } else if (error.response.status === 409) {
+          throw new Error('This list is already shared with this tribe');
+        }
       }
+      
       throw error;
     }
   },
 
   // Unshare a list with a tribe
   unshareListWithTribe: async (listID, tribeID) => {
+    if (!listID || !tribeID) {
+      console.error('unshareListWithTribe: Missing required parameters', { listID, tribeID });
+      throw new Error('Invalid parameters: Both list ID and tribe ID are required');
+    }
+    
     try {
       console.log(`Unsharing list ${listID} from tribe ${tribeID}`);
-      console.log(`API URL: ${API_URL}/v1/lists/${listID}/share/${tribeID}`);
-      await axios.delete(`${API_URL}/v1/lists/${listID}/share/${tribeID}`, {
+      
+      const url = `${API_URL}/v1/lists/${listID}/share/${tribeID}`;
+      console.log(`API URL: ${url}`);
+      
+      await axios.delete(url, {
         headers: getAuthHeader()
       });
-      console.log(`Successfully unshared list`);
+      
+      console.log(`Successfully unshared list from tribe ${tribeID}`);
       return true;
     } catch (error) {
       console.error(`Error unsharing list ${listID} from tribe ${tribeID}:`, error);
-      console.error('Request details:', {
-        url: `${API_URL}/v1/lists/${listID}/share/${tribeID}`,
-        headers: getAuthHeader()
-      });
+      
       if (error.response) {
         console.error('Response status:', error.response.status);
         console.error('Response data:', error.response.data);
+        
+        // Create more descriptive error messages based on status code
+        if (error.response.status === 403) {
+          throw new Error('You do not have permission to unshare this list');
+        } else if (error.response.status === 404) {
+          throw new Error('List or tribe not found, or the list is not shared with this tribe');
+        }
       }
+      
       throw error;
     }
   },

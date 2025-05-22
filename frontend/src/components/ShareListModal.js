@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal, Button, Form, ListGroup, Badge, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useList } from '../contexts/ListContext';
@@ -12,17 +12,23 @@ const ShareListModal = ({ show, onHide, listId }) => {
   const [sharesLoading, setSharesLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const fetchedRef = useRef(false);
   
   const { currentUser } = useAuth();
   const { getListShares } = useList();
   
   // Load user tribes when modal opens
   useEffect(() => {
-    if (show) {
+    // Only fetch data when the modal is shown and we haven't already fetched
+    if (show && !fetchedRef.current) {
+      fetchedRef.current = true;
+      
       const fetchUserTribes = async () => {
         try {
           setLoading(true);
+          console.log('ShareListModal: Fetching user tribes');
           const data = await tribeService.getUserTribes();
+          console.log('ShareListModal: Tribes fetched successfully', data);
           setTribes(data || []);
         } catch (err) {
           console.error('Error fetching tribes:', err);
@@ -35,8 +41,10 @@ const ShareListModal = ({ show, onHide, listId }) => {
       const fetchListShares = async () => {
         try {
           setSharesLoading(true);
+          console.log('ShareListModal: Fetching list shares for list ID', listId);
           // Use context method instead of direct service call
           const data = await getListShares(listId);
+          console.log('ShareListModal: Shares fetched successfully', data);
           setSharedWith(data || []);
         } catch (err) {
           console.error('Error fetching list shares:', err);
@@ -49,13 +57,19 @@ const ShareListModal = ({ show, onHide, listId }) => {
       fetchUserTribes();
       fetchListShares();
     }
-  }, [show, listId, getListShares]);
+    
+    // Reset the fetch flag when modal is closed
+    if (!show) {
+      fetchedRef.current = false;
+    }
+  }, [show, listId]);
   
   const handleShare = async (tribeID) => {
     try {
       setError(null);
       setSuccess(null);
       
+      console.log(`ShareListModal: Sharing list ${listId} with tribe ${tribeID}`);
       await listService.shareListWithTribe(listId, tribeID);
       
       // Update the shared with list
@@ -80,6 +94,7 @@ const ShareListModal = ({ show, onHide, listId }) => {
       setError(null);
       setSuccess(null);
       
+      console.log(`ShareListModal: Unsharing list ${listId} from tribe ${tribeID}`);
       await listService.unshareListWithTribe(listId, tribeID);
       
       // Update the shared with list

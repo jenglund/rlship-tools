@@ -1,8 +1,21 @@
 import axios from 'axios';
 import authService from './authService';
 import config from '../config';
+import { getAuthHeader } from '../utils/authUtils';
 
 const API_URL = config.API_URL;
+
+// Simple cache to prevent excessive identical API calls
+const apiCache = {
+  getUserTribes: {
+    data: null,
+    timestamp: 0,
+    inProgress: false
+  }
+};
+
+// Cache expiration in milliseconds (5 seconds)
+const CACHE_EXPIRY = 5000;
 
 // Helper function to get the authorization header
 const getAuthHeader = () => {
@@ -15,15 +28,52 @@ const getAuthHeader = () => {
 const tribeService = {
   // Get all tribes for the current user
   getUserTribes: async () => {
+    // Check if we already have a request in progress
+    if (apiCache.getUserTribes.inProgress) {
+      console.log('getUserTribes: Request already in progress, returning cached data');
+      return apiCache.getUserTribes.data || [];
+    }
+    
+    // Check if we have valid cached data
+    const now = new Date().getTime();
+    if (
+      apiCache.getUserTribes.data && 
+      now - apiCache.getUserTribes.timestamp < CACHE_EXPIRY
+    ) {
+      console.log('getUserTribes: Returning cached data');
+      return apiCache.getUserTribes.data;
+    }
+    
     try {
-      const response = await axios.get(`${API_URL}/tribes/my`, {
+      console.log('getUserTribes: Fetching from API');
+      apiCache.getUserTribes.inProgress = true;
+      
+      // Add cache buster to prevent browser caching
+      const cacheBuster = new Date().getTime();
+      const response = await axios.get(`${API_URL}/tribes/my?t=${cacheBuster}`, {
         headers: getAuthHeader()
       });
-      return response.data.data;
+      
+      // Save to cache
+      apiCache.getUserTribes.data = response.data.data || [];
+      apiCache.getUserTribes.timestamp = now;
+      
+      console.log(`getUserTribes: Successfully fetched ${apiCache.getUserTribes.data.length} tribes`);
+      return apiCache.getUserTribes.data;
     } catch (error) {
       console.error('Error fetching user tribes:', error);
       throw error;
+    } finally {
+      apiCache.getUserTribes.inProgress = false;
     }
+  },
+
+  // Reset the cache (useful after creating/deleting tribes)
+  resetTribesCache: () => {
+    console.log('Resetting tribes cache');
+    apiCache.getUserTribes.data = null;
+    apiCache.getUserTribes.timestamp = 0;
+    apiCache.getUserTribes.inProgress = false;
   },
 
   // Get a single tribe by ID

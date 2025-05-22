@@ -98,55 +98,69 @@ export const ListProvider = ({ children }) => {
       setLoading(true);
       setError(null);
       
+      // Add a debounce/throttle mechanism to prevent excessive calls
+      console.log("ListContext - fetchSharedLists: Fetching shared lists");
+      
       // First, get the user's tribes using tribeService
       const userTribes = await tribeService.getUserTribes();
       console.log("ListContext - User tribes:", userTribes);
       
-      // Fetch shared lists for each tribe the user belongs to
+      if (!Array.isArray(userTribes) || userTribes.length === 0) {
+        console.log("ListContext - No tribes found or invalid tribes data");
+        setSharedLists([]);
+        return;
+      }
+      
+      // Create a Set of tribe IDs to track which tribes we've processed
+      const processedTribeIds = new Set();
       const allSharedLists = [];
       
-      if (Array.isArray(userTribes)) {
-        // Process each of the user's tribes
-        for (const tribe of userTribes) {
-          try {
-            const tribeLists = await listService.getSharedListsForTribe(tribe.id);
-            console.log(`ListContext - Shared lists for tribe ${tribe.id}:`, tribeLists);
+      // Process each tribe but avoid duplicates
+      for (const tribe of userTribes) {
+        if (!tribe.id || processedTribeIds.has(tribe.id)) {
+          continue; // Skip invalid tribes or ones we've already processed
+        }
+        
+        processedTribeIds.add(tribe.id);
+        
+        try {
+          console.log(`ListContext - Fetching shared lists for tribe ${tribe.id}`);
+          const tribeLists = await listService.getSharedListsForTribe(tribe.id);
+          console.log(`ListContext - Received ${tribeLists?.length || 0} shared lists for tribe ${tribe.id}`);
+          
+          if (Array.isArray(tribeLists) && tribeLists.length > 0) {
+            // Track processed list IDs to avoid duplicates
+            const processedListIds = new Set(allSharedLists.map(list => list.id));
             
-            if (tribeLists && Array.isArray(tribeLists) && tribeLists.length > 0) {
-              // Process each shared list to ensure proper format
-              for (const list of tribeLists) {
-                // Extract data from API response if needed
-                let processedList = list;
-                if (list && list.success === true && list.data) {
-                  console.warn('Found API response object in shared lists, extracting data:', list);
-                  processedList = list.data;
-                }
-                
-                if (!processedList.id) {
-                  console.warn(`Shared list is missing an ID:`, processedList);
-                  // Skip lists without IDs
-                  continue;
-                }
-                
-                // Check if we already have this list (avoid duplicates)
-                const existingIndex = allSharedLists.findIndex(l => l.id === processedList.id);
-                if (existingIndex === -1) {
-                  allSharedLists.push(processedList);
-                } else {
-                  console.warn(`Duplicate shared list ID found: ${processedList.id}`);
-                }
+            for (const list of tribeLists) {
+              // Extract data if needed and validate
+              let processedList = list;
+              if (list && list.success === true && list.data) {
+                processedList = list.data;
+              }
+              
+              if (!processedList.id) {
+                console.warn(`ListContext - Shared list is missing an ID:`, processedList);
+                continue;
+              }
+              
+              // Only add if we haven't seen this list ID before
+              if (!processedListIds.has(processedList.id)) {
+                processedListIds.add(processedList.id);
+                allSharedLists.push(processedList);
               }
             }
-          } catch (err) {
-            console.warn(`Error fetching shared lists for tribe ${tribe.id}:`, err);
-            // Continue with other tribes even if one fails
           }
+        } catch (err) {
+          console.warn(`ListContext - Error fetching shared lists for tribe ${tribe.id}:`, err);
+          // Continue with other tribes even if one fails
         }
       }
       
-      console.log("ListContext - All shared lists to be set:", allSharedLists);
+      console.log(`ListContext - Setting shared lists array with ${allSharedLists.length} lists`);
       setSharedLists(allSharedLists);
     } catch (err) {
+      console.error("ListContext - Error in fetchSharedLists:", err);
       handleError('Failed to load shared lists. Please try again later.', 'fetching shared lists', err);
       setSharedLists([]);
     } finally {
@@ -372,26 +386,44 @@ export const ListProvider = ({ children }) => {
 
   // Get list shares
   const getListShares = useCallback(async (listId) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const shares = await listService.getListShares(listId);
-      return shares;
-    } catch (err) {
-      console.error('Error getting list shares:', err);
-      // Don't throw the error, just log it and return empty array
+    if (!listId) {
+      console.warn('ListContext - getListShares called with invalid listId');
       return [];
-    } finally {
-      setLoading(false);
     }
-  }, [handleError]);
+    
+    try {
+      console.log(`ListContext - Getting shares for list ${listId}`);
+      const shares = await listService.getListShares(listId);
+      console.log(`ListContext - Retrieved ${shares?.length || 0} shares for list ${listId}`);
+      return shares || [];
+    } catch (err) {
+      console.error(`ListContext - Error getting list shares for ${listId}:`, err);
+      
+      // Check for specific error types that should be handled differently
+      if (err.response && err.response.status === 403) {
+        console.warn(`ListContext - Permission denied to view shares for list ${listId}`);
+      }
+      
+      // Don't throw the error, just return empty array
+      return [];
+    }
+  }, []);
 
   // Load user lists when the component mounts or user changes
   useEffect(() => {
     if (currentUser) {
-      console.log('ListContext - useEffect triggered to load user lists');
+      console.log('ListContext - Initial load of user lists and shared lists');
+      
+      // Load user's own lists first
       fetchUserLists();
-      fetchSharedLists();
+      
+      // Only fetch shared lists if user has their own lists loaded
+      // This helps reduce concurrent API load
+      const timer = setTimeout(() => {
+        fetchSharedLists();
+      }, 300);
+      
+      return () => clearTimeout(timer);
     }
   }, [currentUser, fetchUserLists, fetchSharedLists]);
 
